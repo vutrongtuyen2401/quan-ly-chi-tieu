@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Database
+# Un-comment if you don't want to upload test database
+# app.db
+
+# Environment variables
+.env
+
+# Node / Vue
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
