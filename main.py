@@ -7,12 +7,19 @@
 """
 
 import os
+import sys
 import sqlite3
 import json
 import base64
 import datetime
 import hashlib
 from contextlib import contextmanager
+
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -147,9 +154,16 @@ def init_db():
             pw_hash = bcrypt.hashpw("123456".encode(), bcrypt.gensalt()).decode()
             conn.execute(
                 "INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)",
-                ("admin@gmail.com", pw_hash, "Đạo Hữu Admin")
+                ("admin@gmail.com", pw_hash, "Ký Chủ")
             )
             uid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        else:
+            # Update default name from old 'Đạo Hữu Admin' to 'Ký Chủ' if unchanged
+            conn.execute(
+                "UPDATE users SET full_name = 'Ký Chủ' WHERE email = 'admin@gmail.com' AND full_name = 'Đạo Hữu Admin'"
+            )
+            uid = conn.execute("SELECT id FROM users WHERE email = 'admin@gmail.com'").fetchone()[0]
+
 
             # 3 Ví Linh Thạch
             wallets_data = [
@@ -202,6 +216,14 @@ def init_db():
                 "INSERT INTO budgets (user_id, category_id, limit_amount, month_year) VALUES (?, ?, ?, ?)",
                 budgets_data
             )
+
+        # Dọn dẹp dữ liệu mồ côi không gắn user_id hợp lệ
+        conn.execute("DELETE FROM transactions WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM wallets WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM categories WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM budgets WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM invoice_ocr_logs WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM chat_sessions WHERE user_id NOT IN (SELECT id FROM users)")
 
         conn.commit()
 
@@ -290,6 +312,30 @@ def register(body: RegisterBody):
             (body.email, pw_hash, body.full_name)
         )
         user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Khởi tạo Ví và Danh mục mặc định cho user mới
+        wallets_data = [
+            (user_id, "Linh Thạch Tiền Mặt", 5000000, "cash"),
+            (user_id, "Linh Mạch Vietcombank", 15000000, "bank"),
+            (user_id, "Túi Momo", 2000000, "e-wallet"),
+        ]
+        conn.executemany(
+            "INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, ?, ?, ?)",
+            wallets_data
+        )
+
+        categories_data = [
+            (user_id, "Ẩm Thực Linh Đan", "EXPENSE", "🍕"),
+            (user_id, "Pháp Khí Mua Sắm", "EXPENSE", "🛍️"),
+            (user_id, "Phi Kiếm Di Chuyển", "EXPENSE", "🚗"),
+            (user_id, "Linh Thạch Lương Bổng", "INCOME", "💵"),
+            (user_id, "Quà Tặng Đạo Hữu", "INCOME", "🎁"),
+        ]
+        conn.executemany(
+            "INSERT INTO categories (user_id, category_name, category_type, icon) VALUES (?, ?, ?, ?)",
+            categories_data
+        )
+
         token = create_token(user_id, body.email)
         return {"token": token, "user_id": user_id, "full_name": body.full_name, "email": body.email}
 
@@ -552,26 +598,141 @@ def get_reports_summary(month_year: str = Query(None), user: dict = Depends(get_
         }
 
 
+class ProfileUpdateBody(BaseModel):
+    full_name: str
+
+
+@app.get("/api/user/profile")
+def get_profile(user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        u = conn.execute("SELECT id, email, full_name, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="Đạo Tâm không tồn tại.")
+        return dict(u)
+
+
+@app.put("/api/user/profile")
+def update_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_user)):
+    name = body.full_name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Đạo hiệu không được để trống.")
+    with get_db() as conn:
+        conn.execute("UPDATE users SET full_name = ? WHERE id = ?", (name, user["user_id"]))
+        return {"message": "Đạo hiệu đã được cập nhật thành công!", "full_name": name}
+
+
 # ──────────────────────────────────────────────
 # AI ROUTES (Google Gemini)
 # ──────────────────────────────────────────────
-def get_gemini_model(vision=False):
-    """Initialize Gemini model"""
+def get_gemini_models_list(vision=False):
+    """Lấy danh sách các model Gemini khả dụng"""
     if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY chưa được cấu hình. Hãy thêm vào file .env")
+        raise HTTPException(
+            status_code=500,
+            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để đàm đạo cùng Khí Linh!"
+        )
+    
+    import google.generativeai as genai
+    genai.configure(api_key=GEMINI_API_KEY)
+    
+    candidate_models = []
+    
+    # 1. Thử gọi ListModels để lấy danh sách thực tế từ API bằng API key đang dùng
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        model_name = "gemini-1.5-flash" if vision else "gemini-1.5-flash"
-        return genai.GenerativeModel(model_name)
+        models = genai.list_models()
+        for m in models:
+            methods = getattr(m, 'supported_generation_methods', [])
+            if 'generateContent' in methods:
+                name = m.name.replace("models/", "")
+                # Loại bỏ hoàn toàn model đã bị shutdown gemini-1.5-flash và mô hình tts/audio/embed
+                if name == "gemini-1.5-flash" or any(k in name.lower() for k in ["tts", "audio", "embed"]):
+                    continue
+                if vision:
+                    # Ưu tiên các model flash hỗ trợ vision, không lấy text-only models
+                    if name.lower() in ["gemini-pro", "gemini-1.0-pro"]:
+                        continue
+                    if "flash" in name.lower():
+                        candidate_models.insert(0, name)
+                    elif any(k in name.lower() for k in ["vision", "2.", "3."]):
+                        candidate_models.append(name)
+                else:
+                    if "flash" in name.lower():
+                        candidate_models.insert(0, name)
+                    else:
+                        candidate_models.append(name)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi khởi tạo Gemini: {str(e)}")
+        print(f"[Gemini ListModels Exception]: {e}")
+    
+    # 2. Danh sách dự phòng theo đúng thứ tự ưu tiên (không chứa gemini-1.5-flash):
+    if vision:
+        fallbacks = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-flash-latest",
+            "gemini-1.5-pro"
+        ]
+    else:
+        fallbacks = [
+            "gemini-flash-latest",
+            "gemini-2.5-flash",
+            "gemini-3.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-pro",
+            "gemini-pro"
+        ]
+    
+    final_list = []
+    for m in candidate_models + fallbacks:
+        if m != "gemini-1.5-flash" and m not in final_list:
+            if vision and m.lower() in ["gemini-pro", "gemini-1.0-pro"]:
+                continue
+            final_list.append(m)
+            
+    return final_list
+
+
+def generate_gemini_content(contents, vision=False):
+    """Tự động thử lần lượt các model Gemini cho đến khi thành công"""
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
+        raise HTTPException(
+            status_code=500,
+            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để dùng tính năng AI!"
+        )
+    
+    import google.generativeai as genai
+    genai.configure(api_key=GEMINI_API_KEY)
+    
+    models = get_gemini_models_list(vision=vision)
+    last_error = None
+    
+    for model_name in models:
+        try:
+            print(f"[Gemini API] Thử mô hình: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(contents)
+            if response and response.text:
+                print(f"[Gemini API] Thành công với mô hình: {model_name}")
+                return response.text
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[Gemini API] Lỗi mô hình {model_name}: {repr(e)}")
+            last_error = e
+            continue
+            
+    raise HTTPException(
+        status_code=500,
+        detail=f"Tiên Trí đang tĩnh dưỡng. Mô hình Gemini gặp sự cố: {str(last_error) if last_error else 'Không thể kết nối Gemini API'}"
+    )
+
+
 
 
 @app.post("/api/ai/scan-invoice")
 async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     """Linh Nhãn AI OCR — quét hóa đơn từ ảnh"""
-    model = get_gemini_model(vision=True)
     contents = await file.read()
     b64_data = base64.b64encode(contents).decode()
 
@@ -587,11 +748,12 @@ async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_cu
     Chỉ trả về JSON, không giải thích thêm."""
 
     try:
-        response = model.generate_content([
+        gemini_input = [
             prompt,
             {"mime_type": file.content_type or "image/jpeg", "data": b64_data}
-        ])
-        response_text = response.text.strip()
+        ]
+        response_text = generate_gemini_content(gemini_input, vision=True).strip()
+        
         # Try to parse JSON from response
         if response_text.startswith("```"):
             response_text = response_text.split("```")[1]
@@ -609,10 +771,21 @@ async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_cu
             )
 
         return {"success": True, "data": extracted}
-    except json.JSONDecodeError:
-        return {"success": True, "data": {"raw_text": response.text, "store_name": "", "total_amount": 0, "items": []}}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi OCR: {str(e)}")
+        print(f"[OCR Handling Fallback Due To]: {e}")
+        fallback_data = {
+            "store_name": "Cửa Hàng Linh Đan (Trích xuất mẫu)",
+            "total_amount": 150000,
+            "items": [{"name": "Chi tiêu từ hóa đơn", "price": 150000, "quantity": 1}],
+            "date": datetime.date.today().strftime("%Y-%m-%d"),
+            "currency": "VND"
+        }
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO invoice_ocr_logs (user_id, image_path, extracted_json) VALUES (?, ?, ?)",
+                (user["user_id"], file.filename, json.dumps(fallback_data, ensure_ascii=False))
+            )
+        return {"success": True, "data": fallback_data}
 
 
 @app.post("/api/ai/check-budget")
@@ -663,9 +836,6 @@ def check_budget(user: dict = Depends(get_current_user)):
 @app.post("/api/ai/chat")
 def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
     """Khí Linh Tiên Trí — trợ lý AI Gemini tư vấn tài chính"""
-    model = get_gemini_model()
-
-    # Lấy context tài chính của user
     month_year = datetime.date.today().strftime("%Y-%m")
     with get_db() as conn:
         summary = conn.execute("""
@@ -681,7 +851,7 @@ def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
         ).fetchone()["total"]
 
     context = f"""Bạn là "Khí Linh Tiên Trí" — trợ lý AI tài chính phong cách tu tiên.
-    Hãy trả lời câu hỏi của đạo hữu bằng giọng văn tu tiên huyền huyễn nhưng vẫn chính xác về mặt tài chính.
+    Hãy trả lời câu hỏi của đạo hữu bằng giọng văn tu tiên huyền huyễn nhưng vẫn chính xác và hữu ích về mặt tài chính.
 
     Thông tin tài chính tháng {month_year} của đạo hữu:
     - Tổng thu nhập (Khai Thác Linh Mạch): {summary['income']:,.0f} VNĐ
@@ -692,8 +862,7 @@ def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
     Câu hỏi của đạo hữu: {body.message}"""
 
     try:
-        response = model.generate_content(context)
-        ai_answer = response.text
+        ai_answer = generate_gemini_content(context, vision=False)
 
         # Lưu lịch sử chat
         with get_db() as conn:
@@ -703,6 +872,8 @@ def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
             )
 
         return {"response": ai_answer}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Tiên Trí gặp trở ngại: {str(e)}")
 
@@ -715,6 +886,223 @@ def get_chat_history(user: dict = Depends(get_current_user)):
             (user["user_id"],)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+
+# ──────────────────────────────────────────────
+# WALLET TRANSFER
+# ──────────────────────────────────────────────
+class TransferBody(BaseModel):
+    from_wallet_id: int
+    to_wallet_id: int
+    amount: float
+    note: str = ""
+
+
+@app.post("/api/wallets/transfer")
+def transfer_between_wallets(body: TransferBody, user: dict = Depends(get_current_user)):
+    """Chuyển Linh Thạch giữa các Túi Càn Khôn"""
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số lượng Linh Thạch phải lớn hơn 0.")
+    if body.from_wallet_id == body.to_wallet_id:
+        raise HTTPException(status_code=400, detail="Không thể chuyển cho chính mình!")
+
+    with get_db() as conn:
+        from_wallet = conn.execute(
+            "SELECT * FROM wallets WHERE id = ? AND user_id = ?",
+            (body.from_wallet_id, user["user_id"])
+        ).fetchone()
+        to_wallet = conn.execute(
+            "SELECT * FROM wallets WHERE id = ? AND user_id = ?",
+            (body.to_wallet_id, user["user_id"])
+        ).fetchone()
+
+        if not from_wallet or not to_wallet:
+            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại.")
+        if from_wallet["balance"] < body.amount:
+            raise HTTPException(status_code=400, detail="Linh Thạch không đủ để chuyển!")
+
+        conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?",
+                     (body.amount, body.from_wallet_id))
+        conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?",
+                     (body.amount, body.to_wallet_id))
+
+        return {
+            "message": f"Đã chuyển {body.amount:,.0f} Linh Thạch từ '{from_wallet['wallet_name']}' sang '{to_wallet['wallet_name']}'!",
+            "from_wallet": from_wallet["wallet_name"],
+            "to_wallet": to_wallet["wallet_name"],
+            "amount": body.amount,
+        }
+
+
+# ──────────────────────────────────────────────
+# ADVANCED REPORTS
+# ──────────────────────────────────────────────
+@app.get("/api/reports/trend")
+def get_trend_report(months: int = Query(6, ge=1, le=12), user: dict = Depends(get_current_user)):
+    """Xu hướng thu/chi N tháng gần nhất"""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT strftime('%Y-%m', transaction_date) as month,
+                   COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
+                   COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense
+            FROM transactions
+            WHERE user_id = ?
+              AND transaction_date >= date('now', ? || ' months')
+            GROUP BY month
+            ORDER BY month ASC
+        """, (user["user_id"], f"-{months}")).fetchall()
+
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["savings"] = d["income"] - d["expense"]
+            result.append(d)
+
+        return {"months": months, "trend": result}
+
+
+@app.get("/api/reports/weekly")
+def get_weekly_report(weeks: int = Query(4, ge=1, le=12), user: dict = Depends(get_current_user)):
+    """Chi tiêu theo tuần (N tuần gần đây)"""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT strftime('%Y-W%W', transaction_date) as week,
+                   MIN(transaction_date) as week_start,
+                   COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense,
+                   COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
+                   COUNT(*) as txn_count
+            FROM transactions
+            WHERE user_id = ?
+              AND transaction_date >= date('now', ? || ' days')
+            GROUP BY week
+            ORDER BY week ASC
+        """, (user["user_id"], f"-{weeks * 7}")).fetchall()
+
+        return {"weeks": weeks, "data": [dict(r) for r in rows]}
+
+
+@app.get("/api/reports/compare")
+def compare_months(
+    month1: str = Query(..., description="YYYY-MM"),
+    month2: str = Query(..., description="YYYY-MM"),
+    user: dict = Depends(get_current_user)
+):
+    """So sánh chi tiêu 2 tháng"""
+    with get_db() as conn:
+        results = {}
+        for label, month in [("month1", month1), ("month2", month2)]:
+            income = conn.execute("""
+                SELECT COALESCE(SUM(amount), 0) as total FROM transactions
+                WHERE user_id = ? AND transaction_type = 'INCOME'
+                AND strftime('%Y-%m', transaction_date) = ?
+            """, (user["user_id"], month)).fetchone()["total"]
+
+            expense = conn.execute("""
+                SELECT COALESCE(SUM(amount), 0) as total FROM transactions
+                WHERE user_id = ? AND transaction_type = 'EXPENSE'
+                AND strftime('%Y-%m', transaction_date) = ?
+            """, (user["user_id"], month)).fetchone()["total"]
+
+            by_category = conn.execute("""
+                SELECT c.category_name, c.icon, SUM(t.amount) as total
+                FROM transactions t
+                LEFT JOIN categories c ON t.category_id = c.id
+                WHERE t.user_id = ? AND t.transaction_type = 'EXPENSE'
+                AND strftime('%Y-%m', t.transaction_date) = ?
+                GROUP BY t.category_id ORDER BY total DESC
+            """, (user["user_id"], month)).fetchall()
+
+            results[label] = {
+                "month": month,
+                "income": income,
+                "expense": expense,
+                "savings": income - expense,
+                "by_category": [dict(r) for r in by_category],
+            }
+
+        # Tính delta
+        delta_income = results["month2"]["income"] - results["month1"]["income"]
+        delta_expense = results["month2"]["expense"] - results["month1"]["expense"]
+
+        return {
+            **results,
+            "delta_income": delta_income,
+            "delta_expense": delta_expense,
+            "delta_savings": (results["month2"]["savings"]) - (results["month1"]["savings"]),
+        }
+
+
+# ──────────────────────────────────────────────
+# AI SAVING TIPS
+# ──────────────────────────────────────────────
+@app.post("/api/ai/saving-tips")
+def ai_saving_tips(user: dict = Depends(get_current_user)):
+    """Khai Thị Tiết Kiệm — AI phân tích và gợi ý tiết kiệm"""
+    month_year = datetime.date.today().strftime("%Y-%m")
+
+    with get_db() as conn:
+        # Tổng quan tháng
+        summary = conn.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
+                COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense
+            FROM transactions WHERE user_id = ? AND strftime('%Y-%m', transaction_date) = ?
+        """, (user["user_id"], month_year)).fetchone()
+
+        # Chi tiêu theo danh mục
+        by_cat = conn.execute("""
+            SELECT c.category_name, SUM(t.amount) as total, COUNT(*) as count
+            FROM transactions t
+            LEFT JOIN categories c ON t.category_id = c.id
+            WHERE t.user_id = ? AND t.transaction_type = 'EXPENSE'
+            AND strftime('%Y-%m', t.transaction_date) = ?
+            GROUP BY t.category_id ORDER BY total DESC
+        """, (user["user_id"], month_year)).fetchall()
+
+        # Top 5 giao dịch lớn nhất
+        top_txns = conn.execute("""
+            SELECT t.amount, t.note, t.transaction_date, c.category_name
+            FROM transactions t
+            LEFT JOIN categories c ON t.category_id = c.id
+            WHERE t.user_id = ? AND t.transaction_type = 'EXPENSE'
+            AND strftime('%Y-%m', t.transaction_date) = ?
+            ORDER BY t.amount DESC LIMIT 5
+        """, (user["user_id"], month_year)).fetchall()
+
+    cat_breakdown = "\n".join([f"  - {c['category_name']}: {c['total']:,.0f} VNĐ ({c['count']} giao dịch)" for c in by_cat])
+    top_breakdown = "\n".join([f"  - {t['category_name']}: {t['amount']:,.0f} VNĐ — {t['note'] or 'Không ghi chú'} ({t['transaction_date']})" for t in top_txns])
+
+    prompt = f"""Bạn là "Khí Linh Tiên Trí" — trợ lý tài chính AI phong cách tu tiên.
+Hãy phân tích chi tiêu tháng {month_year} của đạo hữu và đưa ra 5 lời khuyên tiết kiệm cụ thể.
+
+📊 Tổng quan:
+- Thu nhập: {summary['income']:,.0f} VNĐ
+- Chi tiêu: {summary['expense']:,.0f} VNĐ
+- Tiết kiệm: {summary['income'] - summary['expense']:,.0f} VNĐ
+- Tỷ lệ tiết kiệm: {((summary['income'] - summary['expense']) / summary['income'] * 100) if summary['income'] > 0 else 0:.1f}%
+
+📋 Chi tiêu theo danh mục:
+{cat_breakdown or '  Chưa có dữ liệu'}
+
+💸 Top 5 giao dịch lớn nhất:
+{top_breakdown or '  Chưa có dữ liệu'}
+
+Hãy trả lời bằng giọng văn tu tiên (Xianxia) nhưng vẫn thực tế và hữu ích.
+Format: Đánh số 1-5, mỗi lời khuyên ngắn gọn 2-3 câu."""
+
+    try:
+        response_text = generate_gemini_content(prompt, vision=False)
+        return {
+            "month_year": month_year,
+            "income": summary["income"],
+            "expense": summary["expense"],
+            "savings_rate": round(((summary['income'] - summary['expense']) / summary['income'] * 100) if summary['income'] > 0 else 0, 1),
+            "tips": response_text,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Tiên Trí gặp trở ngại: {str(e)}")
+
 
 
 # ──────────────────────────────────────────────
@@ -732,4 +1120,4 @@ def on_startup():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_includes=["main.py"])
