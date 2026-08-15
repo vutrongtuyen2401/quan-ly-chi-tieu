@@ -5,3 +5,5 @@ pyjwt
 bcrypt
 python-dotenv
 google-generativeai
+email-validator
+

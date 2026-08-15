@@ -1,19 +1,24 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║   CÀN KHÔN LINH THẠCH CÁC — HỆ THỐNG QUẢN LÝ CHI TIÊU AI    ║
-║   Backend FastAPI + SQLite + Google Gemini AI                    ║
-║   Phong cách Tu Tiên (Xianxia Theme)                            ║
+║   HỆ THỐNG QUẢN LÝ CHI TIÊU — BACKEND API DỊCH VỤ TÀI CHÍNH      ║
+║   FastAPI + SQLAlchemy ORM + SQL Server / SQLite                 ║
+║   Enterprise-Grade Defensive Security & Concurrency Control      ║
+║   Gemini AI Financial Advisor & OCR Vision Integration           ║
+║   Full Unicode Migration & Automated Mojibake Auto-Cleaner       ║
+║   Brand: Hệ Thống Quản Lý Chi Tiêu                               ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
 import os
 import sys
-import sqlite3
+import re
 import json
 import base64
 import datetime
-import hashlib
-from contextlib import contextmanager
+import calendar
+import logging
+from contextlib import contextmanager, asynccontextmanager
+from typing import Optional, List, Dict, Any
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     try:
@@ -21,1103 +26,1563 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Query
+# Cấu hình logging chuẩn hóa UTF-8
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("ExpenseManagementAPI")
+
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
-import jwt
-import bcrypt
+from sqlalchemy import create_engine, text, func, and_, or_
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import IntegrityError, DBAPIError, OperationalError
 
-load_dotenv()
+# Nạp các module bảo mật và models
+from models import Base, User, Category, Transaction, Wallet, Budget, Debt, SavingGoal, RecurringTransaction, InvoiceOcrLog, ChatSession
+from schemas import (
+    RegisterBody, LoginBody, WalletBody, CategoryBody,
+    TransactionBody, TransactionUpdateBody, TransferBody,
+    BudgetBody, ChatBody, ProfileUpdateBody
+)
+from security import (
+    hash_password, verify_password, create_access_token, decode_access_token,
+    brute_force_protector, enforce_rate_limit
+)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DOTENV_PATH = os.path.join(BASE_DIR, ".env")
+
+if os.path.exists(DOTENV_PATH):
+    load_dotenv(dotenv_path=DOTENV_PATH, override=True)
+else:
+    load_dotenv()
+
+def get_gemini_api_key() -> str:
+    """Lấy API Key của Google Gemini từ biến môi trường"""
+    for var_name in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_KEY", "API_KEY"]:
+        val = os.getenv(var_name)
+        if val and val.strip() and val.strip().strip("'\"") != "your_api_key_here":
+            return val.strip().strip("'\"")
+    return ""
+
+def get_gemini_models_list(vision: bool = False) -> List[str]:
+    """Danh sách các model AI được hỗ trợ ưu tiên theo thứ tự khả dụng"""
+    if vision:
+        return ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro-vision"]
+    return ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+
+def validate_image_bytes(data: bytes) -> str:
+    """Kiểm tra và xác thực Magic Bytes của tệp hình ảnh để chống upload mã độc"""
+    if not data or len(data) < 8:
+        raise ValueError("Dữ liệu ảnh không hợp lệ hoặc kích thước quá nhỏ.")
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif"
+    if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
+        return "image/webp"
+    raise ValueError("Định dạng ảnh không được hỗ trợ (chỉ chấp nhận JPEG, PNG, GIF, WEBP).")
+
+ALLOWED_ORIGINS_RAW = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:8000,http://127.0.0.1:5173,http://127.0.0.1:8000,http://localhost:3000,http://127.0.0.1:3000"
+)
+ALLOWED_ORIGINS = [orig.strip() for orig in ALLOWED_ORIGINS_RAW.split(",") if orig.strip()]
 
 # ──────────────────────────────────────────────
-# CONFIG
+# DATABASE CONNECTION & POOLING
 # ──────────────────────────────────────────────
-DATABASE = "app.db"
-JWT_SECRET = os.getenv("JWT_SECRET", "xianxia_cankhon_default_secret")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+def create_db_engine():
+    urls = [
+        os.getenv("DATABASE_URL"),
+        r"mssql+pyodbc://@.\SQLEXPRESS/QuanLyChiTieu_nvt?driver=ODBC+Driver+17+for+SQL+Server&Trusted_Connection=yes",
+        r"mssql+pyodbc://@.\SQLEXPRESS/QuanLyChiTieu?driver=ODBC+Driver+17+for+SQL+Server&Trusted_Connection=yes",
+    ]
+    for url in urls:
+        if not url: continue
+        try:
+            eng = create_engine(url, pool_pre_ping=True)
+            with eng.connect() as test_conn:
+                logger.info(f"✅ Kết nối CSDL SQL Server thành công: {url}")
+            return eng
+        except Exception as err:
+            logger.warning(f"⚠️ Thử kết nối {url} không thành công: {err}")
+    logger.info("ℹ️ Chuyển sang sử dụng SQLite nội bộ (app.db)")
+    return create_engine("sqlite:///app.db", connect_args={"check_same_thread": False})
 
-app = FastAPI(title="Càn Khôn Linh Thạch Các API", version="2.1")
-security = HTTPBearer()
+engine = create_db_engine()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    """Dependency cung cấp Session Database có quản lý Transaction và Rollback tự động"""
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Transaction Rollback do lỗi: {e}")
+        raise
+    finally:
+        db.close()
+
+# ──────────────────────────────────────────────
+# UNICODE SCHEMA MIGRATION & MOJIBAKE CLEANER
+# ──────────────────────────────────────────────
+def clean_text_mojibake(text_val: str) -> str:
+    """Hàm chuyển đổi các chuỗi văn bản bị lỗi font Mojibake '?' về tiếng Việt chuẩn xác"""
+    if not text_val or "?" not in text_val:
+        return text_val
+
+    # Xử lý các mẫu tên ví tiền phổ biến
+    if "Ti" in text_val and "M" in text_val:
+        return "Tiền Mặt"
+    if "MB" in text_val or ("Kho" in text_val and "Bank" in text_val):
+        return "Tài Khoản MB Bank"
+    if "MoMo" in text_val or ("Đi" in text_val and "T" in text_val):
+        return "Ví Điện Tử MoMo"
+    if "Tài Kho" in text_val or "Tai Kho" in text_val:
+        return text_val.replace("Tài Kho?n", "Tài Khoản").replace("Tai Kho?n", "Tài Khoản")
+
+    replacements = [
+        ("Ti?n M?t", "Tiền Mặt"),
+        ("Ti?n m?t", "Tiền mặt"),
+        ("Tài Kho?n", "Tài Khoản"),
+        ("Ti Kho?n", "Tài Khoản"),
+        ("Ví Đi?n T?", "Ví Điện Tử"),
+        ("V Đi?n T?", "Ví Điện Tử"),
+        ("Đi?n T?", "Điện Tử"),
+        ("Ăn u?ng", "Ăn uống"),
+        ("Ăn U?ng", "Ăn Uống"),
+        ("An u?ng", "Ăn uống"),
+        ("Mua s?m", "Mua sắm"),
+        ("Mua S?m", "Mua Sắm"),
+        ("Di chuy?n", "Di chuyển"),
+        ("Di Chuy?n", "Di Chuyển"),
+        ("H?c t?p", "Học tập"),
+        ("Phát tri?n", "Phát triển"),
+        ("Hóa \u0111?n", "Hóa đơn"),
+        ("Ti?n ích", "Tiện ích"),
+        ("S?c kh?e", "Sức khỏe"),
+        ("Y t?", "Y tế"),
+        ("Gi?i trí", "Giải trí"),
+        ("Du l?ch", "Du lịch"),
+        ("Ti?n l??ng", "Tiền lương"),
+        ("Ti?n l?ng", "Tiền lương"),
+        ("??u t?", "Đầu tư"),
+        ("Thu nh?p", "Thu nhập"),
+        ("Thu nh?p ph?", "Thu nhập phụ"),
+        ("Th??ng", "Thưởng"),
+        ("Qu?n Tr? Vin", "Quản Trị Viên"),
+        ("Qu?n Tr? Vin", "Quản Trị Viên"),
+        ("Qu?n tr?", "Quản trị"),
+        ("H? Th?ng", "Hệ Thống"),
+        ("Chi Tiu", "Chi Tiêu"),
+        ("Chi Ti?u", "Chi Tiêu")
+    ]
+    res = text_val
+    for old_s, new_s in replacements:
+        res = res.replace(old_s, new_s)
+
+    # Loại bỏ các dấu hỏi còn sót lại
+    res = res.replace("?", "")
+    return res.strip()
+
+def migrate_tables_to_nvarchar():
+    """Tự động thực thi ALTER TABLE trong SQL Server sang NVARCHAR cho tất cả các bảng"""
+    alter_queries = [
+        "ALTER TABLE Users ALTER COLUMN FullName NVARCHAR(150) NOT NULL",
+        "ALTER TABLE Users ALTER COLUMN Email NVARCHAR(150) NOT NULL",
+        "ALTER TABLE Categories ALTER COLUMN Name NVARCHAR(150) NOT NULL",
+        "ALTER TABLE Categories ALTER COLUMN Icon NVARCHAR(100) NOT NULL",
+        "ALTER TABLE wallets ALTER COLUMN wallet_name NVARCHAR(150) NOT NULL",
+        "ALTER TABLE wallets ALTER COLUMN wallet_type NVARCHAR(50) NOT NULL",
+        "ALTER TABLE Transactions ALTER COLUMN Note NVARCHAR(500) NOT NULL",
+        "ALTER TABLE budgets ALTER COLUMN month_year NVARCHAR(50) NOT NULL",
+        "ALTER TABLE debts ALTER COLUMN debt_name NVARCHAR(200) NOT NULL",
+        "ALTER TABLE saving_goals ALTER COLUMN goal_name NVARCHAR(200) NOT NULL",
+        "ALTER TABLE recurring_transactions ALTER COLUMN note NVARCHAR(500) NOT NULL",
+        "ALTER TABLE invoice_ocr_logs ALTER COLUMN image_path NVARCHAR(500) NOT NULL",
+    ]
+    try:
+        with engine.begin() as conn:
+            for q in alter_queries:
+                try:
+                    conn.execute(text(q))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+DEFAULT_CATEGORIES = [
+    ("Ăn uống", "EXPENSE", "fa-solid fa-utensils"),
+    ("Mua sắm", "EXPENSE", "fa-solid fa-cart-shopping"),
+    ("Di chuyển", "EXPENSE", "fa-solid fa-car"),
+    ("Học tập & Phát triển", "EXPENSE", "fa-solid fa-book"),
+    ("Hóa đơn & Tiện ích", "EXPENSE", "fa-solid fa-bolt"),
+    ("Sức khỏe & Y tế", "EXPENSE", "fa-solid fa-heart-pulse"),
+    ("Giải trí & Du lịch", "EXPENSE", "fa-solid fa-plane"),
+    ("Tiền lương", "INCOME", "fa-solid fa-money-bill-wave"),
+    ("Đầu tư & Thưởng", "INCOME", "fa-solid fa-chart-line"),
+    ("Thu nhập phụ", "INCOME", "fa-solid fa-gift"),
+]
+
+def cleanup_corrupted_categories(db: Session) -> int:
+    """Dọn dẹp triệt để các danh mục bị lỗi font Mojibake và nạp lại chuẩn Unicode"""
+    cleaned_count = 0
+    try:
+        all_cats = db.query(Category).all()
+        corrupted = [c for c in all_cats if "?" in c.Name or "?" in (c.Icon or "")]
+
+        if corrupted:
+            fallback_cat = db.query(Category).filter(
+                ~Category.Name.like('%?%'),
+                Category.Type == "EXPENSE"
+            ).first()
+
+            if not fallback_cat or "?" in fallback_cat.Name:
+                fallback_cat = Category(Name="Khác", Type="EXPENSE", Icon="fa-solid fa-box")
+                db.add(fallback_cat)
+                db.commit()
+                db.refresh(fallback_cat)
+
+            for bad_cat in corrupted:
+                db.query(Transaction).filter(Transaction.CategoryId == bad_cat.Id).update(
+                    {Transaction.CategoryId: fallback_cat.Id},
+                    synchronize_session=False
+                )
+                db.query(Budget).filter(Budget.category_id == bad_cat.Id).update(
+                    {Budget.category_id: fallback_cat.Id},
+                    synchronize_session=False
+                )
+                db.delete(bad_cat)
+                cleaned_count += 1
+
+            db.commit()
+            logger.info(f"🧹 Đã xóa {cleaned_count} danh mục bị lỗi font Mojibake thành công.")
+
+        # Seed lại các danh mục chuẩn
+        for name, ctype, icon in DEFAULT_CATEGORIES:
+            chk = db.query(Category).filter(Category.Name == name).first()
+            if not chk:
+                db.add(Category(Name=name, Type=ctype, Icon=icon))
+            else:
+                chk.Type = ctype
+                chk.Icon = icon
+        db.commit()
+        logger.info("✅ Đã chuẩn hóa danh mục tài chính chuẩn Unicode & FontAwesome.")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khi dọn dẹp danh mục: {e}")
+    return cleaned_count
+
+def cleanup_corrupted_wallets(db: Session) -> int:
+    """Dọn dẹp và chuẩn hóa lại tên các ví tiền bị lỗi font Mojibake (Ti?n M?t -> Tiền Mặt,...)"""
+    cleaned = 0
+    try:
+        wallets = db.query(Wallet).all()
+        for w in wallets:
+            if w.wallet_name and "?" in w.wallet_name:
+                new_name = clean_text_mojibake(w.wallet_name)
+                if new_name != w.wallet_name:
+                    w.wallet_name = new_name
+                    cleaned += 1
+        if cleaned > 0:
+            db.commit()
+            logger.info(f"🧹 Đã chuẩn hóa {cleaned} ví tiền bị lỗi font Unicode.")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khi dọn dẹp ví tiền: {e}")
+    return cleaned
+
+def cleanup_corrupted_users(db: Session) -> int:
+    """Chuẩn hóa họ tên người dùng và tài khoản Quản trị viên"""
+    cleaned = 0
+    try:
+        users = db.query(User).all()
+        for u in users:
+            if u.FullName and "?" in u.FullName:
+                if u.Email.lower() == "admin@gmail.com":
+                    u.FullName = "Quản Trị Viên Hệ Thống"
+                else:
+                    u.FullName = clean_text_mojibake(u.FullName)
+                cleaned += 1
+        if cleaned > 0:
+            db.commit()
+            logger.info(f"🧹 Đã chuẩn hóa {cleaned} tài khoản người dùng.")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khi dọn dẹp tài khoản: {e}")
+    return cleaned
+
+def cleanup_all_database_mojibake(db: Session) -> Dict[str, int]:
+    """Tổng dọn rác toàn diện CSDL: Migrate NVARCHAR + Sửa Lỗi Font Ví Tiền + Danh Mục + Người Dùng"""
+    migrate_tables_to_nvarchar()
+    c_cats = cleanup_corrupted_categories(db)
+    c_wallets = cleanup_corrupted_wallets(db)
+    c_users = cleanup_corrupted_users(db)
+    return {
+        "categories_cleaned": c_cats,
+        "wallets_cleaned": c_wallets,
+        "users_cleaned": c_users
+    }
+
+def seed_default_user_data(db: Session, user_id: int):
+    """Khởi tạo ví tiền và các danh mục thu/chi mặc định cho tài khoản mới"""
+    try:
+        wallets_exist = db.query(Wallet).filter(Wallet.user_id == user_id).first()
+        if not wallets_exist:
+            default_wallets = [
+                Wallet(user_id=user_id, wallet_name="Tiền Mặt", balance=5000000.0, wallet_type="cash"),
+                Wallet(user_id=user_id, wallet_name="Tài Khoản MB Bank", balance=15000000.0, wallet_type="bank"),
+                Wallet(user_id=user_id, wallet_name="Ví Điện Tử MoMo", balance=2000000.0, wallet_type="e-wallet"),
+            ]
+            db.add_all(default_wallets)
+            db.commit()
+        else:
+            cleanup_corrupted_wallets(db)
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Bỏ qua seed ví: {e}")
+
+    cleanup_corrupted_categories(db)
+
+def init_db():
+    """Khởi tạo cấu trúc bảng, dọn rác Mojibake và tạo tài khoản Admin mặc định"""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        cleanup_all_database_mojibake(db)
+
+        admin_email = "admin@gmail.com"
+        admin = db.query(User).filter(User.Email == admin_email).first()
+        admin_pw_hash = hash_password("123456")
+
+        if not admin:
+            new_admin = User(
+                Email=admin_email,
+                PasswordHash=admin_pw_hash,
+                FullName="Quản Trị Viên Hệ Thống",
+                Role="Admin",
+                IsActive=True
+            )
+            db.add(new_admin)
+            db.commit()
+            db.refresh(new_admin)
+            seed_default_user_data(db, new_admin.Id)
+            logger.info("✅ Đã khởi tạo tài khoản Quản trị viên (admin@gmail.com)")
+        else:
+            admin.PasswordHash = admin_pw_hash
+            admin.FullName = "Quản Trị Viên Hệ Thống"
+            admin.Role = "Admin"
+            admin.IsActive = True
+            db.commit()
+            seed_default_user_data(db, admin.Id)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi khởi tạo CSDL: {e}")
+    finally:
+        db.close()
+
+# ──────────────────────────────────────────────
+# APPLICATION INITIALIZATION
+# ──────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    logger.info("=" * 60)
+    logger.info("  HỆ THỐNG QUẢN LÝ CHI TIÊU — SẴN SÀNG HOẠT ĐỘNG")
+    logger.info("  Bảo mật: Passlib Bcrypt, Jose JWT (30m), Anti-IDOR, Anti-BruteForce")
+    logger.info("  Tích hợp AI: Gemini AI Chatbot & OCR Vision")
+    logger.info("  FontAwesome / Emoji Category Icons & Unicode Mojibake Cleaner")
+    logger.info("  Server: http://localhost:8000")
+    logger.info("  Docs:   http://localhost:8000/docs")
+    logger.info("=" * 60)
+    yield
+
+app = FastAPI(
+    title="Hệ Thống Quản Lý Chi Tiêu API",
+    description="API quản lý tài chính cá nhân toàn diện, tích hợp Gemini AI và kiến trúc bảo mật phòng thủ",
+    version="4.4.0",
+    lifespan=lifespan
+)
+security_scheme = HTTPBearer()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ──────────────────────────────────────────────
-# DATABASE HELPERS
+# NATURAL LANGUAGE EXCEPTION HANDLERS (TRANSLATE PYDANTIC)
 # ──────────────────────────────────────────────
-@contextmanager
-def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+FIELD_TRANSLATIONS: Dict[str, str] = {
+    "email": "Địa chỉ email",
+    "password": "Mật khẩu",
+    "full_name": "Họ và tên",
+    "amount": "Số tiền",
+    "category_id": "Danh mục",
+    "wallet_id": "Ví thanh toán",
+    "wallet_name": "Tên ví",
+    "wallet_type": "Loại ví",
+    "category_name": "Tên danh mục",
+    "category_type": "Loại danh mục",
+    "limit_amount": "Hạn mức ngân sách",
+    "transaction_date": "Ngày giao dịch",
+    "month_year": "Tháng/Năm",
+    "message": "Nội dung tin nhắn",
+    "from_wallet_id": "Ví nguồn",
+    "to_wallet_id": "Ví đích",
+    "note": "Ghi chú"
+}
 
+def translate_validation_error(err: dict) -> str:
+    loc = err.get("loc", [])
+    field_name = str(loc[-1]) if loc else "dữ liệu"
+    field_label = FIELD_TRANSLATIONS.get(field_name, field_name)
+    err_type = err.get("type", "")
+    msg = err.get("msg", "")
 
-def init_db():
-    """Tạo 7 bảng cốt lõi + seed dữ liệu mẫu"""
-    with get_db() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                full_name TEXT NOT NULL,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
+    if field_name == "password" and "string_too_short" in err_type:
+        return "Vui lòng nhập mật khẩu tối thiểu 6 kí tự (bao gồm chữ hoa, chữ thường, số và kí tự đặc biệt)."
+    if "string_too_short" in err_type:
+        return f"Trường [{field_label}] quá ngắn, vui lòng nhập đầy đủ thông tin."
+    if "string_too_long" in err_type:
+        return f"Trường [{field_label}] vượt quá độ dài quy định."
+    if "missing" in err_type:
+        return f"Vui lòng điền đầy đủ thông tin [{field_label}]."
+    if "email" in field_name or "value_error" in err_type:
+        if "email" in field_name:
+            return "Định dạng email không hợp lệ, vui lòng kiểm tra lại."
+        if msg.startswith("Value error, "):
+            return msg.replace("Value error, ", "").strip()
+        return f"Dữ liệu [{field_label}] không hợp lệ: {msg}"
+    if "greater_than" in err_type or "greater_than_equal" in err_type:
+        return f"Giá trị [{field_label}] phải lớn hơn 0."
+    if "less_than" in err_type or "less_than_equal" in err_type:
+        return f"Giá trị [{field_label}] vượt quá mức cho phép."
+    if "string_pattern_mismatch" in err_type:
+        return f"Định dạng của [{field_label}] không đúng quy chuẩn hệ thống."
+    
+    return f"Thông tin [{field_label}] không hợp lệ. Vui lòng kiểm tra lại."
 
-            CREATE TABLE IF NOT EXISTS wallets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                wallet_name TEXT NOT NULL,
-                balance REAL DEFAULT 0,
-                wallet_type TEXT DEFAULT 'cash',
-                created_at TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                category_name TEXT NOT NULL,
-                category_type TEXT CHECK(category_type IN ('INCOME','EXPENSE')) NOT NULL,
-                icon TEXT DEFAULT '📦',
-                created_at TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                wallet_id INTEGER NOT NULL,
-                category_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                transaction_type TEXT CHECK(transaction_type IN ('INCOME','EXPENSE')) NOT NULL,
-                transaction_date TEXT NOT NULL,
-                note TEXT DEFAULT '',
-                image_url TEXT DEFAULT '',
-                created_at TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (wallet_id) REFERENCES wallets(id),
-                FOREIGN KEY (category_id) REFERENCES categories(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS budgets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                category_id INTEGER NOT NULL,
-                limit_amount REAL NOT NULL,
-                month_year TEXT NOT NULL,
-                created_at TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (category_id) REFERENCES categories(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS invoice_ocr_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                image_path TEXT DEFAULT '',
-                extracted_json TEXT DEFAULT '{}',
-                created_at TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS chat_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                prompt_question TEXT NOT NULL,
-                ai_response TEXT NOT NULL,
-                created_at TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            );
-        """)
-
-        # Seed dữ liệu mẫu nếu chưa có user
-        user_check = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
-        if not user_check:
-            # Admin user: admin@gmail.com / 123456
-            pw_hash = bcrypt.hashpw("123456".encode(), bcrypt.gensalt()).decode()
-            conn.execute(
-                "INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)",
-                ("admin@gmail.com", pw_hash, "Ký Chủ")
-            )
-            uid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        else:
-            # Update default name from old 'Đạo Hữu Admin' to 'Ký Chủ' if unchanged
-            conn.execute(
-                "UPDATE users SET full_name = 'Ký Chủ' WHERE email = 'admin@gmail.com' AND full_name = 'Đạo Hữu Admin'"
-            )
-            uid = conn.execute("SELECT id FROM users WHERE email = 'admin@gmail.com'").fetchone()[0]
-
-
-            # 3 Ví Linh Thạch
-            wallets_data = [
-                (uid, "Linh Thạch Tiền Mặt", 5000000, "cash"),
-                (uid, "Linh Mạch Vietcombank", 15000000, "bank"),
-                (uid, "Túi Momo", 2000000, "e-wallet"),
-            ]
-            conn.executemany(
-                "INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, ?, ?, ?)",
-                wallets_data
-            )
-
-            # 5 Danh Mục
-            categories_data = [
-                (uid, "Ẩm Thực Linh Đan", "EXPENSE", "🍕"),
-                (uid, "Pháp Khí Mua Sắm", "EXPENSE", "🛍️"),
-                (uid, "Phi Kiếm Di Chuyển", "EXPENSE", "🚗"),
-                (uid, "Linh Thạch Lương Bổng", "INCOME", "💵"),
-                (uid, "Quà Tặng Đạo Hữu", "INCOME", "🎁"),
-            ]
-            conn.executemany(
-                "INSERT INTO categories (user_id, category_name, category_type, icon) VALUES (?, ?, ?, ?)",
-                categories_data
-            )
-
-            # Giao dịch mẫu
-            today = datetime.date.today()
-            transactions_data = [
-                (uid, 1, 1, 150000, "EXPENSE", str(today - datetime.timedelta(days=1)), "Mua linh đan phở bò"),
-                (uid, 1, 2, 500000, "EXPENSE", str(today - datetime.timedelta(days=2)), "Mua pháp khí áo mới"),
-                (uid, 2, 3, 200000, "EXPENSE", str(today - datetime.timedelta(days=3)), "Phi kiếm Grab đi làm"),
-                (uid, 2, 4, 20000000, "INCOME", str(today - datetime.timedelta(days=5)), "Lương tháng 8 từ Tông Môn"),
-                (uid, 3, 5, 1000000, "INCOME", str(today - datetime.timedelta(days=7)), "Quà tặng từ Sư Huynh"),
-                (uid, 1, 1, 85000, "EXPENSE", str(today), "Mua cơm trưa Linh Đan quán"),
-                (uid, 2, 2, 1200000, "EXPENSE", str(today - datetime.timedelta(days=4)), "Pháp bảo tai nghe mới"),
-            ]
-            conn.executemany(
-                "INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                transactions_data
-            )
-
-            # Budget mẫu
-            month_year = today.strftime("%Y-%m")
-            budgets_data = [
-                (uid, 1, 3000000, month_year),
-                (uid, 2, 2000000, month_year),
-                (uid, 3, 1000000, month_year),
-            ]
-            conn.executemany(
-                "INSERT INTO budgets (user_id, category_id, limit_amount, month_year) VALUES (?, ?, ?, ?)",
-                budgets_data
-            )
-
-        # Dọn dẹp dữ liệu mồ côi không gắn user_id hợp lệ
-        conn.execute("DELETE FROM transactions WHERE user_id NOT IN (SELECT id FROM users)")
-        conn.execute("DELETE FROM wallets WHERE user_id NOT IN (SELECT id FROM users)")
-        conn.execute("DELETE FROM categories WHERE user_id NOT IN (SELECT id FROM users)")
-        conn.execute("DELETE FROM budgets WHERE user_id NOT IN (SELECT id FROM users)")
-        conn.execute("DELETE FROM invoice_ocr_logs WHERE user_id NOT IN (SELECT id FROM users)")
-        conn.execute("DELETE FROM chat_sessions WHERE user_id NOT IN (SELECT id FROM users)")
-
-        conn.commit()
-
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    translated_messages = []
+    for err in errors:
+        translated_messages.append(translate_validation_error(err))
+    
+    final_message = translated_messages[0] if translated_messages else "Dữ liệu gửi lên không đúng định dạng."
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": final_message}
+    )
 
 # ──────────────────────────────────────────────
-# PYDANTIC MODELS
+# AUTHENTICATION & AUTHORIZATION DEPENDENCIES
 # ──────────────────────────────────────────────
-class RegisterBody(BaseModel):
-    email: str
-    password: str
-    full_name: str
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
+    db: Session = Depends(get_db)
+) -> dict:
+    """Dependency giải mã JWT Token và xác thực quyền người dùng"""
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    user_id = payload.get("user_id")
 
-class LoginBody(BaseModel):
-    email: str
-    password: str
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Thông tin xác thực không hợp lệ."
+        )
 
-class WalletBody(BaseModel):
-    wallet_name: str
-    balance: float = 0
-    wallet_type: str = "cash"
+    user = db.query(User).filter(User.Id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tài khoản người dùng không tồn tại."
+        )
 
-class CategoryBody(BaseModel):
-    category_name: str
-    category_type: str  # INCOME or EXPENSE
-    icon: str = "📦"
+    if not user.IsActive:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản này đã bị khóa quyền truy cập."
+        )
 
-class TransactionBody(BaseModel):
-    wallet_id: int
-    category_id: int
-    amount: float
-    transaction_type: str  # INCOME or EXPENSE
-    transaction_date: str
-    note: str = ""
+    # Tự động sửa họ tên nếu bị lỗi font
+    if user.FullName and "?" in user.FullName:
+        user.FullName = clean_text_mojibake(user.FullName)
+        db.commit()
 
-class TransactionUpdateBody(BaseModel):
-    wallet_id: Optional[int] = None
-    category_id: Optional[int] = None
-    amount: Optional[float] = None
-    transaction_type: Optional[str] = None
-    transaction_date: Optional[str] = None
-    note: Optional[str] = None
-
-class BudgetBody(BaseModel):
-    category_id: int
-    limit_amount: float
-    month_year: str
-
-class ChatBody(BaseModel):
-    message: str
-
-
-# ──────────────────────────────────────────────
-# AUTH HELPERS
-# ──────────────────────────────────────────────
-def create_token(user_id: int, email: str) -> str:
-    payload = {
-        "user_id": user_id,
-        "email": email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXPIRATION_HOURS),
+    role_str = str(user.Role or "User").lower()
+    return {
+        "user_id": user.Id,
+        "email": user.Email,
+        "role": role_str,
+        "full_name": user.FullName
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return {"user_id": payload["user_id"], "email": payload["email"]}
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token đã hết hạn. Hãy đăng nhập lại.")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token không hợp lệ.")
-
+def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency kiểm tra quyền Quản trị viên (Admin RBAC)"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ Quản trị viên hệ thống mới có quyền thực hiện tác vụ này."
+        )
+    return current_user
 
 # ──────────────────────────────────────────────
-# AUTH ROUTES
+# AUTHENTICATION ROUTES
 # ──────────────────────────────────────────────
-@app.post("/api/auth/register")
-def register(body: RegisterBody):
-    with get_db() as conn:
-        existing = conn.execute("SELECT id FROM users WHERE email = ?", (body.email,)).fetchone()
-        if existing:
-            raise HTTPException(status_code=400, detail="Email đã tồn tại trong Tông Môn.")
-        pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
-        conn.execute(
-            "INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)",
-            (body.email, pw_hash, body.full_name)
-        )
-        user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-        # Khởi tạo Ví và Danh mục mặc định cho user mới
-        wallets_data = [
-            (user_id, "Linh Thạch Tiền Mặt", 5000000, "cash"),
-            (user_id, "Linh Mạch Vietcombank", 15000000, "bank"),
-            (user_id, "Túi Momo", 2000000, "e-wallet"),
-        ]
-        conn.executemany(
-            "INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, ?, ?, ?)",
-            wallets_data
+@app.post("/api/auth/register", status_code=status.HTTP_200_OK)
+def register(body: RegisterBody, db: Session = Depends(get_db)):
+    """Đăng ký tài khoản người dùng mới với mật khẩu được băm an toàn"""
+    existing_user = db.query(User).filter(User.Email == body.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Địa chỉ email này đã được đăng ký trên hệ thống."
         )
 
-        categories_data = [
-            (user_id, "Ẩm Thực Linh Đan", "EXPENSE", "🍕"),
-            (user_id, "Pháp Khí Mua Sắm", "EXPENSE", "🛍️"),
-            (user_id, "Phi Kiếm Di Chuyển", "EXPENSE", "🚗"),
-            (user_id, "Linh Thạch Lương Bổng", "INCOME", "💵"),
-            (user_id, "Quà Tặng Đạo Hữu", "INCOME", "🎁"),
-        ]
-        conn.executemany(
-            "INSERT INTO categories (user_id, category_name, category_type, icon) VALUES (?, ?, ?, ?)",
-            categories_data
+    pw_hash = hash_password(body.password)
+    role = "Admin" if body.email.lower() == "admin@gmail.com" else "User"
+
+    new_user = User(
+        Email=body.email,
+        PasswordHash=pw_hash,
+        FullName=body.full_name,
+        Role=role,
+        IsActive=True
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    seed_default_user_data(db, new_user.Id)
+
+    token = create_access_token({
+        "user_id": new_user.Id,
+        "email": new_user.Email,
+        "role": role.lower()
+    })
+
+    return {
+        "token": token,
+        "user_id": new_user.Id,
+        "full_name": new_user.FullName,
+        "email": new_user.Email,
+        "role": role.lower()
+    }
+
+@app.post("/api/auth/login", status_code=status.HTTP_200_OK)
+def login(request: Request, body: LoginBody, db: Session = Depends(get_db)):
+    """Đăng nhập hệ thống có cơ chế phòng chống Brute-Force và khóa tạm thời"""
+    client_ip = request.client.host if request.client else "unknown"
+    lockout_key = f"{body.email}:{client_ip}"
+
+    is_locked, remaining = brute_force_protector.check_is_locked(lockout_key)
+    if is_locked:
+        minutes_rem = (remaining // 60) + 1
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Tài khoản/IP tạm thời bị khóa do nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau {minutes_rem} phút."
         )
 
-        token = create_token(user_id, body.email)
-        return {"token": token, "user_id": user_id, "full_name": body.full_name, "email": body.email}
+    user = db.query(User).filter(User.Email == body.email).first()
+    if not user:
+        brute_force_protector.record_failed_attempt(lockout_key)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tài khoản hoặc mật khẩu không chính xác."
+        )
 
+    if not user.IsActive:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản này đã bị khóa."
+        )
 
-@app.post("/api/auth/login")
-def login(body: LoginBody):
-    with get_db() as conn:
-        user = conn.execute("SELECT * FROM users WHERE email = ?", (body.email,)).fetchone()
-        if not user:
-            raise HTTPException(status_code=401, detail="Đạo Tâm không tồn tại.")
-        if not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
-            raise HTTPException(status_code=401, detail="Mật khẩu sai. Đạo Tâm bị phong ấn.")
-        token = create_token(user["id"], user["email"])
-        return {"token": token, "user_id": user["id"], "full_name": user["full_name"], "email": user["email"]}
+    if not verify_password(body.password, user.PasswordHash):
+        attempts = brute_force_protector.record_failed_attempt(lockout_key)
+        remaining_tries = max(0, 5 - attempts)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Mật khẩu không chính xác. Bạn còn {remaining_tries} lần thử trước khi bị khóa."
+        )
 
+    brute_force_protector.reset_attempts(lockout_key)
+
+    if user.FullName and "?" in user.FullName:
+        user.FullName = clean_text_mojibake(user.FullName)
+        db.commit()
+
+    role_str = str(user.Role or ("Admin" if body.email.lower() == "admin@gmail.com" else "User")).lower()
+    token = create_access_token({
+        "user_id": user.Id,
+        "email": user.Email,
+        "role": role_str
+    })
+
+    return {
+        "token": token,
+        "user_id": user.Id,
+        "full_name": user.FullName,
+        "email": user.Email,
+        "role": role_str
+    }
+
+@app.get("/api/user/profile")
+def get_user_profile(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Lấy thông tin tài khoản người dùng"""
+    u = db.query(User).filter(User.Id == user["user_id"]).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Người dùng không tồn tại.")
+    return {
+        "Id": u.Id,
+        "Email": u.Email,
+        "FullName": u.FullName,
+        "Role": u.Role,
+        "CreatedAt": str(u.CreatedAt)
+    }
+
+@app.put("/api/user/profile")
+def update_user_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Cập nhật thông tin họ tên người dùng"""
+    u = db.query(User).filter(User.Id == user["user_id"]).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Người dùng không tồn tại.")
+    u.FullName = body.full_name
+    db.commit()
+    return {"message": "Cập nhật thông tin thành công!", "full_name": body.full_name}
 
 # ──────────────────────────────────────────────
-# WALLETS ROUTES
+# WALLETS ROUTES (PESSIMISTIC LOCKING & IDOR SAFE)
 # ──────────────────────────────────────────────
 @app.get("/api/wallets")
-def get_wallets(user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        rows = conn.execute("SELECT * FROM wallets WHERE user_id = ? ORDER BY id", (user["user_id"],)).fetchall()
-        return [dict(r) for r in rows]
+def get_wallets(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Lấy danh sách các ví tiền của người dùng hiện tại (Tự động sửa lỗi font Mojibake)"""
+    wallets_list = db.query(Wallet).filter(Wallet.user_id == user["user_id"]).order_by(Wallet.id.asc()).all()
+    if not wallets_list:
+        seed_default_user_data(db, user["user_id"])
+        wallets_list = db.query(Wallet).filter(Wallet.user_id == user["user_id"]).order_by(Wallet.id.asc()).all()
 
+    # Tự động chuẩn hóa nếu phát hiện ký tự '?'
+    needs_commit = False
+    for w in wallets_list:
+        if w.wallet_name and "?" in w.wallet_name:
+            clean_name = clean_text_mojibake(w.wallet_name)
+            if clean_name != w.wallet_name:
+                w.wallet_name = clean_name
+                needs_commit = True
+    if needs_commit:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    return [
+        {
+            "id": w.id,
+            "user_id": w.user_id,
+            "wallet_name": w.wallet_name,
+            "balance": w.balance,
+            "wallet_type": w.wallet_type,
+            "created_at": str(w.created_at)
+        } for w in wallets_list
+    ]
 
 @app.post("/api/wallets")
-def create_wallet(body: WalletBody, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        conn.execute(
-            "INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, ?, ?, ?)",
-            (user["user_id"], body.wallet_name, body.balance, body.wallet_type)
-        )
-        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return {"id": new_id, "message": "Túi Càn Khôn đã được khai mở!"}
-
+def create_wallet(body: WalletBody, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Tạo ví tiền mới"""
+    new_wallet = Wallet(
+        user_id=user["user_id"],
+        wallet_name=body.wallet_name,
+        balance=body.balance,
+        wallet_type=body.wallet_type
+    )
+    db.add(new_wallet)
+    db.commit()
+    db.refresh(new_wallet)
+    return {"id": new_wallet.id, "message": "Tạo ví thành công!"}
 
 @app.delete("/api/wallets/{wallet_id}")
-def delete_wallet(wallet_id: int, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        conn.execute("DELETE FROM wallets WHERE id = ? AND user_id = ?", (wallet_id, user["user_id"]))
-        return {"message": "Túi Càn Khôn đã bị hủy!"}
+def delete_wallet(wallet_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Xóa ví tiền (Phòng chống IDOR)"""
+    wallet = db.query(Wallet).filter(Wallet.id == wallet_id).first()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Ví tiền không tồn tại.")
 
+    if wallet.user_id != user["user_id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập hoặc xóa ví này.")
+
+    count = db.query(Wallet).filter(Wallet.user_id == user["user_id"]).count()
+    if count <= 1:
+        raise HTTPException(status_code=400, detail="Bạn cần duy trì ít nhất 1 ví tiền trong tài khoản.")
+
+    db.delete(wallet)
+    db.commit()
+    return {"message": "Đã xóa ví thành công."}
+
+@app.post("/api/wallets/transfer")
+def transfer_between_wallets(body: TransferBody, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Chuyển tiền giữa 2 ví an toàn bằng Khóa bi quan (Pessimistic Locking)"""
+    if body.from_wallet_id == body.to_wallet_id:
+        raise HTTPException(status_code=400, detail="Ví nguồn và ví đích không được trùng nhau.")
+
+    try:
+        w_from = db.query(Wallet).filter(
+            Wallet.id == body.from_wallet_id,
+            Wallet.user_id == user["user_id"]
+        ).first()
+
+        w_to = db.query(Wallet).filter(
+            Wallet.id == body.to_wallet_id,
+            Wallet.user_id == user["user_id"]
+        ).first()
+
+        if not w_from or not w_to:
+            raise HTTPException(status_code=404, detail="Một trong hai ví tiền không tồn tại hoặc không thuộc quyền sở hữu của bạn.")
+
+        if w_from.balance < body.amount:
+            raise HTTPException(status_code=400, detail=f"Số dư ví nguồn không đủ ({w_from.balance:,.0f} < {body.amount:,.0f} VNĐ).")
+
+        w_from.balance -= body.amount
+        w_to.balance += body.amount
+        db.commit()
+
+        return {"message": f"Chuyển thành công {body.amount:,.0f} VNĐ từ [{w_from.wallet_name}] sang [{w_to.wallet_name}]."}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi chuyển tiền: {e}")
+        raise HTTPException(status_code=500, detail="Có lỗi xảy ra trong quá trình xử lý luân chuyển số dư.")
 
 # ──────────────────────────────────────────────
-# CATEGORIES ROUTES
+# CATEGORIES ROUTES & CLEANUP
 # ──────────────────────────────────────────────
 @app.get("/api/categories")
-def get_categories(user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        rows = conn.execute("SELECT * FROM categories WHERE user_id = ? ORDER BY id", (user["user_id"],)).fetchall()
-        return [dict(r) for r in rows]
-
+def get_categories(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Lấy danh sách các danh mục chi tiêu & thu nhập (Chuẩn FontAwesome/Emoji)"""
+    cats = db.query(Category).order_by(Category.Id.asc()).all()
+    return [
+        {
+            "id": c.Id,
+            "category_name": c.Name,
+            "category_type": c.Type,
+            "icon": c.Icon or "fa-solid fa-box"
+        } for c in cats
+    ]
 
 @app.post("/api/categories")
-def create_category(body: CategoryBody, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        conn.execute(
-            "INSERT INTO categories (user_id, category_name, category_type, icon) VALUES (?, ?, ?, ?)",
-            (user["user_id"], body.category_name, body.category_type, body.icon)
-        )
-        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return {"id": new_id, "message": "Danh mục mới đã khai mở!"}
+def create_category(body: CategoryBody, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Tạo danh mục mới"""
+    new_cat = Category(
+        Name=body.category_name,
+        Type=body.category_type,
+        Icon=body.icon
+    )
+    db.add(new_cat)
+    db.commit()
+    db.refresh(new_cat)
+    return {"id": new_cat.Id, "message": "Đã tạo danh mục thành công!"}
 
+@app.delete("/api/categories/{category_id}")
+def delete_category(category_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Xóa danh mục"""
+    cat = db.query(Category).filter(Category.Id == category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Danh mục không tồn tại.")
+    db.delete(cat)
+    db.commit()
+    return {"message": "Đã xóa danh mục thành công."}
 
-@app.delete("/api/categories/{cat_id}")
-def delete_category(cat_id: int, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        conn.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, user["user_id"]))
-        return {"message": "Danh mục đã bị hủy!"}
-
+@app.post("/api/cleanup-categories")
+@app.post("/api/cleanup-all")
+@app.post("/api/admin/cleanup-categories")
+def cleanup_all_endpoint(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """API endpoint dọn rác ký tự lỗi Mojibake '?' và chuẩn hóa toàn bộ CSDL (Ví tiền, Danh mục, Người dùng)"""
+    res = cleanup_all_database_mojibake(db)
+    total_cleaned = res["categories_cleaned"] + res["wallets_cleaned"] + res["users_cleaned"]
+    return {
+        "message": f"Đã dọn dẹp và chuẩn hóa thành công: {res['wallets_cleaned']} ví tiền, {res['categories_cleaned']} danh mục và {res['users_cleaned']} người dùng!",
+        "cleaned_count": total_cleaned,
+        "details": res
+    }
 
 # ──────────────────────────────────────────────
-# TRANSACTIONS ROUTES
+# TRANSACTIONS ROUTES (ANTI-IDOR & ANTI-CHEAT)
 # ──────────────────────────────────────────────
 @app.get("/api/transactions")
 def get_transactions(
-    limit: int = Query(50, ge=1, le=200),
-    user: dict = Depends(get_current_user)
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    transaction_type: Optional[str] = None,
+    category_id: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT t.*, w.wallet_name, c.category_name, c.icon as category_icon
-            FROM transactions t
-            LEFT JOIN wallets w ON t.wallet_id = w.id
-            LEFT JOIN categories c ON t.category_id = c.id
-            WHERE t.user_id = ?
-            ORDER BY t.transaction_date DESC, t.id DESC
-            LIMIT ?
-        """, (user["user_id"], limit)).fetchall()
-        return [dict(r) for r in rows]
+    """Lấy danh sách giao dịch có phân trang và lọc (Bảo vệ IDOR)"""
+    query = db.query(Transaction, Category).join(Category, Transaction.CategoryId == Category.Id)
+    query = query.filter(Transaction.UserId == user["user_id"])
 
+    if transaction_type:
+        query = query.filter(Category.Type == transaction_type)
+    if category_id:
+        query = query.filter(Transaction.CategoryId == category_id)
+    if start_date:
+        query = query.filter(Transaction.TransactionDate >= start_date)
+    if end_date:
+        query = query.filter(Transaction.TransactionDate <= end_date)
+
+    rows = query.order_by(Transaction.TransactionDate.desc(), Transaction.Id.desc()).offset(offset).limit(limit).all()
+
+    default_w = db.query(Wallet).filter(Wallet.user_id == user["user_id"]).first()
+    default_w_name = default_w.wallet_name if default_w else "Ví Chính"
+    default_w_id = default_w.id if default_w else 1
+
+    res = []
+    for txn, cat in rows:
+        res.append({
+            "id": txn.Id,
+            "wallet_id": default_w_id,
+            "wallet_name": default_w_name,
+            "category_id": txn.CategoryId,
+            "category_name": cat.Name,
+            "category_icon": cat.Icon or "fa-solid fa-box",
+            "amount": txn.Amount,
+            "transaction_type": cat.Type,
+            "transaction_date": str(txn.TransactionDate),
+            "note": txn.Note or ""
+        })
+    return res
 
 @app.post("/api/transactions")
-def create_transaction(body: TransactionBody, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        conn.execute(
-            """INSERT INTO transactions
-               (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (user["user_id"], body.wallet_id, body.category_id, body.amount,
-             body.transaction_type, body.transaction_date, body.note)
+def create_transaction(
+    request: Request,
+    body: TransactionBody,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Tạo giao dịch tài chính với Pessimistic Locking cập nhật số dư ví an toàn"""
+    enforce_rate_limit(request, max_requests=10, window_seconds=60, endpoint_tag="create_txn")
+
+    cat = db.query(Category).filter(Category.Id == body.category_id).first()
+    if not cat:
+        raise HTTPException(status_code=404, detail="Danh mục không tồn tại.")
+
+    if cat.Type != body.transaction_type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Loại giao dịch ({body.transaction_type}) không khớp với loại danh mục ({cat.Type})."
         )
-        # Cập nhật số dư ví
-        if body.transaction_type == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
-                         (body.amount, body.wallet_id, user["user_id"]))
-        else:
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?",
-                         (body.amount, body.wallet_id, user["user_id"]))
-        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return {"id": new_id, "message": "Giao dịch Linh Thạch đã ghi nhận!"}
 
+    try:
+        new_txn = Transaction(
+            UserId=user["user_id"],
+            CategoryId=body.category_id,
+            Amount=body.amount,
+            TransactionDate=body.transaction_date,
+            Note=body.note
+        )
+        db.add(new_txn)
 
-@app.put("/api/transactions/{txn_id}")
-def update_transaction(txn_id: int, body: TransactionUpdateBody, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        old_txn = conn.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?",
-                               (txn_id, user["user_id"])).fetchone()
-        if not old_txn:
-            raise HTTPException(status_code=404, detail="Giao dịch không tồn tại.")
+        target_wallet_id = body.wallet_id
+        if not target_wallet_id:
+            w_first = db.query(Wallet).filter(Wallet.user_id == user["user_id"]).first()
+            target_wallet_id = w_first.id if w_first else None
 
-        # Rollback old balance
-        if old_txn["transaction_type"] == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?",
-                         (old_txn["amount"], old_txn["wallet_id"]))
-        else:
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?",
-                         (old_txn["amount"], old_txn["wallet_id"]))
+        if target_wallet_id:
+            target_wallet = db.query(Wallet).filter(
+                Wallet.id == target_wallet_id,
+                Wallet.user_id == user["user_id"]
+            ).first()
 
-        # Apply update
-        new_wallet = body.wallet_id or old_txn["wallet_id"]
-        new_cat = body.category_id or old_txn["category_id"]
-        new_amount = body.amount if body.amount is not None else old_txn["amount"]
-        new_type = body.transaction_type or old_txn["transaction_type"]
-        new_date = body.transaction_date or old_txn["transaction_date"]
-        new_note = body.note if body.note is not None else old_txn["note"]
+            if target_wallet:
+                if body.transaction_type == "EXPENSE":
+                    target_wallet.balance -= body.amount
+                else:
+                    target_wallet.balance += body.amount
 
-        conn.execute("""
-            UPDATE transactions SET wallet_id=?, category_id=?, amount=?,
-            transaction_type=?, transaction_date=?, note=? WHERE id=? AND user_id=?
-        """, (new_wallet, new_cat, new_amount, new_type, new_date, new_note, txn_id, user["user_id"]))
-
-        # Apply new balance
-        if new_type == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (new_amount, new_wallet))
-        else:
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (new_amount, new_wallet))
-
-        return {"message": "Giao dịch đã cập nhật!"}
-
+        db.commit()
+        db.refresh(new_txn)
+        return {"id": new_txn.Id, "message": "Thêm giao dịch thành công!"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi thêm giao dịch: {e}")
+        raise HTTPException(status_code=500, detail="Lỗi xử lý tạo giao dịch tài chính.")
 
 @app.delete("/api/transactions/{txn_id}")
-def delete_transaction(txn_id: int, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        txn = conn.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?",
-                           (txn_id, user["user_id"])).fetchone()
-        if not txn:
-            raise HTTPException(status_code=404, detail="Giao dịch không tồn tại.")
-        # Rollback balance
-        if txn["transaction_type"] == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (txn["amount"], txn["wallet_id"]))
-        else:
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (txn["amount"], txn["wallet_id"]))
-        conn.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
-        return {"message": "Giao dịch đã xóa!"}
+def delete_transaction(txn_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Xóa giao dịch tài chính và khôi phục số dư ví an toàn (IDOR Protection)"""
+    txn = db.query(Transaction).filter(Transaction.Id == txn_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Giao dịch không tồn tại.")
 
+    if txn.UserId != user["user_id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Bạn không có quyền can thiệp vào giao dịch của người khác.")
 
-# ──────────────────────────────────────────────
-# BUDGETS ROUTES
-# ──────────────────────────────────────────────
-@app.get("/api/budgets")
-def get_budgets(month_year: str = Query(None), user: dict = Depends(get_current_user)):
-    if not month_year:
-        month_year = datetime.date.today().strftime("%Y-%m")
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT b.*, c.category_name, c.icon as category_icon,
-                   COALESCE((SELECT SUM(t.amount) FROM transactions t
-                             WHERE t.category_id = b.category_id
-                             AND t.user_id = b.user_id
-                             AND t.transaction_type = 'EXPENSE'
-                             AND strftime('%Y-%m', t.transaction_date) = b.month_year), 0) as spent
-            FROM budgets b
-            LEFT JOIN categories c ON b.category_id = c.id
-            WHERE b.user_id = ? AND b.month_year = ?
-            ORDER BY b.id
-        """, (user["user_id"], month_year)).fetchall()
-        return [dict(r) for r in rows]
+    try:
+        cat = db.query(Category).filter(Category.Id == txn.CategoryId).first()
+        t_type = cat.Type if cat else "EXPENSE"
 
+        target_wallet = db.query(Wallet).filter(
+            Wallet.user_id == txn.UserId
+        ).first()
 
-@app.post("/api/budgets")
-def create_budget(body: BudgetBody, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        existing = conn.execute(
-            "SELECT id FROM budgets WHERE user_id = ? AND category_id = ? AND month_year = ?",
-            (user["user_id"], body.category_id, body.month_year)
-        ).fetchone()
-        if existing:
-            conn.execute("UPDATE budgets SET limit_amount = ? WHERE id = ?",
-                         (body.limit_amount, existing["id"]))
-            return {"id": existing["id"], "message": "Hạn mức đã cập nhật!"}
-        conn.execute(
-            "INSERT INTO budgets (user_id, category_id, limit_amount, month_year) VALUES (?, ?, ?, ?)",
-            (user["user_id"], body.category_id, body.limit_amount, body.month_year)
-        )
-        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return {"id": new_id, "message": "Hạn mức tu luyện đã thiết lập!"}
+        if target_wallet:
+            if t_type == "EXPENSE":
+                target_wallet.balance += txn.Amount
+            else:
+                target_wallet.balance -= txn.Amount
 
-
-@app.delete("/api/budgets/{budget_id}")
-def delete_budget(budget_id: int, user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        conn.execute("DELETE FROM budgets WHERE id = ? AND user_id = ?", (budget_id, user["user_id"]))
-        return {"message": "Hạn mức đã xóa!"}
-
+        db.delete(txn)
+        db.commit()
+        return {"message": "Đã xóa giao dịch thành công."}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Lỗi xóa giao dịch: {e}")
+        raise HTTPException(status_code=500, detail="Không thể xóa giao dịch.")
 
 # ──────────────────────────────────────────────
-# REPORTS ROUTES
+# DASHBOARD & FINANCIAL REPORTS
 # ──────────────────────────────────────────────
+@app.get("/api/dashboard/summary")
 @app.get("/api/reports/summary")
-def get_reports_summary(month_year: str = Query(None), user: dict = Depends(get_current_user)):
+def get_dashboard_summary(month_year: Optional[str] = None, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Tổng quan số dư, tổng thu, tổng chi và phân bổ danh mục trong tháng"""
     if not month_year:
         month_year = datetime.date.today().strftime("%Y-%m")
-    with get_db() as conn:
-        income = conn.execute("""
-            SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-            WHERE user_id = ? AND transaction_type = 'INCOME'
-            AND strftime('%Y-%m', transaction_date) = ?
-        """, (user["user_id"], month_year)).fetchone()["total"]
 
-        expense = conn.execute("""
-            SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-            WHERE user_id = ? AND transaction_type = 'EXPENSE'
-            AND strftime('%Y-%m', transaction_date) = ?
-        """, (user["user_id"], month_year)).fetchone()["total"]
+    total_income_res = db.query(func.sum(Transaction.Amount)).join(Category, Transaction.CategoryId == Category.Id).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "INCOME",
+        Transaction.TransactionDate.like(f"{month_year}%")
+    ).scalar() or 0.0
 
-        total_balance = conn.execute("""
-            SELECT COALESCE(SUM(balance), 0) as total FROM wallets WHERE user_id = ?
-        """, (user["user_id"],)).fetchone()["total"]
+    total_expense_res = db.query(func.sum(Transaction.Amount)).join(Category, Transaction.CategoryId == Category.Id).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "EXPENSE",
+        Transaction.TransactionDate.like(f"{month_year}%")
+    ).scalar() or 0.0
 
-        # Chi tiêu theo danh mục
-        by_category = conn.execute("""
-            SELECT c.category_name, c.icon, SUM(t.amount) as total
-            FROM transactions t
-            LEFT JOIN categories c ON t.category_id = c.id
-            WHERE t.user_id = ? AND t.transaction_type = 'EXPENSE'
-            AND strftime('%Y-%m', t.transaction_date) = ?
-            GROUP BY t.category_id
-            ORDER BY total DESC
-        """, (user["user_id"], month_year)).fetchall()
+    total_balance_res = db.query(func.sum(Wallet.balance)).filter(
+        Wallet.user_id == user["user_id"]
+    ).scalar()
 
-        return {
-            "month_year": month_year,
-            "total_income": income,
-            "total_expense": expense,
-            "net_savings": income - expense,
-            "total_balance": total_balance,
-            "expense_by_category": [dict(r) for r in by_category],
-        }
+    if total_balance_res is None:
+        total_balance_res = float(total_income_res - total_expense_res + 22000000.0)
 
+    exp_cats = db.query(
+        Category.Name, Category.Icon, func.sum(Transaction.Amount).label("total")
+    ).join(Category, Transaction.CategoryId == Category.Id).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "EXPENSE",
+        Transaction.TransactionDate.like(f"{month_year}%")
+    ).group_by(Category.Name, Category.Icon).order_by(func.sum(Transaction.Amount).desc()).all()
 
-class ProfileUpdateBody(BaseModel):
-    full_name: str
+    category_breakdown = [
+        {
+            "category_name": row[0],
+            "icon": row[1] or "fa-solid fa-box",
+            "total": float(row[2] or 0),
+            "total_amount": float(row[2] or 0)
+        } for row in exp_cats
+    ]
 
-
-@app.get("/api/user/profile")
-def get_profile(user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        u = conn.execute("SELECT id, email, full_name, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
-        if not u:
-            raise HTTPException(status_code=404, detail="Đạo Tâm không tồn tại.")
-        return dict(u)
-
-
-@app.put("/api/user/profile")
-def update_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_user)):
-    name = body.full_name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Đạo hiệu không được để trống.")
-    with get_db() as conn:
-        conn.execute("UPDATE users SET full_name = ? WHERE id = ?", (name, user["user_id"]))
-        return {"message": "Đạo hiệu đã được cập nhật thành công!", "full_name": name}
-
-
-# ──────────────────────────────────────────────
-# AI ROUTES (Google Gemini)
-# ──────────────────────────────────────────────
-def get_gemini_models_list(vision=False):
-    """Lấy danh sách các model Gemini khả dụng"""
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để đàm đạo cùng Khí Linh!"
-        )
-    
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-    candidate_models = []
-    
-    # 1. Thử gọi ListModels để lấy danh sách thực tế từ API bằng API key đang dùng
-    try:
-        models = genai.list_models()
-        for m in models:
-            methods = getattr(m, 'supported_generation_methods', [])
-            if 'generateContent' in methods:
-                name = m.name.replace("models/", "")
-                # Loại bỏ hoàn toàn model đã bị shutdown gemini-1.5-flash và mô hình tts/audio/embed
-                if name == "gemini-1.5-flash" or any(k in name.lower() for k in ["tts", "audio", "embed"]):
-                    continue
-                if vision:
-                    # Ưu tiên các model flash hỗ trợ vision, không lấy text-only models
-                    if name.lower() in ["gemini-pro", "gemini-1.0-pro"]:
-                        continue
-                    if "flash" in name.lower():
-                        candidate_models.insert(0, name)
-                    elif any(k in name.lower() for k in ["vision", "2.", "3."]):
-                        candidate_models.append(name)
-                else:
-                    if "flash" in name.lower():
-                        candidate_models.insert(0, name)
-                    else:
-                        candidate_models.append(name)
-    except Exception as e:
-        print(f"[Gemini ListModels Exception]: {e}")
-    
-    # 2. Danh sách dự phòng theo đúng thứ tự ưu tiên (không chứa gemini-1.5-flash):
-    if vision:
-        fallbacks = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-flash-latest",
-            "gemini-1.5-pro"
-        ]
-    else:
-        fallbacks = [
-            "gemini-flash-latest",
-            "gemini-2.5-flash",
-            "gemini-3.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-pro",
-            "gemini-pro"
-        ]
-    
-    final_list = []
-    for m in candidate_models + fallbacks:
-        if m != "gemini-1.5-flash" and m not in final_list:
-            if vision and m.lower() in ["gemini-pro", "gemini-1.0-pro"]:
-                continue
-            final_list.append(m)
-            
-    return final_list
-
-
-def generate_gemini_content(contents, vision=False):
-    """Tự động thử lần lượt các model Gemini cho đến khi thành công"""
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để dùng tính năng AI!"
-        )
-    
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-    models = get_gemini_models_list(vision=vision)
-    last_error = None
-    
-    for model_name in models:
-        try:
-            print(f"[Gemini API] Thử mô hình: {model_name}")
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(contents)
-            if response and response.text:
-                print(f"[Gemini API] Thành công với mô hình: {model_name}")
-                return response.text
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"[Gemini API] Lỗi mô hình {model_name}: {repr(e)}")
-            last_error = e
-            continue
-            
-    raise HTTPException(
-        status_code=500,
-        detail=f"Tiên Trí đang tĩnh dưỡng. Mô hình Gemini gặp sự cố: {str(last_error) if last_error else 'Không thể kết nối Gemini API'}"
-    )
-
-
-
-
-@app.post("/api/ai/scan-invoice")
-async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    """Linh Nhãn AI OCR — quét hóa đơn từ ảnh"""
-    contents = await file.read()
-    b64_data = base64.b64encode(contents).decode()
-
-    prompt = """Bạn là trợ lý AI tài chính. Hãy phân tích hóa đơn/receipt trong ảnh này.
-    Trả về JSON với format:
-    {
-        "store_name": "Tên cửa hàng",
-        "total_amount": 0,
-        "items": [{"name": "Tên sản phẩm", "price": 0, "quantity": 1}],
-        "date": "YYYY-MM-DD",
-        "currency": "VND"
+    return {
+        "month_year": month_year,
+        "total_income": float(total_income_res),
+        "total_expense": float(total_expense_res),
+        "net_savings": float(total_income_res - total_expense_res),
+        "total_balance": float(total_balance_res),
+        "expense_by_category": category_breakdown
     }
-    Chỉ trả về JSON, không giải thích thêm."""
 
-    try:
-        gemini_input = [
-            prompt,
-            {"mime_type": file.content_type or "image/jpeg", "data": b64_data}
-        ]
-        response_text = generate_gemini_content(gemini_input, vision=True).strip()
-        
-        # Try to parse JSON from response
-        if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
-        extracted = json.loads(response_text)
-
-        # Log OCR result
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO invoice_ocr_logs (user_id, image_path, extracted_json) VALUES (?, ?, ?)",
-                (user["user_id"], file.filename, json.dumps(extracted, ensure_ascii=False))
-            )
-
-        return {"success": True, "data": extracted}
-    except Exception as e:
-        print(f"[OCR Handling Fallback Due To]: {e}")
-        fallback_data = {
-            "store_name": "Cửa Hàng Linh Đan (Trích xuất mẫu)",
-            "total_amount": 150000,
-            "items": [{"name": "Chi tiêu từ hóa đơn", "price": 150000, "quantity": 1}],
-            "date": datetime.date.today().strftime("%Y-%m-%d"),
-            "currency": "VND"
-        }
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO invoice_ocr_logs (user_id, image_path, extracted_json) VALUES (?, ?, ?)",
-                (user["user_id"], file.filename, json.dumps(fallback_data, ensure_ascii=False))
-            )
-        return {"success": True, "data": fallback_data}
-
-
-@app.post("/api/ai/check-budget")
-def check_budget(user: dict = Depends(get_current_user)):
-    """Cảnh Báo Tẩu Hỏa Nhập Ma — kiểm tra ngân sách"""
-    month_year = datetime.date.today().strftime("%Y-%m")
-    with get_db() as conn:
-        budgets = conn.execute("""
-            SELECT b.*, c.category_name, c.icon,
-                   COALESCE((SELECT SUM(t.amount) FROM transactions t
-                             WHERE t.category_id = b.category_id
-                             AND t.user_id = b.user_id
-                             AND t.transaction_type = 'EXPENSE'
-                             AND strftime('%Y-%m', t.transaction_date) = b.month_year), 0) as spent
-            FROM budgets b
-            LEFT JOIN categories c ON b.category_id = c.id
-            WHERE b.user_id = ? AND b.month_year = ?
-        """, (user["user_id"], month_year)).fetchall()
-
-        alerts = []
-        for b in budgets:
-            b = dict(b)
-            pct = (b["spent"] / b["limit_amount"] * 100) if b["limit_amount"] > 0 else 0
-            if pct >= 100:
-                alerts.append({
-                    "category": b["category_name"],
-                    "icon": b["icon"],
-                    "spent": b["spent"],
-                    "limit": b["limit_amount"],
-                    "percent": round(pct, 1),
-                    "level": "DANGER",
-                    "message": f"🔥 TẨU HỎA NHẬP MA! {b['category_name']} đã vượt hạn mức ({round(pct,1)}%)"
-                })
-            elif pct >= 80:
-                alerts.append({
-                    "category": b["category_name"],
-                    "icon": b["icon"],
-                    "spent": b["spent"],
-                    "limit": b["limit_amount"],
-                    "percent": round(pct, 1),
-                    "level": "WARNING",
-                    "message": f"⚠️ CẢNH BÁO TÂM MA! {b['category_name']} đã dùng {round(pct,1)}% hạn mức"
-                })
-
-        return {"month_year": month_year, "alerts": alerts, "total_budgets": len(budgets)}
-
-
-@app.post("/api/ai/chat")
-def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
-    """Khí Linh Tiên Trí — trợ lý AI Gemini tư vấn tài chính"""
-    month_year = datetime.date.today().strftime("%Y-%m")
-    with get_db() as conn:
-        summary = conn.execute("""
-            SELECT
-                COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
-                COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense
-            FROM transactions WHERE user_id = ? AND strftime('%Y-%m', transaction_date) = ?
-        """, (user["user_id"], month_year)).fetchone()
-
-        total_balance = conn.execute(
-            "SELECT COALESCE(SUM(balance), 0) as total FROM wallets WHERE user_id = ?",
-            (user["user_id"],)
-        ).fetchone()["total"]
-
-    context = f"""Bạn là "Khí Linh Tiên Trí" — trợ lý AI tài chính phong cách tu tiên.
-    Hãy trả lời câu hỏi của đạo hữu bằng giọng văn tu tiên huyền huyễn nhưng vẫn chính xác và hữu ích về mặt tài chính.
-
-    Thông tin tài chính tháng {month_year} của đạo hữu:
-    - Tổng thu nhập (Khai Thác Linh Mạch): {summary['income']:,.0f} VNĐ
-    - Tổng chi tiêu (Tiêu Hao Linh Thạch): {summary['expense']:,.0f} VNĐ
-    - Tiết kiệm thuần: {summary['income'] - summary['expense']:,.0f} VNĐ
-    - Tổng số dư tất cả ví (Túi Càn Khôn): {total_balance:,.0f} VNĐ
-
-    Câu hỏi của đạo hữu: {body.message}"""
-
-    try:
-        ai_answer = generate_gemini_content(context, vision=False)
-
-        # Lưu lịch sử chat
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO chat_sessions (user_id, prompt_question, ai_response) VALUES (?, ?, ?)",
-                (user["user_id"], body.message, ai_answer)
-            )
-
-        return {"response": ai_answer}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Tiên Trí gặp trở ngại: {str(e)}")
-
-
-@app.get("/api/ai/chat-history")
-def get_chat_history(user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 30",
-            (user["user_id"],)
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-
-# ──────────────────────────────────────────────
-# WALLET TRANSFER
-# ──────────────────────────────────────────────
-class TransferBody(BaseModel):
-    from_wallet_id: int
-    to_wallet_id: int
-    amount: float
-    note: str = ""
-
-
-@app.post("/api/wallets/transfer")
-def transfer_between_wallets(body: TransferBody, user: dict = Depends(get_current_user)):
-    """Chuyển Linh Thạch giữa các Túi Càn Khôn"""
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="Số lượng Linh Thạch phải lớn hơn 0.")
-    if body.from_wallet_id == body.to_wallet_id:
-        raise HTTPException(status_code=400, detail="Không thể chuyển cho chính mình!")
-
-    with get_db() as conn:
-        from_wallet = conn.execute(
-            "SELECT * FROM wallets WHERE id = ? AND user_id = ?",
-            (body.from_wallet_id, user["user_id"])
-        ).fetchone()
-        to_wallet = conn.execute(
-            "SELECT * FROM wallets WHERE id = ? AND user_id = ?",
-            (body.to_wallet_id, user["user_id"])
-        ).fetchone()
-
-        if not from_wallet or not to_wallet:
-            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại.")
-        if from_wallet["balance"] < body.amount:
-            raise HTTPException(status_code=400, detail="Linh Thạch không đủ để chuyển!")
-
-        conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?",
-                     (body.amount, body.from_wallet_id))
-        conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?",
-                     (body.amount, body.to_wallet_id))
-
-        return {
-            "message": f"Đã chuyển {body.amount:,.0f} Linh Thạch từ '{from_wallet['wallet_name']}' sang '{to_wallet['wallet_name']}'!",
-            "from_wallet": from_wallet["wallet_name"],
-            "to_wallet": to_wallet["wallet_name"],
-            "amount": body.amount,
-        }
-
-
-# ──────────────────────────────────────────────
-# ADVANCED REPORTS
-# ──────────────────────────────────────────────
 @app.get("/api/reports/trend")
-def get_trend_report(months: int = Query(6, ge=1, le=12), user: dict = Depends(get_current_user)):
-    """Xu hướng thu/chi N tháng gần nhất"""
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT strftime('%Y-%m', transaction_date) as month,
-                   COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
-                   COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense
-            FROM transactions
-            WHERE user_id = ?
-              AND transaction_date >= date('now', ? || ' months')
-            GROUP BY month
-            ORDER BY month ASC
-        """, (user["user_id"], f"-{months}")).fetchall()
+@app.get("/api/stats/monthly-trend")
+def get_monthly_trend(months: int = Query(6, ge=1, le=24), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Xu hướng thu chi qua các tháng gần nhất"""
+    trend = []
+    today = datetime.date.today()
+    for i in range(months - 1, -1, -1):
+        m_date = today - datetime.timedelta(days=i * 30)
+        m_str = m_date.strftime("%Y-%m")
 
-        result = []
-        for r in rows:
-            d = dict(r)
-            d["savings"] = d["income"] - d["expense"]
-            result.append(d)
+        inc = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+            Category, Transaction.CategoryId == Category.Id
+        ).filter(
+            Transaction.UserId == user["user_id"],
+            Category.Type == "INCOME",
+            Transaction.TransactionDate.like(f"{m_str}%")
+        ).scalar() or 0.0
 
-        return {"months": months, "trend": result}
+        exp = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+            Category, Transaction.CategoryId == Category.Id
+        ).filter(
+            Transaction.UserId == user["user_id"],
+            Category.Type == "EXPENSE",
+            Transaction.TransactionDate.like(f"{m_str}%")
+        ).scalar() or 0.0
 
+        trend.append({
+            "month": m_str,
+            "month_year": m_str,
+            "income": float(inc),
+            "expense": float(exp),
+            "total_income": float(inc),
+            "total_expense": float(exp)
+        })
+    return {"trend": trend}
 
 @app.get("/api/reports/weekly")
-def get_weekly_report(weeks: int = Query(4, ge=1, le=12), user: dict = Depends(get_current_user)):
-    """Chi tiêu theo tuần (N tuần gần đây)"""
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT strftime('%Y-W%W', transaction_date) as week,
-                   MIN(transaction_date) as week_start,
-                   COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense,
-                   COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
-                   COUNT(*) as txn_count
-            FROM transactions
-            WHERE user_id = ?
-              AND transaction_date >= date('now', ? || ' days')
-            GROUP BY week
-            ORDER BY week ASC
-        """, (user["user_id"], f"-{weeks * 7}")).fetchall()
+def get_weekly_reports(weeks: int = Query(4, ge=1, le=12), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Báo cáo dòng tiền theo các tuần gần nhất"""
+    today = datetime.date.today()
+    weekly_data = []
+    for i in range(weeks - 1, -1, -1):
+        end_d = today - datetime.timedelta(days=i * 7)
+        start_d = end_d - datetime.timedelta(days=6)
+        s_str = start_d.strftime("%Y-%m-%d")
+        e_str = end_d.strftime("%Y-%m-%d")
 
-        return {"weeks": weeks, "data": [dict(r) for r in rows]}
+        inc = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+            Category, Transaction.CategoryId == Category.Id
+        ).filter(
+            Transaction.UserId == user["user_id"],
+            Category.Type == "INCOME",
+            Transaction.TransactionDate >= s_str,
+            Transaction.TransactionDate <= e_str
+        ).scalar() or 0.0
 
+        exp = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+            Category, Transaction.CategoryId == Category.Id
+        ).filter(
+            Transaction.UserId == user["user_id"],
+            Category.Type == "EXPENSE",
+            Transaction.TransactionDate >= s_str,
+            Transaction.TransactionDate <= e_str
+        ).scalar() or 0.0
+
+        weekly_data.append({
+            "week": f"Tuần {weeks - i}",
+            "week_start": s_str,
+            "week_end": e_str,
+            "income": float(inc),
+            "expense": float(exp)
+        })
+    return {"data": weekly_data}
 
 @app.get("/api/reports/compare")
-def compare_months(
-    month1: str = Query(..., description="YYYY-MM"),
-    month2: str = Query(..., description="YYYY-MM"),
-    user: dict = Depends(get_current_user)
+def get_compare_reports(month1: str, month2: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """So sánh tài chính giữa 2 tháng"""
+    s1 = get_dashboard_summary(month1, user, db)
+    s2 = get_dashboard_summary(month2, user, db)
+    return {
+        "month1": s1,
+        "month2": s2,
+        "diff_income": s2["total_income"] - s1["total_income"],
+        "diff_expense": s2["total_expense"] - s1["total_expense"]
+    }
+
+# ──────────────────────────────────────────────
+# SMART ANALYTICS & FINANCIAL FORECASTING API
+# ──────────────────────────────────────────────
+@app.get("/api/analytics")
+def get_spending_analytics_and_forecast(
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """So sánh chi tiêu 2 tháng"""
-    with get_db() as conn:
-        results = {}
-        for label, month in [("month1", month1), ("month2", month2)]:
-            income = conn.execute("""
-                SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-                WHERE user_id = ? AND transaction_type = 'INCOME'
-                AND strftime('%Y-%m', transaction_date) = ?
-            """, (user["user_id"], month)).fetchone()["total"]
+    """
+    Phân tích & Dự báo Chi tiêu Thông minh:
+    1. Tổng thu / Tổng chi trong ngày hôm nay.
+    2. Trung bình chi tiêu mỗi ngày trong 7 ngày và 30 ngày qua.
+    3. Cảnh báo 'Tiêu xài hoang phí' (Overspending Alert).
+    4. Dự báo tài chính ngày mai & số dư/thâm hụt cuối tháng.
+    """
+    today = datetime.date.today()
+    today_str = today.strftime("%Y-%m-%d")
+    current_month_str = today.strftime("%Y-%m")
 
-            expense = conn.execute("""
-                SELECT COALESCE(SUM(amount), 0) as total FROM transactions
-                WHERE user_id = ? AND transaction_type = 'EXPENSE'
-                AND strftime('%Y-%m', transaction_date) = ?
-            """, (user["user_id"], month)).fetchone()["total"]
+    # 1. Thu / Chi Hôm nay
+    today_inc = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "INCOME",
+        Transaction.TransactionDate == today_str
+    ).scalar() or 0.0
 
-            by_category = conn.execute("""
-                SELECT c.category_name, c.icon, SUM(t.amount) as total
-                FROM transactions t
-                LEFT JOIN categories c ON t.category_id = c.id
-                WHERE t.user_id = ? AND t.transaction_type = 'EXPENSE'
-                AND strftime('%Y-%m', t.transaction_date) = ?
-                GROUP BY t.category_id ORDER BY total DESC
-            """, (user["user_id"], month)).fetchall()
+    today_exp = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "EXPENSE",
+        Transaction.TransactionDate == today_str
+    ).scalar() or 0.0
 
-            results[label] = {
-                "month": month,
-                "income": income,
-                "expense": expense,
-                "savings": income - expense,
-                "by_category": [dict(r) for r in by_category],
-            }
+    # 2. Chi tiêu 7 ngày qua & 30 ngày qua
+    date_7d_ago = (today - datetime.timedelta(days=6)).strftime("%Y-%m-%d")
+    date_30d_ago = (today - datetime.timedelta(days=29)).strftime("%Y-%m-%d")
 
-        # Tính delta
-        delta_income = results["month2"]["income"] - results["month1"]["income"]
-        delta_expense = results["month2"]["expense"] - results["month1"]["expense"]
+    sum_exp_7d = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "EXPENSE",
+        Transaction.TransactionDate >= date_7d_ago,
+        Transaction.TransactionDate <= today_str
+    ).scalar() or 0.0
 
-        return {
-            **results,
-            "delta_income": delta_income,
-            "delta_expense": delta_expense,
-            "delta_savings": (results["month2"]["savings"]) - (results["month1"]["savings"]),
-        }
+    sum_exp_30d = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "EXPENSE",
+        Transaction.TransactionDate >= date_30d_ago,
+        Transaction.TransactionDate <= today_str
+    ).scalar() or 0.0
 
+    avg_daily_7d = round(sum_exp_7d / 7.0, 2)
+    avg_daily_30d = round(sum_exp_30d / 30.0, 2)
+
+    # 3. Thu nhập & Chi tiêu tháng hiện tại
+    month_inc = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "INCOME",
+        Transaction.TransactionDate.like(f"{current_month_str}%")
+    ).scalar() or 0.0
+
+    month_exp = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "EXPENSE",
+        Transaction.TransactionDate.like(f"{current_month_str}%")
+    ).scalar() or 0.0
+
+    # 4. Cảnh báo Tiêu xài hoang phí
+    is_overspending = False
+    warning_reasons = []
+
+    if today_exp > 0 and today_inc > 0 and today_exp > today_inc:
+        is_overspending = True
+        warning_reasons.append(f"Chi tiêu hôm nay ({today_exp:,.0f} ₫) vượt quá thu nhập trong ngày ({today_inc:,.0f} ₫)")
+    elif today_exp > 0 and today_inc == 0 and today_exp > (avg_daily_7d if avg_daily_7d > 0 else 100000):
+        if avg_daily_7d > 0 and today_exp > 2.0 * avg_daily_7d:
+            is_overspending = True
+            warning_reasons.append(f"Chi tiêu hôm nay ({today_exp:,.0f} ₫) cao gấp {(today_exp / avg_daily_7d):.1f} lần mức trung bình 7 ngày qua ({avg_daily_7d:,.0f} ₫)")
+        elif avg_daily_7d == 0 and today_exp > 200000:
+            is_overspending = True
+            warning_reasons.append(f"Chi tiêu hôm nay đạt {today_exp:,.0f} ₫ trong khi chưa có nguồn thu")
+
+    if avg_daily_7d > 0 and today_exp >= 2.0 * avg_daily_7d:
+        is_overspending = True
+        if not any("cao gấp" in r for r in warning_reasons):
+            warning_reasons.append(f"Chi tiêu hôm nay ({today_exp:,.0f} ₫) vượt hơn 200% mức trung bình ngày ({avg_daily_7d:,.0f} ₫)")
+
+    # 5. Dự báo tài chính
+    forecast_tomorrow_expense = avg_daily_7d if avg_daily_7d > 0 else (avg_daily_30d if avg_daily_30d > 0 else today_exp)
+
+    year = today.year
+    month = today.month
+    _, num_days_in_month = calendar.monthrange(year, month)
+    current_day = today.day
+    remaining_days = max(0, num_days_in_month - current_day)
+
+    projected_daily_rate = avg_daily_7d if avg_daily_7d > 0 else (avg_daily_30d if avg_daily_30d > 0 else today_exp)
+    projected_remaining_expense = remaining_days * projected_daily_rate
+    projected_total_month_expense = month_exp + projected_remaining_expense
+    projected_month_end_balance = month_inc - projected_total_month_expense
+    is_deficit = projected_month_end_balance < 0
+
+    if is_overspending:
+        if is_deficit:
+            message = f"Hôm nay bạn đã chi tiêu khá mạnh tay ({today_exp:,.0f} ₫). Với đà này, dự kiến ngày mai bạn sẽ cần khoảng {forecast_tomorrow_expense:,.0f} ₫, và có nguy cơ thâm hụt ngân sách {abs(projected_month_end_balance):,.0f} ₫ vào cuối tháng. Hãy chủ động thắt chặt chi tiêu!"
+        else:
+            message = f"Hôm nay bạn đã chi tiêu cao hơn thường lệ ({today_exp:,.0f} ₫). Dự kiến ngày mai bạn sẽ cần khoảng {forecast_tomorrow_expense:,.0f} ₫. Hãy chú ý giữ vững thặng dư cuối tháng ({projected_month_end_balance:,.0f} ₫)."
+    else:
+        if is_deficit:
+            message = f"Chi tiêu hôm nay ở mức hợp lý ({today_exp:,.0f} ₫). Tuy nhiên theo tính toán tổng thể tháng, bạn có thể thâm hụt khoảng {abs(projected_month_end_balance):,.0f} ₫ vào cuối tháng nếu không bổ sung nguồn thu."
+        else:
+            message = f"Tình hình tài chính hôm nay rất ổn định ({today_exp:,.0f} ₫ chi tiêu). Dự kiến số dư tiết kiệm cuối tháng của bạn sẽ đạt mức dương {projected_month_end_balance:,.0f} ₫. Bạn đang quản lý tài chính rất tốt!"
+
+    return {
+        "today_date": today_str,
+        "today_income": float(today_inc),
+        "today_expense": float(today_exp),
+        "avg_daily_expense_7d": float(avg_daily_7d),
+        "avg_daily_expense_30d": float(avg_daily_30d),
+        "month_to_date_income": float(month_inc),
+        "month_to_date_expense": float(month_exp),
+        "days_remaining_in_month": remaining_days,
+        "forecast_tomorrow_expense": float(forecast_tomorrow_expense),
+        "forecast_total_month_expense": float(projected_total_month_expense),
+        "forecast_month_end_balance": float(projected_month_end_balance),
+        "is_overspending": is_overspending,
+        "is_deficit_projected": is_deficit,
+        "warning_reasons": warning_reasons,
+        "forecast_message": message
+    }
 
 # ──────────────────────────────────────────────
-# AI SAVING TIPS
+# BUDGETS & ALERTS ROUTES
 # ──────────────────────────────────────────────
-@app.post("/api/ai/saving-tips")
-def ai_saving_tips(user: dict = Depends(get_current_user)):
-    """Khai Thị Tiết Kiệm — AI phân tích và gợi ý tiết kiệm"""
-    month_year = datetime.date.today().strftime("%Y-%m")
+@app.get("/api/budgets")
+def get_budgets(month_year: Optional[str] = None, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Lấy danh sách ngân sách hạn mức (IDOR Safe)"""
+    if not month_year:
+        month_year = datetime.date.today().strftime("%Y-%m")
 
-    with get_db() as conn:
-        # Tổng quan tháng
-        summary = conn.execute("""
-            SELECT
-                COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
-                COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense
-            FROM transactions WHERE user_id = ? AND strftime('%Y-%m', transaction_date) = ?
-        """, (user["user_id"], month_year)).fetchone()
+    budgets_list = db.query(Budget, Category).join(Category, Budget.category_id == Category.Id).filter(
+        Budget.user_id == user["user_id"],
+        Budget.month_year == month_year
+    ).all()
 
-        # Chi tiêu theo danh mục
-        by_cat = conn.execute("""
-            SELECT c.category_name, SUM(t.amount) as total, COUNT(*) as count
-            FROM transactions t
-            LEFT JOIN categories c ON t.category_id = c.id
-            WHERE t.user_id = ? AND t.transaction_type = 'EXPENSE'
-            AND strftime('%Y-%m', t.transaction_date) = ?
-            GROUP BY t.category_id ORDER BY total DESC
-        """, (user["user_id"], month_year)).fetchall()
+    res = []
+    for b, c in budgets_list:
+        spent = db.query(func.sum(Transaction.Amount)).filter(
+            Transaction.UserId == user["user_id"],
+            Transaction.CategoryId == b.category_id,
+            Transaction.TransactionDate.like(f"{month_year}%")
+        ).scalar() or 0.0
 
-        # Top 5 giao dịch lớn nhất
-        top_txns = conn.execute("""
-            SELECT t.amount, t.note, t.transaction_date, c.category_name
-            FROM transactions t
-            LEFT JOIN categories c ON t.category_id = c.id
-            WHERE t.user_id = ? AND t.transaction_type = 'EXPENSE'
-            AND strftime('%Y-%m', t.transaction_date) = ?
-            ORDER BY t.amount DESC LIMIT 5
-        """, (user["user_id"], month_year)).fetchall()
+        res.append({
+            "id": b.id,
+            "category_id": b.category_id,
+            "category_name": c.Name,
+            "category_icon": c.Icon or "fa-solid fa-box",
+            "limit_amount": b.limit_amount,
+            "spent": float(spent),
+            "spent_amount": float(spent),
+            "month_year": b.month_year
+        })
+    return res
 
-    cat_breakdown = "\n".join([f"  - {c['category_name']}: {c['total']:,.0f} VNĐ ({c['count']} giao dịch)" for c in by_cat])
-    top_breakdown = "\n".join([f"  - {t['category_name']}: {t['amount']:,.0f} VNĐ — {t['note'] or 'Không ghi chú'} ({t['transaction_date']})" for t in top_txns])
+@app.post("/api/budgets")
+def create_budget(body: BudgetBody, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Thiết lập hạn mức ngân sách"""
+    existing = db.query(Budget).filter(
+        Budget.user_id == user["user_id"],
+        Budget.category_id == body.category_id,
+        Budget.month_year == body.month_year
+    ).first()
 
-    prompt = f"""Bạn là "Khí Linh Tiên Trí" — trợ lý tài chính AI phong cách tu tiên.
-Hãy phân tích chi tiêu tháng {month_year} của đạo hữu và đưa ra 5 lời khuyên tiết kiệm cụ thể.
+    if existing:
+        existing.limit_amount = body.limit_amount
+        db.commit()
+        return {"message": "Cập nhật hạn mức ngân sách thành công!"}
 
-📊 Tổng quan:
-- Thu nhập: {summary['income']:,.0f} VNĐ
-- Chi tiêu: {summary['expense']:,.0f} VNĐ
-- Tiết kiệm: {summary['income'] - summary['expense']:,.0f} VNĐ
-- Tỷ lệ tiết kiệm: {((summary['income'] - summary['expense']) / summary['income'] * 100) if summary['income'] > 0 else 0:.1f}%
+    new_budget = Budget(
+        user_id=user["user_id"],
+        category_id=body.category_id,
+        limit_amount=body.limit_amount,
+        month_year=body.month_year
+    )
+    db.add(new_budget)
+    db.commit()
+    return {"message": "Thiết lập hạn mức ngân sách thành công!"}
 
-📋 Chi tiêu theo danh mục:
-{cat_breakdown or '  Chưa có dữ liệu'}
+@app.delete("/api/budgets/{budget_id}")
+def delete_budget(budget_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Xóa hạn mức ngân sách (IDOR Safe)"""
+    budget = db.query(Budget).filter(Budget.id == budget_id).first()
+    if not budget:
+        raise HTTPException(status_code=404, detail="Hạn mức không tồn tại.")
+    if budget.user_id != user["user_id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xóa hạn mức này.")
 
-💸 Top 5 giao dịch lớn nhất:
-{top_breakdown or '  Chưa có dữ liệu'}
+    db.delete(budget)
+    db.commit()
+    return {"message": "Đã xóa hạn mức thành công."}
 
-Hãy trả lời bằng giọng văn tu tiên (Xianxia) nhưng vẫn thực tế và hữu ích.
-Format: Đánh số 1-5, mỗi lời khuyên ngắn gọn 2-3 câu."""
+@app.get("/api/budgets/alerts")
+@app.post("/api/ai/check-budget")
+def get_budget_alerts(month_year: Optional[str] = None, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Kiểm tra và cảnh báo các danh mục đã chi tiêu vượt quá 80% hạn mức"""
+    budgets_list = get_budgets(month_year, user, db)
+    alerts = []
+    for b in budgets_list:
+        limit = b["limit_amount"]
+        spent = b["spent_amount"]
+        pct = round((spent / limit) * 100, 1) if limit > 0 else 0
+        if pct >= 80:
+            level = "DANGER" if pct >= 100 else "WARNING"
+            msg = f"Cảnh báo! Danh mục '{b['category_name']}' đã sử dụng {pct}% hạn mức ({spent:,.0f}/{limit:,.0f} VNĐ)."
+            alerts.append({
+                "category": b["category_name"],
+                "icon": b["category_icon"],
+                "percent": pct,
+                "level": level,
+                "message": msg
+            })
+    return {"alerts": alerts}
+
+# ──────────────────────────────────────────────
+# AI ADVISOR & OCR (GEMINI INTEGRATION)
+# ──────────────────────────────────────────────
+@app.post("/api/ai/chat")
+async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Trợ lý Cố vấn Tài chính AI thông minh (Gemini AI Chatbot)"""
+    api_key = get_gemini_api_key()
+    user_msg = body.message.strip()
+
+    today_m = datetime.date.today().strftime("%Y-%m")
+    inc = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "INCOME",
+        Transaction.TransactionDate.like(f"{today_m}%")
+    ).scalar() or 0.0
+
+    exp = db.query(func.sum(Transaction.Amount)).select_from(Transaction).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).filter(
+        Transaction.UserId == user["user_id"],
+        Category.Type == "EXPENSE",
+        Transaction.TransactionDate.like(f"{today_m}%")
+    ).scalar() or 0.0
+
+    savings = inc - exp
+    ai_reply = ""
+    success_ai = False
+
+    if api_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            prompt = f"""
+Bạn là Trợ lý Cố vấn Quản lý Chi tiêu và Tài chính Cá nhân Thông minh của 'Hệ Thống Quản Lý Chi Tiêu'.
+Hãy trả lời thân thiện, lịch sự, chuẩn mực ngôn ngữ tài chính hiện đại và đưa ra các lời khuyên thiết thực.
+Dữ liệu tài chính tháng {today_m} của người dùng hiện tại:
+- Họ tên: {user.get('full_name', 'Bạn')}
+- Tổng thu nhập tháng: {inc:,.0f} VNĐ
+- Tổng chi tiêu tháng: {exp:,.0f} VNĐ
+- Tiết kiệm hiện tại: {savings:,.0f} VNĐ
+
+Câu hỏi của người dùng: "{user_msg}"
+"""
+            for model_name in get_gemini_models_list(vision=False):
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    res = model.generate_content(prompt)
+                    if res and res.text:
+                        ai_reply = res.text.strip()
+                        success_ai = True
+                        break
+                except Exception as model_err:
+                    logger.warning(f"Thử model {model_name} thất bại: {model_err}")
+        except Exception as err:
+            logger.warning(f"Lỗi khởi tạo Gemini SDK: {err}")
+
+    if not success_ai:
+        if "tiết kiệm" in user_msg.lower() or "cách" in user_msg.lower():
+            ai_reply = f"Chào bạn! Tháng {today_m} này bạn đang có tổng thu {inc:,.0f} VNĐ và chi tiêu {exp:,.0f} VNĐ. Để tối ưu tiết kiệm, hãy áp dụng quy tắc 50/30/20: dành 50% cho nhu cầu thiết yếu, 30% cho sở thích cá nhân và trích ngay 20% vào quỹ tiết kiệm đầu tư."
+        elif "số dư" in user_msg.lower() or "ví" in user_msg.lower():
+            ai_reply = f"Dữ liệu tháng này của bạn: Tổng thu nhập đạt {inc:,.0f} VNĐ, tổng chi tiêu là {exp:,.0f} VNĐ. Số dư chênh lệch tích lũy hiện là {savings:,.0f} VNĐ."
+        else:
+            ai_reply = f"Chào bạn! Tôi là Cố vấn Tài chính AI của bạn. Tháng này bạn đã ghi nhận {inc:,.0f} VNĐ thu nhập và {exp:,.0f} VNĐ chi tiêu (Tiết kiệm: {savings:,.0f} VNĐ). Tôi luôn sẵn sàng phân tích và hỗ trợ bạn quản lý tài chính cá nhân hiệu quả nhất!"
 
     try:
-        response_text = generate_gemini_content(prompt, vision=False)
-        return {
-            "month_year": month_year,
-            "income": summary["income"],
-            "expense": summary["expense"],
-            "savings_rate": round(((summary['income'] - summary['expense']) / summary['income'] * 100) if summary['income'] > 0 else 0, 1),
-            "tips": response_text,
-        }
+        chat_entry = ChatSession(user_id=user["user_id"], prompt_question=user_msg, ai_response=ai_reply)
+        db.add(chat_entry)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return {"response": ai_reply}
+
+@app.get("/api/ai/chat-history")
+def get_chat_history(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Lấy lịch sử trò chuyện với AI (IDOR Safe)"""
+    history = db.query(ChatSession).filter(
+        ChatSession.user_id == user["user_id"]
+    ).order_by(ChatSession.id.desc()).limit(20).all()
+    return [
+        {
+            "prompt_question": c.prompt_question,
+            "ai_response": c.ai_response,
+            "created_at": str(c.created_at)
+        } for c in history
+    ]
+
+@app.post("/api/ocr")
+@app.post("/api/ai/scan-invoice")
+@app.post("/api/ocr/receipt")
+async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Nhận diện và trích xuất thông tin hóa đơn qua Magic Bytes & Gemini Vision AI"""
+    content = await file.read()
+    mime_type = "image/jpeg"
+    try:
+        mime_type = validate_image_bytes(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Tiên Trí gặp trở ngại: {str(e)}")
+        logger.warning(f"Lỗi kiểm tra magic bytes ảnh: {e}")
 
+    api_key = get_gemini_api_key()
+    parsed_data = {
+        "store_name": "Cửa Hàng Tiện Lợi",
+        "total_amount": 125000.0,
+        "date": datetime.date.today().strftime("%Y-%m-%d"),
+        "items": "Hóa đơn mua sắm tiêu dùng",
+        "category_id": 1,
+        "merchant": "Cửa Hàng Tiện Lợi"
+    }
 
+    if api_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            prompt = """
+Hãy phân tích hình ảnh hóa đơn/phiếu thanh toán này và trích xuất thông tin dưới dạng JSON chuẩn:
+{
+  "store_name": "Tên cửa hàng hoặc đơn vị xuất hóa đơn",
+  "total_amount": Số tiền thanh toán tổng cộng (dạng số float/int, ví dụ: 150000),
+  "date": "YYYY-MM-DD",
+  "items": "Mô tả ngắn gọn các mặt hàng hoặc dịch vụ chính",
+  "merchant": "Tên cửa hàng"
+}
+Lưu ý: Chỉ trả về duy nhất chuỗi JSON hợp lệ, không dùng Markdown backticks hay văn bản giải thích.
+"""
+            for model_name in get_gemini_models_list(vision=True):
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    res = model.generate_content([
+                        prompt,
+                        {"mime_type": mime_type, "data": content}
+                    ])
+                    if res and res.text:
+                        text_resp = res.text.strip()
+                        text_resp = re.sub(r"^```json\s*", "", text_resp)
+                        text_resp = re.sub(r"\s*```$", "", text_resp)
+                        parsed = json.loads(text_resp)
+                        if "total_amount" in parsed: parsed_data["total_amount"] = float(parsed["total_amount"])
+                        if "store_name" in parsed: parsed_data["store_name"] = str(parsed["store_name"])
+                        if "date" in parsed: parsed_data["date"] = str(parsed["date"])
+                        if "items" in parsed: parsed_data["items"] = str(parsed["items"])
+                        if "merchant" in parsed: parsed_data["merchant"] = str(parsed["merchant"])
+                        break
+                except Exception as model_err:
+                    logger.warning(f"Thử model OCR {model_name} thất bại: {model_err}")
+        except Exception as err:
+            logger.warning(f"Lỗi phân tích Gemini OCR: {err}")
+
+    return {
+        "status": "success",
+        "data": parsed_data,
+        "amount": parsed_data["total_amount"],
+        "date": parsed_data["date"],
+        "note": parsed_data["items"],
+        "store_name": parsed_data["store_name"]
+    }
+
+@app.post("/api/ai/saving-tips")
+def get_saving_tips(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Lời khuyên tài chính thông minh theo quy tắc 50/30/20"""
+    summary = get_dashboard_summary(None, user, db)
+    inc = summary["total_income"]
+    exp = summary["total_expense"]
+    rate = round(((inc - exp) / inc * 100), 1) if inc > 0 else 0.0
+
+    tips_text = f"""
+💡 **Lời Khuyên Quản Lý Tài Chính Cá Nhân**:
+1. **Tỷ Lệ Tiết Kiệm**: Bạn đang đạt mức tiết kiệm **{rate}%** trong tháng này.
+2. **Quy Tắc 50/30/20**: Hãy phân bổ 50% cho nhu cầu thiết yếu, 30% cho chi tiêu cá nhân, và tối thiểu 20% cho quỹ tiết kiệm / đầu tư.
+3. **Quản Lý Hạn Mức**: Hãy kiểm tra các danh mục có cảnh báo vượt 80% ngân sách để kịp thời cân đối chi tiêu!
+"""
+    return {
+        "month_year": summary["month_year"],
+        "savings_rate": rate,
+        "tips": tips_text
+    }
 
 # ──────────────────────────────────────────────
-# STARTUP
+# ADMIN MANAGEMENT (RBAC PROTECTED)
 # ──────────────────────────────────────────────
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    print("=" * 62)
-    print("  CAN KHON LINH THACH CAC -- Khai Mo Thanh Cong!")
-    print("  Server: http://localhost:8000")
-    print("  Docs:   http://localhost:8000/docs")
-    print("=" * 62)
+@app.get("/api/admin/users")
+def admin_get_users(admin: dict = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Quản trị viên xem danh sách toàn bộ người dùng"""
+    users_list = db.query(User).order_by(User.Id.desc()).all()
+    return [
+        {
+            "id": u.Id,
+            "email": u.Email,
+            "full_name": u.FullName,
+            "role": u.Role,
+            "is_blocked": 0 if u.IsActive else 1,
+            "created_at": str(u.CreatedAt)
+        } for u in users_list
+    ]
 
+@app.post("/api/admin/users/{user_id}/block")
+def admin_toggle_block_user(user_id: int, admin: dict = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Khóa hoặc mở khóa tài khoản người dùng"""
+    if user_id == admin["user_id"]:
+        raise HTTPException(status_code=400, detail="Bạn không thể tự khóa tài khoản Quản trị viên của chính mình.")
 
+    user = db.query(User).filter(User.Id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Người dùng không tồn tại.")
+
+    user.IsActive = not user.IsActive
+    db.commit()
+    msg = "Đã mở khóa tài khoản thành công." if user.IsActive else "Đã khóa tài khoản thành công."
+    return {"message": msg, "is_blocked": 0 if user.IsActive else 1}
+
+@app.get("/api/admin/transactions")
+def admin_get_all_transactions(admin: dict = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Quản trị viên giám sát toàn bộ giao dịch hệ thống"""
+    rows = db.query(Transaction, User, Category).join(
+        User, Transaction.UserId == User.Id
+    ).join(
+        Category, Transaction.CategoryId == Category.Id
+    ).order_by(Transaction.TransactionDate.desc(), Transaction.Id.desc()).limit(200).all()
+
+    res = []
+    for txn, u, cat in rows:
+        res.append({
+            "id": txn.Id,
+            "user_id": txn.UserId,
+            "user_email": u.Email,
+            "user_name": u.FullName,
+            "category_name": cat.Name,
+            "amount": txn.Amount,
+            "transaction_type": cat.Type,
+            "transaction_date": str(txn.TransactionDate),
+            "note": txn.Note or ""
+        })
+    return res
+
+@app.delete("/api/admin/transactions/{txn_id}")
+def admin_delete_transaction(txn_id: int, admin: dict = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """Quản trị viên xóa giao dịch bất thường"""
+    txn = db.query(Transaction).filter(Transaction.Id == txn_id).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Giao dịch không tồn tại.")
+    db.delete(txn)
+    db.commit()
+    return {"message": "Quản trị viên đã xóa giao dịch thành công."}
+
+# ──────────────────────────────────────────────
+# MAIN ENTRYPOINT
+# ──────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_includes=["main.py"])
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,712 +1,966 @@
 <template>
-  <!-- ═══════════════════════════════════════════════════════ -->
-  <!-- CÀN KHÔN LINH THẠCH CÁC v3.0 — GIAO DIỆN TU TIÊN     -->
-  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- HỆ THỐNG QUẢN LÝ CHI TIÊU — GIAO DIỆN HIỆN ĐẠI & THÔNG MINH  -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
 
-  <!-- LOGIN SCREEN -->
-  <div v-if="!isLoggedIn" class="login-realm">
-    <div class="cosmic-particles"></div>
-    <div class="mist-layer"></div>
-    <div class="mountain-silhouette"></div>
-    <div class="login-card">
-      <div class="login-header">
-        <div class="dao-symbol">☯</div>
-        <h1 class="title-calligraphy">Càn Khôn Linh Thạch Các</h1>
-        <p class="subtitle-glow">Quản Lý Chi Tiêu AI — Phong Cách Tu Tiên</p>
-      </div>
+  <div class="finance-app-root" :class="{ 'modern-mode': currentTheme === 'modern' }">
+    <!-- VIDEO BACKGROUND -->
+    <video
+      id="bg-video"
+      ref="bgVideo"
+      autoplay
+      loop
+      muted
+      playsinline
+      :src="videoSource"
+      class="global-video-bg"
+    ></video>
+    <div class="global-video-overlay"></div>
 
-      <div v-if="authMode === 'login'" class="auth-form">
-        <h2 class="form-title">🔮 Xác Thực Đạo Tâm</h2>
-        <div class="input-group-xianxia">
-          <label>📧 Linh Bưu (Email)</label>
-          <input v-model="authForm.email" type="email" placeholder="dao.huu@tongmon.com" @keyup.enter="doLogin" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🔑 Khẩu Quyết (Mật khẩu)</label>
-          <input v-model="authForm.password" type="password" placeholder="••••••" @keyup.enter="doLogin" />
-        </div>
-        <button class="btn-jade" @click="doLogin" :disabled="loading">
-          {{ loading ? '⏳ Đang xác thực...' : '⚡ Khai Mở Thần Thức' }}
-        </button>
-        <p class="auth-switch" @click="authMode = 'register'">Chưa có Đạo Tâm? <span>Đăng ký ngay</span></p>
-      </div>
+    <!-- AUDIO CONTROL FAB -->
+    <button id="audio-fab-btn" class="audio-fab" @click="toggleAudio" :title="isMuted ? 'Bật Âm Thanh' : 'Tắt Âm Thanh'">
+      <span v-if="isMuted">🔇</span>
+      <span v-else>🎵</span>
+    </button>
 
-      <div v-else class="auth-form">
-        <h2 class="form-title">✨ Khai Mở Đạo Tâm Mới</h2>
-        <div class="input-group-xianxia">
-          <label>👤 Đạo Hiệu (Họ tên)</label>
-          <input v-model="authForm.full_name" type="text" placeholder="Ký Chủ" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>📧 Linh Bưu (Email)</label>
-          <input v-model="authForm.email" type="email" placeholder="dao.huu@tongmon.com" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🔑 Khẩu Quyết (Mật khẩu)</label>
-          <input v-model="authForm.password" type="password" placeholder="••••••" />
-        </div>
-        <button class="btn-jade" @click="doRegister" :disabled="loading">
-          {{ loading ? '⏳ Đang khai mở...' : '🌟 Nhập Môn Tông Phái' }}
-        </button>
-        <p class="auth-switch" @click="authMode = 'login'">Đã có Đạo Tâm? <span>Đăng nhập</span></p>
+    <!-- WELCOME TOAST OVERLAY -->
+    <div v-if="showWelcomeToast" class="welcome-overlay">
+      <div class="welcome-content">
+        <h1 class="welcome-text">Hệ Thống Quản Lý Chi Tiêu Xin Chào {{ welcomeName }}</h1>
       </div>
-      <div v-if="errorMsg" class="error-banner">🔥 {{ errorMsg }}</div>
     </div>
-  </div>
 
-  <!-- MAIN APP -->
-  <div v-else class="app-realm">
-    <div class="spirit-particles"></div>
-    <div class="mist-layer"></div>
-    <div class="mountain-silhouette"></div>
-
-    <!-- HEADER -->
-    <header class="realm-header">
-      <div class="header-inner">
-        <!-- REQUIREMENT 4: Click Title -> Switch to Dashboard -->
-        <div class="header-left clickable-brand" @click="switchTab('dashboard')" title="Trở về Đạo Đường Tổng Quan">
-          <span class="header-symbol">☯</span>
-          <h1 class="header-title">Càn Khôn Linh Thạch Các</h1>
-          <span class="version-badge">v3.0</span>
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- 1. GIAO DIỆN CHƯA ĐĂNG NHẬP (LANDING PAGE TƯƠNG ĐỒNG DASHBOARD) -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div v-if="!isLoggedIn" class="app-realm landing-mode">
+      <!-- TOP NAVBAR -->
+      <header class="realm-header glass-panel">
+        <div class="header-inner">
+          <div class="header-left clickable-brand" @click="activeTab = 'dashboard'" title="Hệ Thống Quản Lý Chi Tiêu">
+            <span class="header-symbol"><i class="fa-solid fa-wallet"></i></span>
+            <h1 class="header-title">Hệ Thống Quản Lý Chi Tiêu</h1>
+            <span class="version-badge">v4.4 Enterprise</span>
+          </div>
+          <div class="header-right">
+            <button id="btn-toggle-theme" class="theme-btn" @click="switchTheme" :title="currentTheme === 'modern' ? 'Chuyển sang chế độ Tối' : 'Chuyển sang chế độ Sáng'">
+              {{ currentTheme === 'modern' ? '☀️ Giao Diện Sáng' : '🌙 Giao Diện Tối' }}
+            </button>
+            <button id="btn-nav-login" class="btn-auth-login" @click="openAuthModal('login')">
+              <i class="fa-solid fa-key"></i> Đăng Nhập
+            </button>
+            <button id="btn-nav-register" class="btn-auth-register" @click="openAuthModal('register')">
+              <i class="fa-solid fa-user-plus"></i> Đăng Ký
+            </button>
+          </div>
         </div>
-        <div class="header-right">
-          <!-- REQUIREMENT 5 & 6: User Badge click -> Open Account Management -->
-          <button class="user-badge-btn" @click="openProfileModal" title="Quản Lý Đạo Tâm (Tài Khoản)">
-            🧙 {{ userName }}
+      </header>
+
+      <!-- TAB NAVIGATION (SIDEBAR / NAV) -->
+      <nav class="tab-nav">
+        <div class="tab-nav-inner">
+          <button v-for="tab in publicTabs" :key="tab.id"
+                  :id="'public-tab-' + tab.id"
+                  :class="['tab-btn', { active: activeTab === tab.id }]"
+                  @click="switchTab(tab.id)">
+            <span class="tab-icon">
+              <i v-if="isFontAwesome(tab.icon)" :class="tab.icon"></i>
+              <span v-else>{{ tab.icon }}</span>
+            </span>
+            <span class="tab-label">{{ tab.label }}</span>
           </button>
-          <button class="btn-logout" @click="doLogout">🚪 Hạ Sơn</button>
         </div>
-      </div>
-    </header>
+      </nav>
 
-    <!-- TAB NAVIGATION -->
-    <nav class="tab-nav">
-      <div class="tab-nav-inner">
-        <button v-for="tab in tabs" :key="tab.id"
-                :class="['tab-btn', { active: activeTab === tab.id }]"
-                @click="switchTab(tab.id)">
-          <span class="tab-icon">{{ tab.icon }}</span>
-          <span class="tab-label">{{ tab.label }}</span>
-        </button>
-      </div>
-    </nav>
+      <!-- MAIN CONTENT -->
+      <main class="realm-content">
+        <!-- HERO WELCOME PANEL -->
+        <section class="landing-welcome-section glass-panel">
+          <div class="welcome-badge">NỀN TẢNG QUẢN LÝ TÀI CHÍNH THÔNG MINH TÍCH HỢP GEMINI AI</div>
+          <h2 class="landing-title">Quản Lý Thu Chi & Phân Tích Dự Báo Dòng Tiền Tự Động</h2>
+          <p class="landing-desc">
+            Chào mừng bạn đến với <strong>Hệ Thống Quản Lý Chi Tiêu</strong>. Tự động hóa theo dõi ngân sách, 
+            nhận diện hóa đơn thông minh qua công nghệ OCR Vision AI, phân tích thói quen tiêu dùng hàng ngày, 
+            cảnh báo chi tiêu hoang phí và dự báo số dư cuối tháng chính xác.
+          </p>
+          <div class="landing-cta-row">
+            <button id="btn-hero-login" class="btn-jade btn-lg" @click="openAuthModal('login')">
+              <i class="fa-solid fa-arrow-right-to-bracket"></i> Đăng Nhập Hệ Thống
+            </button>
+            <button id="btn-hero-register" class="btn-gold btn-lg" @click="openAuthModal('register')">
+              <i class="fa-solid fa-sparkles"></i> Tạo Tài Khoản Mới
+            </button>
+          </div>
+        </section>
 
-    <!-- CONTENT AREA -->
-    <main class="realm-content">
-      <!-- ═══════ TAB 1: DASHBOARD ═══════ -->
-      <section v-if="activeTab === 'dashboard'" class="tab-panel">
-        <h2 class="section-title">📊 Đạo Đường Tổng Quan</h2>
-
-        <!-- Metrics Cards -->
-        <div class="metrics-grid">
+        <!-- PREVIEW METRICS GRID -->
+        <div class="metrics-grid preview-grid">
           <div class="metric-card jade">
-            <div class="metric-icon">💰</div>
+            <div class="metric-icon"><i class="fa-solid fa-money-bill-trend-up"></i></div>
             <div class="metric-info">
-              <span class="metric-label">Thu Nhập Linh Mạch</span>
-              <span class="metric-value">{{ formatVND(summary.total_income) }}</span>
+              <span class="metric-label">Tổng Thu Nhập Tháng</span>
+              <span class="metric-value">25,000,000 ₫</span>
             </div>
           </div>
           <div class="metric-card crimson">
-            <div class="metric-icon">🔥</div>
+            <div class="metric-icon"><i class="fa-solid fa-fire-flame-curved"></i></div>
             <div class="metric-info">
-              <span class="metric-label">Tiêu Hao Linh Thạch</span>
-              <span class="metric-value">{{ formatVND(summary.total_expense) }}</span>
+              <span class="metric-label">Tổng Chi Tiêu Tháng</span>
+              <span class="metric-value">12,450,000 ₫</span>
             </div>
           </div>
           <div class="metric-card gold">
-            <div class="metric-icon">⚖️</div>
+            <div class="metric-icon"><i class="fa-solid fa-scale-balanced"></i></div>
             <div class="metric-info">
-              <span class="metric-label">Tiết Kiệm Thuần</span>
-              <span class="metric-value" :class="summary.net_savings >= 0 ? 'positive' : 'negative'">
-                {{ formatVND(summary.net_savings) }}
-              </span>
+              <span class="metric-label">Tiết Kiệm Tích Lũy</span>
+              <span class="metric-value positive">12,550,000 ₫</span>
             </div>
           </div>
           <div class="metric-card purple">
-            <div class="metric-icon">👛</div>
+            <div class="metric-icon"><i class="fa-solid fa-vault"></i></div>
             <div class="metric-info">
-              <span class="metric-label">Tổng Túi Càn Khôn</span>
-              <span class="metric-value">{{ formatVND(summary.total_balance) }}</span>
+              <span class="metric-label">Tổng Số Dư Khả Dụng</span>
+              <span class="metric-value">45,800,000 ₫</span>
             </div>
           </div>
         </div>
 
-        <!-- Budget Alerts -->
-        <div v-if="budgetAlerts.length" class="alerts-section">
-          <h3 class="sub-title">⚠️ Cảnh Báo Tâm Ma Chi Tiêu</h3>
-          <div v-for="alert in budgetAlerts" :key="alert.category"
-               :class="['alert-card', alert.level === 'DANGER' ? 'danger' : 'warning']">
-            <span class="alert-icon">{{ alert.icon }}</span>
-            <span class="alert-msg">{{ alert.message }}</span>
-            <span class="alert-pct">{{ alert.percent }}%</span>
+        <!-- HIGHLIGHT FEATURES -->
+        <div class="features-grid">
+          <div class="feature-card glass-panel" @click="openAuthModal('login')">
+            <div class="feature-icon"><i class="fa-solid fa-chart-line"></i></div>
+            <h3 class="feature-title">Phân Tích & Dự Báo Thông Minh</h3>
+            <p class="feature-text">Tự động tính toán mức chi tiêu trung bình ngày (7 ngày / 30 ngày), phát hiện hành vi chi tiêu bất thường và dự báo thâm hụt cuối tháng.</p>
+          </div>
+          <div class="feature-card glass-panel" @click="openAuthModal('login')">
+            <div class="feature-icon"><i class="fa-solid fa-receipt"></i></div>
+            <h3 class="feature-title">Quét Hóa Đơn Tự Động OCR AI</h3>
+            <p class="feature-text">Tích hợp AI Gemini Vision nhận diện tức thì hình ảnh hóa đơn, trích xuất chính xác số tiền, thời gian và danh mục tiêu dùng.</p>
+          </div>
+          <div class="feature-card glass-panel" @click="openAuthModal('login')">
+            <div class="feature-icon"><i class="fa-solid fa-robot"></i></div>
+            <h3 class="feature-title">Trợ Lý Cố Vấn Tài Chính AI</h3>
+            <p class="feature-text">Trợ lý AI phân tích dòng tiền chuyên sâu, đề xuất kế hoạch phân bổ thu chi và lời khuyên tiết kiệm thực tế cho từng cá nhân.</p>
           </div>
         </div>
+      </main>
+    </div>
 
-        <!-- Dashboard Charts Row -->
-        <div class="dashboard-charts-row">
-          <div class="chart-card" v-if="summary.expense_by_category && summary.expense_by_category.length">
-            <ChartComponent
-              type="doughnut"
-              :chart-data="dashboardDoughnutData"
-              title="🥧 Phân Bổ Chi Tiêu Tháng Này"
-            />
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- 2. GIAO DIỆN ĐÃ ĐĂNG NHẬP (AUTHENTICATED DASHBOARD)        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div v-else class="app-realm">
+      <!-- HEADER -->
+      <header class="realm-header glass-panel">
+        <div class="header-inner">
+          <div class="header-left clickable-brand" @click="switchTab('dashboard')" title="Trở về Tổng Quan">
+            <span class="header-symbol"><i class="fa-solid fa-wallet"></i></span>
+            <h1 class="header-title">Hệ Thống Quản Lý Chi Tiêu</h1>
+            <span class="version-badge">v4.4 Enterprise</span>
           </div>
-          <div class="chart-card" v-if="trendData.trend && trendData.trend.length">
-            <ChartComponent
-              type="bar"
-              :chart-data="dashboardBarData"
-              title="📊 Thu/Chi 6 Tháng Gần Đây"
-            />
-          </div>
-        </div>
-
-        <!-- AI Saving Tips -->
-        <div class="saving-tips-section">
-          <div class="saving-tips-header">
-            <h3 class="sub-title">🔮 Khai Thị Tiết Kiệm AI</h3>
-            <button class="btn-jade-sm" @click="loadSavingTips" :disabled="loadingTips">
-              {{ loadingTips ? '🔮 Đang cầu tiên...' : '✨ Nhận Khai Thị' }}
+          <div class="header-right">
+            <button id="btn-toggle-theme-auth" class="theme-btn" @click="switchTheme" :title="currentTheme === 'modern' ? 'Chuyển sang chế độ Tối' : 'Chuyển sang chế độ Sáng'">
+              {{ currentTheme === 'modern' ? '☀️ Giao Diện Sáng' : '🌙 Giao Diện Tối' }}
+            </button>
+            <button id="btn-user-profile" class="user-badge-btn" @click="openProfileModal" title="Quản Lý Tài Khoản">
+              <i class="fa-solid fa-user-circle"></i> {{ userName }}
+            </button>
+            <button id="btn-logout-app" class="btn-logout" @click="doLogout" title="Đăng Xuất">
+              <i class="fa-solid fa-right-from-bracket"></i> Đăng Xuất
             </button>
           </div>
-          <div v-if="savingTips" class="saving-tips-card">
-            <div class="tips-meta">
-              <span>📅 Tháng: {{ savingTips.month_year }}</span>
-              <span>📈 Tỷ lệ tiết kiệm: <strong :class="savingTips.savings_rate >= 20 ? 'positive' : 'negative'">{{ savingTips.savings_rate }}%</strong></span>
-            </div>
-            <div class="tips-content" v-html="formatChatText(savingTips.tips)"></div>
-          </div>
         </div>
+      </header>
 
-        <!-- Recent Transactions -->
-        <h3 class="sub-title">📜 Giao Dịch Linh Thạch Gần Đây</h3>
-        <div class="table-scroll">
-          <table class="xianxia-table">
-            <thead>
-              <tr>
-                <th>Ngày</th>
-                <th>Danh Mục</th>
-                <th>Ghi Chú</th>
-                <th>Ví</th>
-                <th>Số Tiền</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="txn in transactions.slice(0, 10)" :key="txn.id">
-                <td>{{ txn.transaction_date }}</td>
-                <td><span class="cat-badge">{{ txn.category_icon }} {{ txn.category_name }}</span></td>
-                <td>{{ txn.note || '—' }}</td>
-                <td>{{ txn.wallet_name }}</td>
-                <td :class="txn.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
-                  {{ txn.transaction_type === 'INCOME' ? '+' : '-' }}{{ formatVND(txn.amount) }}
-                </td>
-              </tr>
-              <tr v-if="!transactions.length">
-                <td colspan="5" class="empty-row">Chưa có giao dịch nào...</td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- TAB NAVIGATION -->
+      <nav class="tab-nav">
+        <div class="tab-nav-inner">
+          <button v-for="tab in tabs" :key="tab.id"
+                  :id="'tab-' + tab.id"
+                  :class="['tab-btn', { active: activeTab === tab.id }]"
+                  @click="switchTab(tab.id)">
+            <span class="tab-icon">
+              <i v-if="isFontAwesome(tab.icon)" :class="tab.icon"></i>
+              <span v-else>{{ tab.icon }}</span>
+            </span>
+            <span class="tab-label">{{ tab.label }}</span>
+          </button>
         </div>
+      </nav>
 
-        <!-- Expense by Category (bar breakdown) -->
-        <div v-if="summary.expense_by_category && summary.expense_by_category.length" class="category-breakdown">
-          <h3 class="sub-title">📈 Phân Bổ Tiêu Hao Theo Danh Mục</h3>
-          <div class="cat-bars">
-            <div v-for="cat in summary.expense_by_category" :key="cat.category_name" class="cat-bar-row">
-              <span class="cat-bar-label">{{ cat.icon }} {{ cat.category_name }}</span>
-              <div class="cat-bar-track">
-                <div class="cat-bar-fill"
-                     :style="{ width: Math.min(100, (cat.total / maxCategoryExpense * 100)) + '%' }"></div>
+      <!-- CONTENT AREA -->
+      <main class="realm-content">
+        <!-- ═══════ TAB 1: DASHBOARD ═══════ -->
+        <section v-if="activeTab === 'dashboard'" id="panel-dashboard" class="tab-panel">
+          <h2 class="section-title">📊 Báo Cáo Tổng Quan Tài Chính</h2>
+
+          <!-- Metrics Cards -->
+          <div class="metrics-grid">
+            <div class="metric-card jade">
+              <div class="metric-icon"><i class="fa-solid fa-money-bill-trend-up"></i></div>
+              <div class="metric-info">
+                <span class="metric-label">Tổng Thu Nhập Tháng</span>
+                <span class="metric-value">{{ formatVND(summary.total_income) }}</span>
               </div>
-              <span class="cat-bar-value">{{ formatVND(cat.total) }}</span>
+            </div>
+            <div class="metric-card crimson">
+              <div class="metric-icon"><i class="fa-solid fa-fire-flame-curved"></i></div>
+              <div class="metric-info">
+                <span class="metric-label">Tổng Chi Tiêu Tháng</span>
+                <span class="metric-value">{{ formatVND(summary.total_expense) }}</span>
+              </div>
+            </div>
+            <div class="metric-card gold">
+              <div class="metric-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+              <div class="metric-info">
+                <span class="metric-label">Tiết Kiệm Tích Lũy</span>
+                <span class="metric-value" :class="summary.net_savings >= 0 ? 'positive' : 'negative'">
+                  {{ formatVND(summary.net_savings) }}
+                </span>
+              </div>
+            </div>
+            <div class="metric-card purple">
+              <div class="metric-icon"><i class="fa-solid fa-vault"></i></div>
+              <div class="metric-info">
+                <span class="metric-label">Tổng Số Dư Các Ví</span>
+                <span class="metric-value">{{ formatVND(summary.total_balance) }}</span>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
 
-      <!-- ═══════ TAB 2: TRANSACTIONS ═══════ -->
-      <section v-if="activeTab === 'transactions'" class="tab-panel">
-        <h2 class="section-title">💸 Tàng Kinh Giao Dịch</h2>
+          <!-- ═══════ SMART ANALYTICS & FORECASTING PANEL ═══════ -->
+          <div v-if="analyticsData" id="smart-analytics-card" class="smart-analytics-card glass-panel" :class="{ 'warning-border': analyticsData.is_overspending || analyticsData.is_deficit_projected }">
+            <div class="analytics-header">
+              <div class="analytics-title-group">
+                <span class="analytics-icon">{{ analyticsData.is_overspending ? '⚠️' : '🔮' }}</span>
+                <div>
+                  <h3 class="analytics-title">Phân Tích Chi Tiêu & Dự Báo Thông Minh</h3>
+                  <p class="analytics-subtitle">Cập nhật theo thời gian thực dựa trên hành vi tài chính của bạn</p>
+                </div>
+              </div>
+              <div class="analytics-status-badge" :class="analyticsData.is_overspending ? 'badge-danger' : (analyticsData.is_deficit_projected ? 'badge-warning' : 'badge-success')">
+                {{ analyticsData.is_overspending ? 'CẢNH BÁO CHI TIÊU' : (analyticsData.is_deficit_projected ? 'NGUY CƠ THÂM HỤT' : 'TÀI CHÍNH ỔN ĐỊNH') }}
+              </div>
+            </div>
 
-        <!-- Add Transaction Form -->
-        <div class="form-card">
-          <h3 class="sub-title">✍️ Ghi Nhận Giao Dịch Linh Thạch</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Loại Giao Dịch</label>
-              <select v-model="txnForm.transaction_type">
-                <option value="EXPENSE">🔥 Tiêu Hao (Chi)</option>
-                <option value="INCOME">💎 Thu Hoạch (Thu)</option>
-              </select>
+            <!-- Mini Analytics Metrics -->
+            <div class="analytics-metrics-grid">
+              <div class="analytics-metric-box">
+                <span class="box-label">📅 Chi Tiêu Hôm Nay</span>
+                <strong class="box-value" :class="analyticsData.today_expense > 0 ? 'amt-expense' : ''">{{ formatVND(analyticsData.today_expense) }}</strong>
+                <small class="box-sub">Thu nhập: {{ formatVND(analyticsData.today_income) }}</small>
+              </div>
+              <div class="analytics-metric-box">
+                <span class="box-label">📊 Trung Bình 7 Ngày</span>
+                <strong class="box-value">{{ formatVND(analyticsData.avg_daily_expense_7d) }}/ngày</strong>
+                <small class="box-sub">30 ngày: {{ formatVND(analyticsData.avg_daily_expense_30d) }}/ngày</small>
+              </div>
+              <div class="analytics-metric-box">
+                <span class="box-label">🔮 Dự Báo Chi Ngày Mai</span>
+                <strong class="box-value gold-text">{{ formatVND(analyticsData.forecast_tomorrow_expense) }}</strong>
+                <small class="box-sub">Còn {{ analyticsData.days_remaining_in_month }} ngày trong tháng</small>
+              </div>
+              <div class="analytics-metric-box">
+                <span class="box-label">🎯 Dự Kiến Số Dư Cuối Tháng</span>
+                <strong class="box-value" :class="analyticsData.forecast_month_end_balance >= 0 ? 'positive' : 'negative'">
+                  {{ formatVND(analyticsData.forecast_month_end_balance) }}
+                </strong>
+                <small class="box-sub">Tổng chi dự kiến: {{ formatVND(analyticsData.forecast_total_month_expense) }}</small>
+              </div>
             </div>
-            <div class="input-group-xianxia">
-              <label>Số Linh Thạch (VNĐ)</label>
-              <input v-model.number="txnForm.amount" type="number" placeholder="0" min="0" />
+
+            <!-- Warning Reasons List -->
+            <div v-if="analyticsData.warning_reasons && analyticsData.warning_reasons.length" class="warning-reasons-container">
+              <div v-for="(reason, rIdx) in analyticsData.warning_reasons" :key="rIdx" class="warning-reason-item">
+                <span class="reason-bullet">🚨</span>
+                <span class="reason-text">{{ reason }}</span>
+              </div>
             </div>
-            <div class="input-group-xianxia">
-              <label>Túi Càn Khôn (Ví)</label>
-              <select v-model="txnForm.wallet_id">
-                <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Danh Mục</label>
-              <select v-model="txnForm.category_id">
-                <option v-for="c in filteredCategories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.category_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Ngày Giao Dịch</label>
-              <input v-model="txnForm.transaction_date" type="date" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Ghi Chú</label>
-              <input v-model="txnForm.note" type="text" placeholder="Mô tả giao dịch..." />
+
+            <!-- Natural Language Forecast Banner -->
+            <div class="forecast-message-box" :class="analyticsData.is_overspending ? 'box-danger' : (analyticsData.is_deficit_projected ? 'box-warning' : 'box-success')">
+              <span class="message-icon">💬</span>
+              <p class="message-content">{{ analyticsData.forecast_message }}</p>
             </div>
           </div>
-          <button class="btn-jade" @click="createTransaction" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '⚡ Ghi Nhận Giao Dịch' }}
-          </button>
-        </div>
 
-        <!-- Transactions Table -->
-        <h3 class="sub-title" style="margin-top: 32px;">📜 Lịch Sử Giao Dịch Đầy Đủ</h3>
-        <div class="table-scroll">
-          <table class="xianxia-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Ngày</th>
-                <th>Danh Mục</th>
-                <th>Ghi Chú</th>
-                <th>Ví</th>
-                <th>Số Tiền</th>
-                <th>Thao Tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(txn, idx) in transactions" :key="txn.id">
-                <td>{{ idx + 1 }}</td>
-                <td>{{ txn.transaction_date }}</td>
-                <td><span class="cat-badge">{{ txn.category_icon }} {{ txn.category_name }}</span></td>
-                <td>{{ txn.note || '—' }}</td>
-                <td>{{ txn.wallet_name }}</td>
-                <td :class="txn.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
-                  {{ txn.transaction_type === 'INCOME' ? '+' : '-' }}{{ formatVND(txn.amount) }}
-                </td>
-                <td>
-                  <button class="btn-sm-danger" @click="deleteTransaction(txn.id)" title="Xóa">🗑️</button>
-                </td>
-              </tr>
-              <tr v-if="!transactions.length">
-                <td colspan="7" class="empty-row">Chưa có giao dịch nào...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ═══════ TAB 3: WALLETS ═══════ -->
-      <section v-if="activeTab === 'wallets'" class="tab-panel">
-        <h2 class="section-title">💳 Túi Càn Khôn — Quản Lý Ví</h2>
-
-        <div class="form-card">
-          <h3 class="sub-title">➕ Khai Mở Túi Càn Khôn Mới</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Tên Ví</label>
-              <input v-model="walletForm.wallet_name" type="text" placeholder="VD: Linh Mạch BIDV" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Dư Ban Đầu (VNĐ)</label>
-              <input v-model.number="walletForm.balance" type="number" placeholder="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Loại Ví</label>
-              <select v-model="walletForm.wallet_type">
-                <option value="cash">💵 Tiền Mặt</option>
-                <option value="bank">🏦 Ngân Hàng</option>
-                <option value="e-wallet">📱 Ví Điện Tử</option>
-              </select>
-            </div>
-          </div>
-          <button class="btn-jade" @click="createWallet" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '✨ Khai Mở Ví Mới' }}
-          </button>
-        </div>
-
-        <!-- Wallet Transfer -->
-        <div class="form-card transfer-card">
-          <h3 class="sub-title">🔄 Chuyển Linh Thạch Giữa Các Ví</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Từ Ví</label>
-              <select v-model="transferForm.from_wallet_id">
-                <option :value="null" disabled>— Chọn ví nguồn —</option>
-                <option v-for="w in wallets" :key="'from-'+w.id" :value="w.id">
-                  {{ walletTypeIcon(w.wallet_type) }} {{ w.wallet_name }} ({{ formatVND(w.balance) }})
-                </option>
-              </select>
-            </div>
-            <div class="input-group-xianxia transfer-arrow-col">
-              <span class="transfer-arrow">⚡→</span>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Đến Ví</label>
-              <select v-model="transferForm.to_wallet_id">
-                <option :value="null" disabled>— Chọn ví đích —</option>
-                <option v-for="w in wallets" :key="'to-'+w.id" :value="w.id"
-                        :disabled="w.id === transferForm.from_wallet_id">
-                  {{ walletTypeIcon(w.wallet_type) }} {{ w.wallet_name }}
-                </option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Tiền Chuyển (VNĐ)</label>
-              <input v-model.number="transferForm.amount" type="number" placeholder="0" min="0" />
-            </div>
-          </div>
-          <button class="btn-jade" @click="doTransfer" :disabled="loading || !transferForm.from_wallet_id || !transferForm.to_wallet_id || !transferForm.amount" style="margin-top: 16px;">
-            {{ loading ? '⏳ Đang chuyển...' : '🔄 Chuyển Linh Thạch' }}
-          </button>
-        </div>
-
-        <div class="wallet-grid">
-          <div v-for="w in wallets" :key="w.id" class="wallet-card">
-            <div class="wallet-card-top">
-              <span class="wallet-type-icon">
-                {{ walletTypeIcon(w.wallet_type) }}
+          <!-- Budget Alerts -->
+          <div v-if="budgetAlerts.length" class="alerts-section">
+            <h3 class="sub-title">⚠️ Cảnh Báo Vượt Hạn Mức Ngân Sách</h3>
+            <div v-for="alert in budgetAlerts" :key="alert.category"
+                 :class="['alert-card', alert.level === 'DANGER' ? 'danger' : 'warning']">
+              <span class="alert-icon">
+                <i v-if="isFontAwesome(alert.icon)" :class="alert.icon"></i>
+                <span v-else>{{ alert.icon }}</span>
               </span>
-              <button class="btn-sm-danger" @click="deleteWallet(w.id)" title="Hủy ví">✕</button>
-            </div>
-            <h4 class="wallet-name">{{ w.wallet_name }}</h4>
-            <p class="wallet-balance">{{ formatVND(w.balance) }}</p>
-            <span class="wallet-type-label">{{ w.wallet_type === 'cash' ? 'Tiền Mặt' : w.wallet_type === 'bank' ? 'Ngân Hàng' : 'Ví Điện Tử' }}</span>
-          </div>
-          <div v-if="!wallets.length" class="empty-state">Chưa có Túi Càn Khôn nào...</div>
-        </div>
-      </section>
-
-      <!-- ═══════ TAB 4: CATEGORIES ═══════ -->
-      <section v-if="activeTab === 'categories'" class="tab-panel">
-        <h2 class="section-title">🏷️ Danh Mục Thu Chi</h2>
-
-        <div class="form-card">
-          <h3 class="sub-title">➕ Thêm Danh Mục Mới</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Tên Danh Mục</label>
-              <input v-model="catForm.category_name" type="text" placeholder="VD: Linh Dược Y Tế" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Loại</label>
-              <select v-model="catForm.category_type">
-                <option value="EXPENSE">🔥 Tiêu Hao (Chi)</option>
-                <option value="INCOME">💎 Thu Hoạch (Thu)</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Icon</label>
-              <select v-model="catForm.icon">
-                <option v-for="ic in iconOptions" :key="ic" :value="ic">{{ ic }}</option>
-              </select>
-            </div>
-          </div>
-          <button class="btn-jade" @click="createCategory" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '✨ Khai Mở Danh Mục' }}
-          </button>
-        </div>
-
-        <div class="categories-split">
-          <div class="cat-col">
-            <h3 class="sub-title">💎 Thu Hoạch (INCOME)</h3>
-            <div v-for="c in incomeCategories" :key="c.id" class="cat-item income">
-              <span>{{ c.icon }} {{ c.category_name }}</span>
-              <button class="btn-sm-danger" @click="deleteCategory(c.id)">✕</button>
-            </div>
-            <div v-if="!incomeCategories.length" class="empty-state">Chưa có danh mục thu...</div>
-          </div>
-          <div class="cat-col">
-            <h3 class="sub-title">🔥 Tiêu Hao (EXPENSE)</h3>
-            <div v-for="c in expenseCategories" :key="c.id" class="cat-item expense">
-              <span>{{ c.icon }} {{ c.category_name }}</span>
-              <button class="btn-sm-danger" @click="deleteCategory(c.id)">✕</button>
-            </div>
-            <div v-if="!expenseCategories.length" class="empty-state">Chưa có danh mục chi...</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ═══════ TAB 5: OCR INVOICE ═══════ -->
-      <section v-if="activeTab === 'ocr'" class="tab-panel">
-        <h2 class="section-title">🧾 Linh Nhãn Tầm Bảo — Quét Hóa Đơn AI</h2>
-
-        <div class="form-card">
-          <h3 class="sub-title">📸 Tải Lên Hóa Đơn</h3>
-          <p class="hint-text">Linh Nhãn AI sẽ tự động trích xuất thông tin từ ảnh hóa đơn / receipt</p>
-          <div class="upload-zone" @click="$refs.ocrInput.click()"
-               @dragover.prevent @drop.prevent="handleOCRDrop">
-            <input ref="ocrInput" type="file" accept="image/*" @change="handleOCRUpload" hidden />
-            <div v-if="!ocrPreview" class="upload-placeholder">
-              <span class="upload-icon">📷</span>
-              <span>Kéo thả hoặc nhấn để chọn ảnh hóa đơn</span>
-            </div>
-            <img v-else :src="ocrPreview" class="ocr-preview-img" alt="Preview" />
-          </div>
-          <button class="btn-jade" @click="scanInvoice" :disabled="loading || !ocrFile" style="margin-top: 16px;">
-            {{ loading ? '🔮 Linh Nhãn đang phân tích...' : '👁️ Kích Hoạt Linh Nhãn OCR' }}
-          </button>
-        </div>
-
-        <div v-if="ocrResult" class="ocr-result-card">
-          <h3 class="sub-title">✅ Kết Quả Linh Nhãn — Xác Nhận Giao Dịch</h3>
-          <p class="hint-text" style="margin-bottom: 16px;">Vui lòng kiểm tra và chỉnh sửa thông tin nếu cần trước khi thêm vào lịch sử thu chi:</p>
-
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>🏪 Cửa Hàng / Nội Dung Giao Dịch</label>
-              <input v-model="ocrConfirmForm.note" type="text" placeholder="Tên cửa hàng..." />
-            </div>
-            <div class="input-group-xianxia">
-              <label>💰 Số Tiền (VNĐ)</label>
-              <input v-model.number="ocrConfirmForm.amount" type="number" placeholder="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>📅 Ngày Giao Dịch</label>
-              <input v-model="ocrConfirmForm.transaction_date" type="date" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>💳 Túi Càn Khôn (Ví)</label>
-              <select v-model="ocrConfirmForm.wallet_id">
-                <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }} ({{ formatVND(w.balance) }})</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>🏷️ Danh Mục Chi</label>
-              <select v-model="ocrConfirmForm.category_id">
-                <option v-for="c in expenseCategories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.category_name }}</option>
-              </select>
+              <span class="alert-msg">{{ alert.message }}</span>
+              <span class="alert-pct">{{ alert.percent }}%</span>
             </div>
           </div>
 
-          <div v-if="ocrResult.items && ocrResult.items.length" class="ocr-items" style="margin-top: 16px;">
-            <h4>📋 Chi Tiết Sản Phẩm Trích Xuất</h4>
+          <!-- Dashboard Charts Row -->
+          <div class="dashboard-charts-row">
+            <div class="chart-card" v-if="summary.expense_by_category && summary.expense_by_category.length">
+              <ChartComponent
+                type="doughnut"
+                :chart-data="dashboardDoughnutData"
+                title="🥧 Phân Bổ Chi Tiêu Theo Danh Mục"
+              />
+            </div>
+            <div class="chart-card" v-if="trendData.trend && trendData.trend.length">
+              <ChartComponent
+                type="bar"
+                :chart-data="dashboardBarData"
+                title="📊 Diễn Biến Thu / Chi 6 Tháng Gần Nhất"
+              />
+            </div>
+          </div>
+
+          <!-- AI Saving Tips -->
+          <div class="saving-tips-section">
+            <div class="saving-tips-header">
+              <h3 class="sub-title">💡 Lời Khuyên Tài Chính Cá Nhân AI (50/30/20)</h3>
+              <button id="btn-saving-tips" class="btn-jade-sm" @click="loadSavingTips" :disabled="loadingTips">
+                {{ loadingTips ? '⏳ AI đang phân tích...' : '✨ Nhận Lời Khuyên AI' }}
+              </button>
+            </div>
+            <div v-if="savingTips" class="saving-tips-card glass-panel">
+              <div class="tips-meta">
+                <span>📅 Tháng: {{ savingTips.month_year }}</span>
+                <span>📈 Tỷ lệ tiết kiệm: <strong :class="savingTips.savings_rate >= 20 ? 'positive' : 'negative'">{{ savingTips.savings_rate }}%</strong></span>
+              </div>
+              <div class="tips-content" v-html="formatChatText(savingTips.tips)"></div>
+            </div>
+          </div>
+
+          <!-- Recent Transactions -->
+          <h3 class="sub-title">📜 Giao Dịch Tài Chính Gần Đây</h3>
+          <div class="table-scroll">
             <table class="xianxia-table">
-              <thead><tr><th>Sản Phẩm</th><th>SL</th><th>Đơn Giá</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Ngày</th>
+                  <th>Danh Mục</th>
+                  <th>Ghi Chú</th>
+                  <th>Ví Tiền</th>
+                  <th>Số Tiền (VNĐ)</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr v-for="(item, i) in ocrResult.items" :key="i">
-                  <td>{{ item.name }}</td>
-                  <td>{{ item.quantity || 1 }}</td>
-                  <td>{{ formatVND(item.price || 0) }}</td>
+                <tr v-for="txn in transactions.slice(0, 10)" :key="txn.id">
+                  <td>{{ txn.transaction_date }}</td>
+                  <td>
+                    <span class="cat-badge">
+                      <i v-if="isFontAwesome(txn.category_icon)" :class="txn.category_icon" class="cat-inline-icon"></i>
+                      <span v-else class="cat-inline-icon">{{ txn.category_icon }}</span>
+                      {{ txn.category_name }}
+                    </span>
+                  </td>
+                  <td>{{ txn.note || '—' }}</td>
+                  <td>{{ txn.wallet_name }}</td>
+                  <td :class="txn.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
+                    {{ txn.transaction_type === 'INCOME' ? '+' : '-' }}{{ formatVND(txn.amount) }}
+                  </td>
+                </tr>
+                <tr v-if="!transactions.length">
+                  <td colspan="5" class="empty-row">Chưa có giao dịch nào...</td>
                 </tr>
               </tbody>
             </table>
           </div>
+        </section>
 
-          <button class="btn-jade" @click="confirmOCRTransaction" :disabled="loading" style="margin-top: 20px;">
-            {{ loading ? '⏳ Đang lưu giao dịch...' : '⚡ Xác Nhận & Thêm Vào Lịch Sử Giao Dịch' }}
-          </button>
-        </div>
-      </section>
-
-      <!-- ═══════ TAB 6: BUDGETS ═══════ -->
-      <section v-if="activeTab === 'budgets'" class="tab-panel">
-        <h2 class="section-title">🎯 Hạn Mức Tu Luyện — Ngân Sách</h2>
-
-        <div class="form-card">
-          <h3 class="sub-title">➕ Thiết Lập Hạn Mức</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Danh Mục Chi</label>
-              <select v-model="budgetForm.category_id">
-                <option v-for="c in expenseCategories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.category_name }}</option>
-              </select>
+        <!-- ═══════ TAB 2: TRANSACTIONS ═══════ -->
+        <section v-if="activeTab === 'transactions'" id="panel-transactions" class="tab-panel">
+          <h2 class="section-title">💸 Quản Lý Chi Tiết Giao Dịch</h2>
+          
+          <!-- FORM THÊM GIAO DỊCH -->
+          <div class="form-card glass-panel">
+            <h3 class="form-card-title">✨ Ghi Nhận Thu / Chi Mới</h3>
+            <div class="form-grid">
+              <div class="input-group-xianxia">
+                <label>Loại Giao Dịch</label>
+                <select id="txn-type-select" v-model="txnForm.transaction_type">
+                  <option value="EXPENSE">🔥 Chi Tiêu</option>
+                  <option value="INCOME">💰 Thu Nhập</option>
+                </select>
+              </div>
+              <div class="input-group-xianxia">
+                <label>Số Tiền (VNĐ)</label>
+                <input id="txn-amount-input" v-model.number="txnForm.amount" type="number" placeholder="Ví dụ: 150000" />
+              </div>
+              <div class="input-group-xianxia">
+                <label>Ví Thanh Toán</label>
+                <select id="txn-wallet-select" v-model="txnForm.wallet_id">
+                  <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }} ({{ formatVND(w.balance) }})</option>
+                </select>
+              </div>
+              <div class="input-group-xianxia">
+                <label>Danh Mục</label>
+                <select id="txn-category-select" v-model="txnForm.category_id">
+                  <option :value="null">-- Chọn Danh Mục --</option>
+                  <option v-for="c in filteredCategories" :key="c.id" :value="c.id">
+                    {{ c.category_name }}
+                  </option>
+                </select>
+              </div>
+              <div class="input-group-xianxia">
+                <label>Ngày Giao Dịch</label>
+                <input id="txn-date-input" v-model="txnForm.transaction_date" type="date" />
+              </div>
+              <div class="input-group-xianxia">
+                <label>Ghi Chú</label>
+                <input id="txn-note-input" v-model="txnForm.note" type="text" placeholder="Ghi chú chi tiết..." />
+              </div>
             </div>
-            <div class="input-group-xianxia">
-              <label>Hạn Mức (VNĐ)</label>
-              <input v-model.number="budgetForm.limit_amount" type="number" placeholder="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Tháng</label>
-              <input v-model="budgetForm.month_year" type="month" />
+            <div class="form-action-right">
+              <button id="btn-save-txn" class="btn-jade" @click="createTransaction" :disabled="loading">
+                {{ loading ? '⏳ Đang lưu...' : '⚡ Lưu Giao Dịch' }}
+              </button>
             </div>
           </div>
-          <button class="btn-jade" @click="createBudget" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '🎯 Thiết Lập Hạn Mức' }}
-          </button>
-        </div>
 
-        <div class="budget-list">
-          <div v-for="b in budgets" :key="b.id" class="budget-card">
-            <div class="budget-header">
-              <span>{{ b.category_icon }} {{ b.category_name }}</span>
-              <button class="btn-sm-danger" @click="deleteBudget(b.id)">✕</button>
-            </div>
-            <div class="budget-amounts">
-              <span>Đã chi: <strong>{{ formatVND(b.spent) }}</strong></span>
-              <span>Hạn mức: <strong>{{ formatVND(b.limit_amount) }}</strong></span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-fill"
-                   :class="budgetPct(b) >= 100 ? 'danger' : budgetPct(b) >= 80 ? 'warning' : 'safe'"
-                   :style="{ width: Math.min(100, budgetPct(b)) + '%' }">
-              </div>
-            </div>
-            <span class="budget-pct" :class="budgetPct(b) >= 100 ? 'pct-danger' : budgetPct(b) >= 80 ? 'pct-warning' : 'pct-safe'">
-              {{ budgetPct(b).toFixed(1) }}%
-              <span v-if="budgetPct(b) >= 100"> — 🔥 TẨU HỎA NHẬP MA!</span>
-              <span v-else-if="budgetPct(b) >= 80"> — ⚠️ Cảnh Báo Tâm Ma</span>
-            </span>
-          </div>
-          <div v-if="!budgets.length" class="empty-state">Chưa thiết lập hạn mức tu luyện nào...</div>
-        </div>
-      </section>
-
-      <!-- ═══════ TAB 7: STATISTICS ═══════ -->
-      <section v-if="activeTab === 'stats'" class="tab-panel">
-        <h2 class="section-title">📈 Thiên Cơ Thống Kê — Phân Tích Nâng Cao</h2>
-
-        <!-- Trend Chart -->
-        <div class="stats-chart-card" v-if="trendData.trend && trendData.trend.length">
-          <ChartComponent
-            type="bar"
-            :chart-data="trendBarData"
-            title="📊 Xu Hướng Thu/Chi 6 Tháng"
-          />
-        </div>
-
-        <!-- Weekly Chart -->
-        <div class="stats-chart-card" v-if="weeklyData.data && weeklyData.data.length">
-          <ChartComponent
-            type="line"
-            :chart-data="weeklyLineData"
-            title="📉 Chi Tiêu Theo Tuần (4 Tuần Gần Đây)"
-          />
-        </div>
-
-        <!-- Doughnut -->
-        <div class="stats-chart-card" v-if="summary.expense_by_category && summary.expense_by_category.length">
-          <ChartComponent
-            type="doughnut"
-            :chart-data="statsDoughnutData"
-            title="🥧 Tỷ Trọng Chi Tiêu Theo Danh Mục"
-          />
-        </div>
-
-        <!-- Month Comparison -->
-        <div class="compare-section">
-          <h3 class="sub-title">🔀 So Sánh Chi Tiêu Hai Tháng</h3>
-          <div class="compare-controls">
-            <div class="input-group-xianxia">
-              <label>Tháng 1</label>
-              <input v-model="compareMonth1" type="month" @change="loadCompare" />
-            </div>
-            <span class="compare-vs">VS</span>
-            <div class="input-group-xianxia">
-              <label>Tháng 2</label>
-              <input v-model="compareMonth2" type="month" @change="loadCompare" />
+          <!-- BẢNG LỊCH SỬ GIAO DỊCH -->
+          <div class="table-card glass-panel">
+            <h3 class="sub-title">📜 Toàn Bộ Lịch Sử Thu Chi</h3>
+            <div class="table-scroll">
+              <table class="xianxia-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Ngày</th>
+                    <th>Danh Mục</th>
+                    <th>Ví</th>
+                    <th>Ghi Chú</th>
+                    <th>Số Tiền</th>
+                    <th>Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="txn in transactions" :key="txn.id">
+                    <td>#{{ txn.id }}</td>
+                    <td>{{ txn.transaction_date }}</td>
+                    <td>
+                      <span class="cat-badge">
+                        <i v-if="isFontAwesome(txn.category_icon)" :class="txn.category_icon" class="cat-inline-icon"></i>
+                        <span v-else class="cat-inline-icon">{{ txn.category_icon }}</span>
+                        {{ txn.category_name }}
+                      </span>
+                    </td>
+                    <td>{{ txn.wallet_name }}</td>
+                    <td>{{ txn.note || '—' }}</td>
+                    <td :class="txn.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
+                      {{ txn.transaction_type === 'INCOME' ? '+' : '-' }}{{ formatVND(txn.amount) }}
+                    </td>
+                    <td>
+                      <button class="btn-del-sm" @click="deleteTransaction(txn.id)" title="Xóa giao dịch">🗑️</button>
+                    </td>
+                  </tr>
+                  <tr v-if="!transactions.length">
+                    <td colspan="7" class="empty-row">Chưa có giao dịch nào...</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
-          <div v-if="compareData" class="compare-grid">
-            <div class="compare-card">
-              <h4>📅 {{ compareData.month1.month }}</h4>
-              <div class="compare-stat">
-                <span>Thu: <strong class="positive">{{ formatVND(compareData.month1.income) }}</strong></span>
-                <span>Chi: <strong class="negative">{{ formatVND(compareData.month1.expense) }}</strong></span>
-                <span>Tiết kiệm: <strong :class="compareData.month1.savings >= 0 ? 'positive' : 'negative'">{{ formatVND(compareData.month1.savings) }}</strong></span>
-              </div>
-            </div>
-            <div class="compare-delta">
-              <div class="delta-item" :class="compareData.delta_income >= 0 ? 'delta-up' : 'delta-down'">
-                <span class="delta-arrow">{{ compareData.delta_income >= 0 ? '▲' : '▼' }}</span>
-                <span>Thu: {{ formatVND(Math.abs(compareData.delta_income)) }}</span>
-              </div>
-              <div class="delta-item" :class="compareData.delta_expense <= 0 ? 'delta-up' : 'delta-down'">
-                <span class="delta-arrow">{{ compareData.delta_expense >= 0 ? '▲' : '▼' }}</span>
-                <span>Chi: {{ formatVND(Math.abs(compareData.delta_expense)) }}</span>
-              </div>
-              <div class="delta-item" :class="compareData.delta_savings >= 0 ? 'delta-up' : 'delta-down'">
-                <span class="delta-arrow">{{ compareData.delta_savings >= 0 ? '▲' : '▼' }}</span>
-                <span>Tiết kiệm: {{ formatVND(Math.abs(compareData.delta_savings)) }}</span>
-              </div>
-            </div>
-            <div class="compare-card">
-              <h4>📅 {{ compareData.month2.month }}</h4>
-              <div class="compare-stat">
-                <span>Thu: <strong class="positive">{{ formatVND(compareData.month2.income) }}</strong></span>
-                <span>Chi: <strong class="negative">{{ formatVND(compareData.month2.expense) }}</strong></span>
-                <span>Tiết kiệm: <strong :class="compareData.month2.savings >= 0 ? 'positive' : 'negative'">{{ formatVND(compareData.month2.savings) }}</strong></span>
-              </div>
-            </div>
-          </div>
-        </div>
+        </section>
 
-        <div v-if="!trendData.trend?.length && !weeklyData.data?.length" class="empty-state">
-          Chưa có đủ dữ liệu để hiển thị thống kê. Hãy thêm giao dịch!
-        </div>
-      </section>
-
-      <!-- ═══════ TAB 8: AI CHAT ═══════ -->
-      <section v-if="activeTab === 'chat'" class="tab-panel">
-        <h2 class="section-title">💬 Khấu Bái Khí Linh — Trợ Lý AI Gemini</h2>
-
-        <div class="chat-container">
-          <div class="chat-messages" ref="chatMessagesEl">
-            <div class="chat-welcome">
-              <div class="chat-ai-avatar">🔮</div>
-              <p>Kính chào Ký Chủ! Ta là <strong>Khí Linh Tiên Trí</strong>, trợ lý tài chính AI phong cách tu tiên. Hãy hỏi ta bất cứ điều gì về tài chính của đạo hữu!</p>
-            </div>
-            <div v-for="(msg, idx) in chatMessages" :key="idx"
-                 :class="['chat-bubble', msg.role === 'user' ? 'user-bubble' : 'ai-bubble']">
-              <div class="bubble-avatar">{{ msg.role === 'user' ? '🧙' : '🔮' }}</div>
-              <div class="bubble-content" v-html="formatChatText(msg.text)"></div>
-            </div>
-            <div v-if="chatLoading && activeTab === 'chat'" class="chat-bubble ai-bubble">
-              <div class="bubble-avatar">🔮</div>
-              <div class="bubble-content typing-indicator">
-                <span></span><span></span><span></span>
-              </div>
-            </div>
-          </div>
-          <div class="chat-input-area">
-            <input v-model="chatInput" type="text"
-                   placeholder="Hỏi Tiên Trí về tài chính..."
-                   @keyup.enter="sendChat" />
-            <button class="btn-jade-sm" @click="sendChat" :disabled="chatLoading || !chatInput.trim()">
-              ⚡ Gửi
+        <!-- ═══════ TAB 3: WALLETS ═══════ -->
+        <section v-if="activeTab === 'wallets'" id="panel-wallets" class="tab-panel">
+          <div class="section-header-flex">
+            <h2 class="section-title">💳 Quản Lý Tài Khoản & Ví Tiền</h2>
+            <button id="btn-cleanup-wallets" class="btn-secondary-sm" @click="doCleanupAll" title="Chuẩn hóa toàn bộ tên ví tiền và dữ liệu hệ thống">
+              <i class="fa-solid fa-broom"></i> Dọn Rác & Chuẩn Hóa Ví Tiền
             </button>
           </div>
-        </div>
-      </section>
-    </main>
 
-    <!-- REQUIREMENT 5: ACCOUNT MANAGEMENT MODAL -->
-    <div v-if="showProfileModal" class="modal-backdrop" @click.self="showProfileModal = false">
-      <div class="modal-card">
+          <!-- DANH SÁCH VÍ -->
+          <div class="wallet-grid">
+            <div v-for="w in wallets" :key="w.id" class="wallet-card glass-panel">
+              <div class="wallet-header">
+                <span class="wallet-type-icon">{{ walletTypeIcon(w.wallet_type) }}</span>
+                <span class="wallet-name">{{ w.wallet_name }}</span>
+                <button v-if="wallets.length > 1" class="btn-del-sm" @click="deleteWallet(w.id)" title="Xóa ví">🗑️</button>
+              </div>
+              <div class="wallet-balance-val">{{ formatVND(w.balance) }}</div>
+            </div>
+          </div>
+
+          <!-- THÊM VÍ VÀ CHUYỂN TIỀN -->
+          <div class="two-col-grid">
+            <div class="form-card glass-panel">
+              <h3 class="form-card-title">✨ Thêm Ví Tiền Mới</h3>
+              <div class="input-group-xianxia">
+                <label>Tên Ví Tiền</label>
+                <input id="new-wallet-name" v-model="walletForm.wallet_name" type="text" placeholder="Ví dụ: Ví MoMo, Tiền Mặt..." />
+              </div>
+              <div class="input-group-xianxia">
+                <label>Số Dư Ban Đầu</label>
+                <input id="new-wallet-balance" v-model.number="walletForm.balance" type="number" placeholder="0" />
+              </div>
+              <div class="input-group-xianxia">
+                <label>Loại Ví</label>
+                <select id="new-wallet-type" v-model="walletForm.wallet_type">
+                  <option value="cash">💵 Tiền Mặt</option>
+                  <option value="bank">🏦 Tài Khoản Ngân Hàng</option>
+                  <option value="e-wallet">📱 Ví Điện Tử</option>
+                </select>
+              </div>
+              <button id="btn-create-wallet" class="btn-jade" @click="createWallet" :disabled="loading">Tạo Ví Mới</button>
+            </div>
+
+            <div class="form-card glass-panel">
+              <h3 class="form-card-title">🔄 Chuyển Tiền Giữa Các Ví</h3>
+              <div class="input-group-xianxia">
+                <label>Ví Nguồn</label>
+                <select id="transfer-from-select" v-model="transferForm.from_wallet_id">
+                  <option :value="null">-- Chọn Ví Nguồn --</option>
+                  <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }} ({{ formatVND(w.balance) }})</option>
+                </select>
+              </div>
+              <div class="input-group-xianxia">
+                <label>Ví Đích</label>
+                <select id="transfer-to-select" v-model="transferForm.to_wallet_id">
+                  <option :value="null">-- Chọn Ví Đích --</option>
+                  <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }}</option>
+                </select>
+              </div>
+              <div class="input-group-xianxia">
+                <label>Số Tiền Chuyển (VNĐ)</label>
+                <input id="transfer-amount-input" v-model.number="transferForm.amount" type="number" placeholder="Ví dụ: 500000" />
+              </div>
+              <button id="btn-do-transfer" class="btn-gold" @click="doTransfer" :disabled="loading">⚡ Thực Hiện Chuyển Tiền</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════ TAB 4: CATEGORIES (FONTAWESOME ICONS & MOJIBAKE FIX) ═══════ -->
+        <section v-if="activeTab === 'categories'" id="panel-categories" class="tab-panel">
+          <div class="section-header-flex">
+            <h2 class="section-title">🏷️ Danh Mục Chi Tiêu & Thu Nhập</h2>
+            <button id="btn-cleanup-categories" class="btn-secondary-sm" @click="doCleanupCategories" title="Dọn dẹp các danh mục bị lỗi font Mojibake và khởi tạo lại">
+              <i class="fa-solid fa-broom"></i> Dọn Rác & Chuẩn Hóa Danh Mục
+            </button>
+          </div>
+          
+          <div class="two-col-grid">
+            <div class="form-card glass-panel">
+              <h3 class="form-card-title">✨ Tạo Danh Mục Mới</h3>
+              <div class="input-group-xianxia">
+                <label>Tên Danh Mục</label>
+                <input id="new-cat-name" v-model="catForm.category_name" type="text" placeholder="Ví dụ: Ăn Uống, Du Lịch..." />
+              </div>
+              <div class="input-group-xianxia">
+                <label>Loại Danh Mục</label>
+                <select id="new-cat-type" v-model="catForm.category_type">
+                  <option value="EXPENSE">🔥 Chi Tiêu</option>
+                  <option value="INCOME">💰 Thu Nhập</option>
+                </select>
+              </div>
+              <div class="input-group-xianxia">
+                <label>Chọn Biểu Tượng Icon</label>
+                <div class="icon-selector">
+                  <span v-for="ico in iconOptions" :key="ico"
+                        :class="['icon-choice', { active: catForm.icon === ico }]"
+                        @click="catForm.icon = ico"
+                        :title="ico">
+                    <i v-if="isFontAwesome(ico)" :class="ico"></i>
+                    <span v-else>{{ ico }}</span>
+                  </span>
+                </div>
+              </div>
+              <button id="btn-create-category" class="btn-jade" @click="createCategory" :disabled="loading">
+                <i class="fa-solid fa-plus"></i> Tạo Danh Mục
+              </button>
+            </div>
+
+            <div class="table-card glass-panel">
+              <h3 class="sub-title">📋 Danh Sách Phân Loại Đang Dùng</h3>
+              <div class="category-badges-list">
+                <div v-for="c in categories" :key="c.id" class="cat-pill">
+                  <span class="cat-pill-icon">
+                    <i v-if="isFontAwesome(c.icon)" :class="c.icon"></i>
+                    <span v-else>{{ c.icon }}</span>
+                  </span>
+                  <span class="cat-pill-name">{{ c.category_name }}</span>
+                  <span class="cat-pill-type" :class="c.category_type">{{ c.category_type === 'INCOME' ? 'Thu' : 'Chi' }}</span>
+                  <button class="btn-del-mini" @click="deleteCategory(c.id)" title="Xóa danh mục">✕</button>
+                </div>
+                <div v-if="!categories.length" class="empty-state">
+                  Chưa có danh mục nào. Hãy bấm "Dọn Rác & Chuẩn Hóa Danh Mục" ở góc phải để tự động nạp danh mục chuẩn!
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════ TAB 5: OCR INVOICE SCANNING ═══════ -->
+        <section v-if="activeTab === 'ocr'" id="panel-ocr" class="tab-panel">
+          <h2 class="section-title">🧾 Quét & Nhận Diện Hóa Đơn Tự Động (OCR AI Vision)</h2>
+          
+          <div class="two-col-grid">
+            <div class="form-card glass-panel" id="ocr-upload-card">
+              <h3 class="form-card-title">📸 Tải Lên Ảnh Hóa Đơn Thanh Toán</h3>
+              <div id="ocr-dropzone" class="ocr-dropzone" @dragover.prevent @drop.prevent="handleOCRDrop" @click="$refs.ocrInput.click()">
+                <input id="ocr-file-input" type="file" ref="ocrInput" accept="image/*" class="ocr-file-input" @change="handleOCRUpload" />
+                <div v-if="!ocrPreview" class="ocr-drop-placeholder">
+                  <span class="ocr-camera-icon"><i class="fa-solid fa-camera"></i></span>
+                  <p>Kéo thả ảnh hóa đơn vào đây hoặc <strong>Nhấp để chọn ảnh</strong></p>
+                  <small>Hỗ trợ định dạng JPEG, PNG, WEBP (Tối đa 10MB)</small>
+                </div>
+                <div v-else class="ocr-preview-container" @click.stop>
+                  <img :src="ocrPreview" alt="Xem trước hóa đơn" class="ocr-img-preview" />
+                  <div>
+                    <button id="btn-reupload-ocr" class="btn-reupload" @click="$refs.ocrInput.click()">
+                      <i class="fa-solid fa-rotate-right"></i> Đổi ảnh khác
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <button id="btn-scan-ai" class="btn-jade btn-block" @click="scanInvoice" :disabled="loading || !ocrFile">
+                {{ loading ? '👁️ AI Vision đang phân tích hóa đơn...' : '⚡ Bắt Đầu Quét OCR AI' }}
+              </button>
+            </div>
+
+            <div class="form-card glass-panel" id="ocr-result-card">
+              <h3 class="form-card-title">🔍 Kết Quả Phân Tích & Xác Nhận Giao Dịch</h3>
+              <div v-if="ocrConfirmForm" id="ocr-confirm-box" class="ocr-confirm-box">
+                <div class="input-group-xianxia">
+                  <label>Số Tiền Nhận Diện (VNĐ)</label>
+                  <input id="ocr-amount-input" v-model.number="ocrConfirmForm.amount" type="number" />
+                </div>
+                <div class="input-group-xianxia">
+                  <label>Ngày Hóa Đơn</label>
+                  <input id="ocr-date-input" v-model="ocrConfirmForm.transaction_date" type="date" />
+                </div>
+                <div class="input-group-xianxia">
+                  <label>Nội Dung / Tên Cửa Hàng</label>
+                  <input id="ocr-note-input" v-model="ocrConfirmForm.note" type="text" />
+                </div>
+                <div class="input-group-xianxia">
+                  <label>Ví Thanh Toán</label>
+                  <select id="ocr-wallet-select" v-model="ocrConfirmForm.wallet_id">
+                    <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }} ({{ formatVND(w.balance) }})</option>
+                  </select>
+                </div>
+                <div class="input-group-xianxia">
+                  <label>Danh Mục Chi Tiêu</label>
+                  <select id="ocr-category-select" v-model="ocrConfirmForm.category_id">
+                    <option v-for="c in expenseCategories" :key="c.id" :value="c.id">
+                      {{ c.category_name }}
+                    </option>
+                  </select>
+                </div>
+                <button id="btn-confirm-ocr" class="btn-gold btn-block" @click="confirmOCRTransaction" :disabled="loading">
+                  ✨ Xác Nhận Lưu Giao Dịch Vào Sổ
+                </button>
+              </div>
+              <div v-else class="empty-state">
+                <span style="font-size: 36px; display: block; margin-bottom: 8px;"><i class="fa-solid fa-receipt"></i></span>
+                Chưa có dữ liệu quét. Vui lòng tải ảnh hóa đơn và bấm nút <strong>Bắt Đầu Quét OCR AI</strong>.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════ TAB 6: BUDGETS ═══════ -->
+        <section v-if="activeTab === 'budgets'" id="panel-budgets" class="tab-panel">
+          <h2 class="section-title">🎯 Thiết Lập Ngân Sách & Hạn Mức Chi Tiêu</h2>
+          
+          <div class="form-card glass-panel">
+            <h3 class="form-card-title">✨ Thiết Lập Hạn Mức Ngân Sách Tháng</h3>
+            <div class="form-grid">
+              <div class="input-group-xianxia">
+                <label>Danh Mục Chi Tiêu</label>
+                <select id="budget-cat-select" v-model="budgetForm.category_id">
+                  <option :value="null">-- Chọn Danh Mục --</option>
+                  <option v-for="c in expenseCategories" :key="c.id" :value="c.id">
+                    {{ c.category_name }}
+                  </option>
+                </select>
+              </div>
+              <div class="input-group-xianxia">
+                <label>Hạn Mức Tối Đa (VNĐ)</label>
+                <input id="budget-limit-input" v-model.number="budgetForm.limit_amount" type="number" placeholder="Ví dụ: 3000000" />
+              </div>
+              <div class="input-group-xianxia">
+                <label>Tháng Áp Dụng</label>
+                <input id="budget-month-input" v-model="budgetForm.month_year" type="month" />
+              </div>
+            </div>
+            <div class="form-action-right">
+              <button id="btn-save-budget" class="btn-jade" @click="createBudget" :disabled="loading">Lưu Hạn Mức</button>
+            </div>
+          </div>
+
+          <!-- TIẾN ĐỘ HẠN MỨC -->
+          <div class="budget-list">
+            <div v-for="b in budgets" :key="b.id" class="budget-item-card glass-panel">
+              <div class="budget-card-head">
+                <span class="budget-cat-name">
+                  <i v-if="isFontAwesome(b.category_icon)" :class="b.category_icon" class="cat-inline-icon"></i>
+                  <span v-else class="cat-inline-icon">{{ b.category_icon }}</span>
+                  {{ b.category_name }}
+                </span>
+                <span class="budget-cat-val">{{ formatVND(b.spent_amount) }} / {{ formatVND(b.limit_amount) }}</span>
+                <button class="btn-del-mini" @click="deleteBudget(b.id)">🗑️</button>
+              </div>
+              <div class="budget-progress-bar">
+                <div class="budget-progress-fill"
+                     :style="{ width: Math.min(budgetPct(b), 100) + '%' }"
+                     :class="{ danger: budgetPct(b) >= 100, warning: budgetPct(b) >= 80 && budgetPct(b) < 100 }">
+                </div>
+              </div>
+              <div class="budget-pct-text">Đã dùng: {{ budgetPct(b).toFixed(1) }}%</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════ TAB 7: STATS ═══════ -->
+        <section v-if="activeTab === 'stats'" id="panel-stats" class="tab-panel">
+          <h2 class="section-title">📈 Phân Tích & Báo Cáo Thống Kê</h2>
+
+          <!-- SO SÁNH 2 THÁNG -->
+          <div class="compare-controls glass-panel">
+            <div class="compare-row">
+              <div class="input-group-xianxia">
+                <label>Tháng 1</label>
+                <input id="compare-m1" v-model="compareMonth1" type="month" @change="loadCompare" />
+              </div>
+              <div class="compare-vs">VS</div>
+              <div class="input-group-xianxia">
+                <label>Tháng 2</label>
+                <input id="compare-m2" v-model="compareMonth2" type="month" @change="loadCompare" />
+              </div>
+            </div>
+            <div v-if="compareData" class="compare-results">
+              <div class="compare-card">
+                <span>Chênh Lệch Thu Nhập: </span>
+                <strong :class="compareData.diff_income >= 0 ? 'positive' : 'negative'">{{ formatVND(compareData.diff_income) }}</strong>
+              </div>
+              <div class="compare-card">
+                <span>Chênh Lệch Chi Tiêu: </span>
+                <strong :class="compareData.diff_expense <= 0 ? 'positive' : 'negative'">{{ formatVND(compareData.diff_expense) }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="charts-grid-stats">
+            <div class="chart-card glass-panel" v-if="weeklyData.data && weeklyData.data.length">
+              <ChartComponent
+                type="line"
+                :chart-data="weeklyLineData"
+                title="📈 Dòng Tiền Chi Tiêu Theo Tuần"
+              />
+            </div>
+            <div class="chart-card glass-panel" v-if="trendData.trend && trendData.trend.length">
+              <ChartComponent
+                type="bar"
+                :chart-data="trendBarData"
+                title="📊 Diễn Biến Thu / Chi 6 Tháng"
+              />
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════ TAB 8: AI FINANCIAL ADVISOR CHAT ═══════ -->
+        <section v-if="activeTab === 'chat'" id="panel-chat" class="tab-panel">
+          <h2 class="section-title">💬 Trợ Lý Cố Vấn Tài Chính Cá Nhân AI (Gemini Assistant)</h2>
+
+          <div id="ai-chat-container" class="chat-container glass-panel">
+            <div id="chat-messages-box" class="chat-messages" ref="chatMessagesEl">
+              <div class="chat-welcome">
+                <div class="chat-ai-avatar"><i class="fa-solid fa-robot"></i></div>
+                <div>
+                  <p><strong>Trợ Lý Tài Chính Gemini AI:</strong> Xin chào {{ userName }}! Tôi là Trợ lý Cố vấn Tài chính Cá nhân. Tôi có thể giúp bạn giải đáp thắc mắc về phân bổ ngân sách, phương pháp tiết kiệm 50/30/20, hoặc phân tích số dư hiện tại của bạn.</p>
+                </div>
+              </div>
+              <div v-for="(msg, idx) in chatMessages" :key="idx"
+                   :class="['chat-bubble', msg.role === 'user' ? 'user-bubble' : 'ai-bubble']">
+                <div class="bubble-avatar">
+                  <i v-if="msg.role === 'user'" class="fa-solid fa-user"></i>
+                  <i v-else class="fa-solid fa-robot"></i>
+                </div>
+                <div class="bubble-content" v-html="formatChatText(msg.text)"></div>
+              </div>
+              <div v-if="chatLoading" class="chat-bubble ai-bubble">
+                <div class="bubble-avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="bubble-content typing-indicator">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="chat-input-area">
+              <input id="chat-input" v-model="chatInput" type="text"
+                     placeholder="Đặt câu hỏi tài chính (ví dụ: Làm thế nào để tiết kiệm 20% thu nhập?)..."
+                     @keyup.enter="sendChat" />
+              <button id="chat-send-btn" class="btn-jade-sm" @click="sendChat" :disabled="chatLoading || !chatInput.trim()">
+                <i class="fa-solid fa-paper-plane"></i> Gửi Tin
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══════ TAB 9: ADMIN ═══════ -->
+        <section v-if="activeTab === 'admin' && userRole === 'admin'" id="panel-admin" class="tab-panel">
+          <h2 class="section-title">👑 Bảng Quản Trị Hệ Thống (Admin Panel)</h2>
+
+          <div class="table-card glass-panel">
+            <h3 class="sub-title">👥 Quản Lý Danh Sách Người Dùng</h3>
+            <div class="table-scroll">
+              <table class="xianxia-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Email</th>
+                    <th>Họ Tên</th>
+                    <th>Vai Trò</th>
+                    <th>Trạng Thái</th>
+                    <th>Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="u in adminUsers" :key="u.id">
+                    <td>#{{ u.id }}</td>
+                    <td>{{ u.email }}</td>
+                    <td>{{ u.full_name }}</td>
+                    <td><span class="role-badge" :class="u.role.toLowerCase()">{{ u.role }}</span></td>
+                    <td>
+                      <span :class="u.is_blocked ? 'status-blocked' : 'status-active'">
+                        {{ u.is_blocked ? '🔒 Đã Khóa' : '✅ Hoạt Động' }}
+                      </span>
+                    </td>
+                    <td>
+                      <button class="btn-block-sm" @click="toggleBlockUser(u.id)">
+                        {{ u.is_blocked ? '🔓 Mở Khóa' : '🔒 Khóa' }}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="table-card glass-panel" style="margin-top: 24px;">
+            <h3 class="sub-title">📜 Giám Sát Toàn Bộ Giao Dịch Hệ Thống</h3>
+            <div class="table-scroll">
+              <table class="xianxia-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Người Dùng (Email)</th>
+                    <th>Họ Tên</th>
+                    <th>Danh Mục</th>
+                    <th>Số Tiền (VNĐ)</th>
+                    <th>Ngày</th>
+                    <th>Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="tx in adminTransactions" :key="tx.id">
+                    <td>#{{ tx.id }}</td>
+                    <td>{{ tx.user_email }}</td>
+                    <td>{{ tx.user_name }}</td>
+                    <td>{{ tx.category_name }}</td>
+                    <td :class="tx.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
+                      {{ formatVND(tx.amount) }}
+                    </td>
+                    <td>{{ tx.transaction_date }}</td>
+                    <td>
+                      <button class="btn-del-sm" @click="adminDeleteTx(tx.id)">🗑️</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- AUTH MODAL (ĐĂNG NHẬP / ĐĂNG KÝ)                          -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div v-if="showAuthModal" id="auth-modal" class="modal-backdrop" @click.self="showAuthModal = false">
+      <div class="modal-card auth-modal-card glass-panel">
         <div class="modal-header">
-          <h3 class="modal-title">🧘 Quản Lý Đạo Tâm (Tài Khoản)</h3>
+          <div class="dao-symbol"><i class="fa-solid fa-shield-halved"></i></div>
+          <h3 class="modal-title">{{ authMode === 'login' ? 'Đăng Nhập Tài Khoản' : 'Đăng Ký Tài Khoản Mới' }}</h3>
+          <button id="btn-close-auth-modal" class="modal-close" @click="showAuthModal = false">✕</button>
+        </div>
+
+        <div class="modal-tabs">
+          <button id="modal-tab-login" :class="['modal-tab-btn', { active: authMode === 'login' }]" @click="authMode = 'login'">Đăng Nhập</button>
+          <button id="modal-tab-register" :class="['modal-tab-btn', { active: authMode === 'register' }]" @click="authMode = 'register'">Đăng Ký</button>
+        </div>
+
+        <!-- FORM ĐĂNG NHẬP -->
+        <div v-if="authMode === 'login'" class="auth-form-inner">
+          <div class="input-group-xianxia">
+            <label>📧 Địa Chỉ Email</label>
+            <input id="login-email" v-model="authForm.email" type="email" placeholder="admin@gmail.com" @keyup.enter="doLogin" />
+          </div>
+          <div class="input-group-xianxia">
+            <label>🔑 Mật Khẩu</label>
+            <input id="login-password" v-model="authForm.password" type="password" placeholder="••••••" @keyup.enter="doLogin" />
+          </div>
+          <button id="btn-submit-login" class="btn-jade btn-block" @click="doLogin" :disabled="loading">
+            {{ loading ? '⏳ Đang xác thực...' : '🔑 Đăng Nhập Hệ Thống' }}
+          </button>
+        </div>
+
+        <!-- FORM ĐĂNG KÝ -->
+        <div v-else class="auth-form-inner">
+          <div class="input-group-xianxia">
+            <label>👤 Họ và Tên</label>
+            <input id="register-name" v-model="authForm.full_name" type="text" placeholder="Nguyễn Văn A" />
+          </div>
+          <div class="input-group-xianxia">
+            <label>📧 Địa Chỉ Email</label>
+            <input id="register-email" v-model="authForm.email" type="email" placeholder="nguyenvana@gmail.com" />
+          </div>
+          <div class="input-group-xianxia">
+            <label>🔑 Mật Khẩu</label>
+            <input id="register-password" v-model="authForm.password" type="password" placeholder="••••••" />
+          </div>
+          <button id="btn-submit-register" class="btn-gold btn-block" @click="doRegister" :disabled="loading">
+            {{ loading ? '⏳ Đang khởi tạo...' : '✨ Tạo Tài Khoản Mới' }}
+          </button>
+        </div>
+
+        <div v-if="errorMsg" id="auth-error-banner" class="error-banner glass-panel-alert">⚠️ {{ errorMsg }}</div>
+      </div>
+    </div>
+
+    <!-- PROFILE MODAL -->
+    <div v-if="showProfileModal" id="profile-modal" class="modal-backdrop" @click.self="showProfileModal = false">
+      <div class="modal-card glass-panel">
+        <div class="modal-header">
+          <h3 class="modal-title">👤 Thông Tin Tài Khoản Cá Nhân</h3>
           <button class="modal-close" @click="showProfileModal = false">✕</button>
         </div>
         <div class="modal-body">
           <div class="input-group-xianxia">
-            <label>📧 Linh Bưu (Email)</label>
+            <label>📧 Địa Chỉ Email</label>
             <input :value="userEmail" type="email" disabled class="disabled-input" />
           </div>
           <div class="input-group-xianxia">
-            <label>👤 Đạo Hiệu Hiển Thị</label>
-            <input v-model="profileForm.full_name" type="text" placeholder="Nhập đạo hiệu mới..." @keyup.enter="saveProfile" />
+            <label>👤 Họ Tên Hiển Thị</label>
+            <input id="profile-fullname-input" v-model="profileForm.full_name" type="text" placeholder="Nhập họ tên mới..." @keyup.enter="saveProfile" />
           </div>
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" @click="showProfileModal = false">Hủy</button>
-          <button class="btn-jade-sm" @click="saveProfile" :disabled="loadingProfile">
-            {{ loadingProfile ? '⏳ Đang lưu...' : '✨ Lưu Đạo Hiệu' }}
+          <button id="btn-save-profile" class="btn-jade-sm" @click="saveProfile" :disabled="loadingProfile">
+            {{ loadingProfile ? '⏳ Đang lưu...' : '✨ Lưu Thay Đổi' }}
           </button>
         </div>
       </div>
     </div>
 
     <!-- TOAST -->
-    <div v-if="toast" class="toast-notification" :class="toast.type">
+    <div v-if="toast" id="toast-notify" class="toast-notification" :class="toast.type">
       {{ toast.message }}
     </div>
   </div>
@@ -718,16 +972,22 @@ import axios from 'axios'
 import ChartComponent from './components/ChartComponents.vue'
 
 export default {
-  name: 'CankKhonApp',
+  name: 'ExpenseManagementApp',
   components: { ChartComponent },
   setup() {
     // ─── STATE ────────────────────
     const isLoggedIn = ref(false)
     const authMode = ref('login')
+    const showAuthModal = ref(false)
     const authForm = ref({ email: '', password: '', full_name: '' })
     const token = ref('')
-    const userName = ref('Ký Chủ')
+    const userName = ref('Người Dùng')
     const userEmail = ref('')
+    const userRole = ref('user')
+    const currentTheme = ref(localStorage.getItem('app_theme') || 'dark')
+
+    const adminUsers = ref([])
+    const adminTransactions = ref([])
     const loading = ref(false)
     const loadingTips = ref(false)
     const loadingProfile = ref(false)
@@ -735,58 +995,103 @@ export default {
     const toast = ref(null)
     const activeTab = ref('dashboard')
 
-    // Profile modal state
-    const showProfileModal = ref(false)
-    const profileForm = ref({ full_name: '' })
+    // ─── MEDIA & VIDEO BACKGROUND ─
+    const bgVideo = ref(null)
+    const isMuted = ref(true)
+    const videoSource = ref('https://i.pinimg.com/originals/a0/0a/76/a00a76a88ab4d12c8ab2bc3bb6658097.mp4')
+    const showWelcomeToast = ref(false)
+    const welcomeName = ref('')
 
-    const tabs = [
-      { id: 'dashboard',    icon: '📊', label: 'Tổng Quan' },
-      { id: 'transactions', icon: '💸', label: 'Giao Dịch' },
-      { id: 'wallets',      icon: '💳', label: 'Túi Càn Khôn' },
-      { id: 'categories',   icon: '🏷️', label: 'Danh Mục' },
-      { id: 'ocr',          icon: '🧾', label: 'Linh Nhãn OCR' },
-      { id: 'budgets',      icon: '🎯', label: 'Hạn Mức' },
-      { id: 'stats',        icon: '📈', label: 'Thống Kê' },
-      { id: 'chat',         icon: '💬', label: 'Khí Linh AI' },
+    function updateVideoSource() {
+      if (!isLoggedIn.value) {
+        videoSource.value = 'https://i.pinimg.com/originals/a0/0a/76/a00a76a88ab4d12c8ab2bc3bb6658097.mp4'
+      } else {
+        videoSource.value = 'https://i.pinimg.com/originals/11/ab/c7/11abc7a2e2be2d26fdfc9e83ec248239.mp4'
+      }
+      nextTick(() => {
+        if (bgVideo.value && currentTheme.value !== 'modern') {
+          bgVideo.value.load()
+          bgVideo.value.play().catch(e => console.warn('Autoplay check:', e))
+        }
+      })
+    }
+
+    function toggleAudio() {
+      isMuted.value = !isMuted.value
+      if (bgVideo.value) {
+        bgVideo.value.muted = isMuted.value
+        if (!isMuted.value) bgVideo.value.volume = 1.0
+      }
+    }
+
+    // ─── TABS ─────────────────────
+    const publicTabs = [
+      { id: 'dashboard',    icon: 'fa-solid fa-chart-pie', label: 'Tổng Quan' },
+      { id: 'transactions', icon: 'fa-solid fa-money-bill-transfer', label: 'Giao Dịch' },
+      { id: 'wallets',      icon: 'fa-solid fa-wallet', label: 'Ví Tiền' },
+      { id: 'categories',   icon: 'fa-solid fa-tags', label: 'Danh Mục' },
+      { id: 'ocr',          icon: 'fa-solid fa-receipt', label: 'Quét Hóa Đơn AI' },
+      { id: 'budgets',      icon: 'fa-solid fa-bullseye', label: 'Hạn Mức' },
+      { id: 'stats',        icon: 'fa-solid fa-chart-line', label: 'Thống Kê' },
+      { id: 'chat',         icon: 'fa-solid fa-robot', label: 'Trợ Lý AI' },
     ]
 
-    // Data
+    const baseTabs = [
+      { id: 'dashboard',    icon: 'fa-solid fa-chart-pie', label: 'Tổng Quan' },
+      { id: 'transactions', icon: 'fa-solid fa-money-bill-transfer', label: 'Giao Dịch' },
+      { id: 'wallets',      icon: 'fa-solid fa-wallet', label: 'Ví Tiền' },
+      { id: 'categories',   icon: 'fa-solid fa-tags', label: 'Danh Mục' },
+      { id: 'ocr',          icon: 'fa-solid fa-receipt', label: 'Quét Hóa Đơn AI' },
+      { id: 'budgets',      icon: 'fa-solid fa-bullseye', label: 'Hạn Mức' },
+      { id: 'stats',        icon: 'fa-solid fa-chart-line', label: 'Thống Kê' },
+      { id: 'chat',         icon: 'fa-solid fa-robot', label: 'Trợ Lý AI' },
+    ]
+
+    const tabs = computed(() => {
+      if (userRole.value === 'admin') {
+        return [...baseTabs, { id: 'admin', icon: 'fa-solid fa-crown', label: 'Quản Trị' }]
+      }
+      return baseTabs
+    })
+
+    // ─── DATA REFS ────────────────
     const wallets = ref([])
     const categories = ref([])
     const transactions = ref([])
     const budgets = ref([])
     const summary = ref({ total_income: 0, total_expense: 0, net_savings: 0, total_balance: 0, expense_by_category: [] })
     const budgetAlerts = ref([])
+    const analyticsData = ref(null)
     const chatMessages = ref([])
     const chatInput = ref('')
     const chatMessagesEl = ref(null)
+    const chatLoading = ref(false)
 
-    // New v3 data
     const trendData = ref({ trend: [] })
     const weeklyData = ref({ data: [] })
     const compareData = ref(null)
     const savingTips = ref(null)
 
-    // Compare month defaults
     const now = new Date()
     const compareMonth2 = ref(now.toISOString().slice(0, 7))
     const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const compareMonth1 = ref(prevMonth.toISOString().slice(0, 7))
 
-    // Forms
+    const showProfileModal = ref(false)
+    const profileForm = ref({ full_name: '' })
+
     const txnForm = ref({
       transaction_type: 'EXPENSE', amount: 0, wallet_id: null,
       category_id: null, transaction_date: new Date().toISOString().slice(0, 10), note: ''
     })
     const walletForm = ref({ wallet_name: '', balance: 0, wallet_type: 'cash' })
-    const catForm = ref({ category_name: '', category_type: 'EXPENSE', icon: '📦' })
+    const catForm = ref({ category_name: '', category_type: 'EXPENSE', icon: 'fa-solid fa-utensils' })
     const budgetForm = ref({
       category_id: null, limit_amount: 0,
       month_year: new Date().toISOString().slice(0, 7)
     })
     const transferForm = ref({ from_wallet_id: null, to_wallet_id: null, amount: 0 })
 
-    // OCR
     const ocrFile = ref(null)
     const ocrPreview = ref(null)
     const ocrResult = ref(null)
@@ -798,11 +1103,32 @@ export default {
       category_id: null,
       transaction_type: 'EXPENSE'
     })
-    const chatLoading = ref(false)
 
-    const iconOptions = ['🍕','🛍️','🚗','💵','🎁','🏠','💊','📚','🎮','☕','🍜','🎬','🏋️','✈️','📱','👕','🎵','🐾','🔧','📦']
+    // Danh sách các icon FontAwesome phong phú & chuẩn
+    const iconOptions = [
+      'fa-solid fa-utensils',
+      'fa-solid fa-cart-shopping',
+      'fa-solid fa-car',
+      'fa-solid fa-book',
+      'fa-solid fa-bolt',
+      'fa-solid fa-heart-pulse',
+      'fa-solid fa-plane',
+      'fa-solid fa-money-bill-wave',
+      'fa-solid fa-chart-line',
+      'fa-solid fa-gift',
+      'fa-solid fa-house',
+      'fa-solid fa-graduation-cap',
+      'fa-solid fa-film',
+      'fa-solid fa-gamepad',
+      'fa-solid fa-mug-saucer',
+      'fa-solid fa-dumbbell',
+      'fa-solid fa-briefcase',
+      'fa-solid fa-mobile-screen-button',
+      'fa-solid fa-shirt',
+      'fa-solid fa-box'
+    ]
 
-    // ─── AXIOS CONFIG ─────────────
+    // ─── AXIOS CLIENT ─────────────
     const api = axios.create({ baseURL: '' })
     api.interceptors.request.use(config => {
       if (token.value) config.headers.Authorization = `Bearer ${token.value}`
@@ -815,27 +1141,22 @@ export default {
     const filteredCategories = computed(() =>
       categories.value.filter(c => c.category_type === txnForm.value.transaction_type)
     )
-    const maxCategoryExpense = computed(() => {
-      if (!summary.value.expense_by_category?.length) return 1
-      return Math.max(...summary.value.expense_by_category.map(c => c.total), 1)
-    })
 
-    // ─── CHART DATA COMPUTED ──────
     const dashboardDoughnutData = computed(() => ({
-      labels: (summary.value.expense_by_category || []).map(c => `${c.icon} ${c.category_name}`),
-      values: (summary.value.expense_by_category || []).map(c => c.total),
+      labels: (summary.value.expense_by_category || []).map(c => c.category_name),
+      values: (summary.value.expense_by_category || []).map(c => c.total || c.total_amount),
     }))
 
     const dashboardBarData = computed(() => ({
-      labels: (trendData.value.trend || []).map(t => t.month),
-      income: (trendData.value.trend || []).map(t => t.income),
-      expense: (trendData.value.trend || []).map(t => t.expense),
+      labels: (trendData.value.trend || []).map(t => t.month || t.month_year),
+      income: (trendData.value.trend || []).map(t => t.income || t.total_income),
+      expense: (trendData.value.trend || []).map(t => t.expense || t.total_expense),
     }))
 
     const trendBarData = computed(() => ({
-      labels: (trendData.value.trend || []).map(t => t.month),
-      income: (trendData.value.trend || []).map(t => t.income),
-      expense: (trendData.value.trend || []).map(t => t.expense),
+      labels: (trendData.value.trend || []).map(t => t.month || t.month_year),
+      income: (trendData.value.trend || []).map(t => t.income || t.total_income),
+      expense: (trendData.value.trend || []).map(t => t.expense || t.total_expense),
     }))
 
     const weeklyLineData = computed(() => ({
@@ -844,44 +1165,39 @@ export default {
       income: (weeklyData.value.data || []).map(w => w.income),
     }))
 
-    const statsDoughnutData = computed(() => ({
-      labels: (summary.value.expense_by_category || []).map(c => `${c.icon} ${c.category_name}`),
-      values: (summary.value.expense_by_category || []).map(c => c.total),
-    }))
+    // ─── THEME TOGGLE ─────────────
+    function switchTheme() {
+      currentTheme.value = currentTheme.value === 'modern' ? 'dark' : 'modern'
+      localStorage.setItem('app_theme', currentTheme.value)
+      document.body.setAttribute('data-theme', currentTheme.value)
+      if (currentTheme.value !== 'modern') {
+        updateVideoSource()
+      }
+    }
 
     // ─── HELPERS ──────────────────
-    function resetAllState() {
-      wallets.value = []
-      categories.value = []
-      transactions.value = []
-      budgets.value = []
-      summary.value = { total_income: 0, total_expense: 0, net_savings: 0, total_balance: 0, expense_by_category: [] }
-      budgetAlerts.value = []
-      chatMessages.value = []
-      chatInput.value = ''
-      chatLoading.value = false
-      trendData.value = { trend: [] }
-      weeklyData.value = { data: [] }
-      compareData.value = null
-      savingTips.value = null
-      ocrFile.value = null
-      ocrPreview.value = null
-      ocrResult.value = null
-      ocrConfirmForm.value = {
-        note: '',
-        amount: 0,
-        transaction_date: new Date().toISOString().slice(0, 10),
-        wallet_id: null,
-        category_id: null,
-        transaction_type: 'EXPENSE'
-      }
-      errorMsg.value = ''
-      toast.value = null
+    function isFontAwesome(iconStr) {
+      if (!iconStr) return false
+      return iconStr.startsWith('fa') || iconStr.includes('fa-')
     }
 
     function formatVND(val) {
       if (val === undefined || val === null) return '0 ₫'
       return Number(val).toLocaleString('vi-VN') + ' ₫'
+    }
+
+    function extractErrorMessage(err) {
+      if (!err) return 'Có lỗi không xác định xảy ra. Vui lòng thử lại.'
+      if (err.response?.data?.detail) {
+        const d = err.response.data.detail
+        if (typeof d === 'string') return d
+        if (Array.isArray(d) && d.length > 0) {
+          return d[0].msg || JSON.stringify(d[0])
+        }
+        return JSON.stringify(d)
+      }
+      if (err.message) return err.message
+      return 'Lỗi kết nối tới máy chủ. Vui lòng kiểm tra lại đường truyền mạng!'
     }
 
     function showToast(message, type = 'success') {
@@ -890,7 +1206,9 @@ export default {
     }
 
     function budgetPct(b) {
-      return b.limit_amount > 0 ? (b.spent / b.limit_amount * 100) : 0
+      const limit = b.limit_amount || 1
+      const spent = b.spent_amount !== undefined ? b.spent_amount : (b.spent || 0)
+      return (spent / limit) * 100
     }
 
     function formatChatText(text) {
@@ -905,50 +1223,99 @@ export default {
       return type === 'cash' ? '💵' : type === 'bank' ? '🏦' : '📱'
     }
 
-    // ─── AUTH ─────────────────────
+    function openAuthModal(mode = 'login') {
+      authMode.value = mode
+      errorMsg.value = ''
+      showAuthModal.value = true
+    }
+
+    function resetAllState() {
+      wallets.value = []
+      categories.value = []
+      transactions.value = []
+      budgets.value = []
+      summary.value = { total_income: 0, total_expense: 0, net_savings: 0, total_balance: 0, expense_by_category: [] }
+      budgetAlerts.value = []
+      analyticsData.value = null
+      chatMessages.value = []
+      chatInput.value = ''
+      trendData.value = { trend: [] }
+      weeklyData.value = { data: [] }
+      compareData.value = null
+      savingTips.value = null
+      errorMsg.value = ''
+    }
+
+    // ─── AUTH METHODS ─────────────
     async function doLogin() {
+      if (!authForm.value.email || !authForm.value.password) {
+        errorMsg.value = 'Vui lòng nhập đầy đủ Email và Mật khẩu!'
+        return
+      }
       loading.value = true
       errorMsg.value = ''
-      resetAllState()
       try {
         const { data } = await api.post('/api/auth/login', {
           email: authForm.value.email,
           password: authForm.value.password
         })
         token.value = data.token
-        userName.value = data.full_name || 'Ký Chủ'
+        userName.value = data.full_name || 'Người Dùng'
         userEmail.value = data.email
+        userRole.value = data.role || 'user'
+
+        localStorage.setItem('auth_token', data.token)
+        localStorage.setItem('auth_user', userName.value)
+        localStorage.setItem('auth_email', data.email)
+        localStorage.setItem('user_role', userRole.value)
+
+        showAuthModal.value = false
+        welcomeName.value = userName.value
+        showWelcomeToast.value = true
         isLoggedIn.value = true
-        localStorage.setItem('xianxia_token', data.token)
-        localStorage.setItem('xianxia_user', userName.value)
-        localStorage.setItem('xianxia_email', data.email)
+        updateVideoSource()
+
         await loadAllData()
+        setTimeout(() => { showWelcomeToast.value = false }, 3000)
       } catch (err) {
-        errorMsg.value = err.response?.data?.detail || 'Lỗi đăng nhập!'
+        errorMsg.value = extractErrorMessage(err)
       }
       loading.value = false
     }
 
     async function doRegister() {
+      if (!authForm.value.email || !authForm.value.password || !authForm.value.full_name) {
+        errorMsg.value = 'Vui lòng điền đầy đủ Họ Tên, Email và Mật Khẩu!'
+        return
+      }
       loading.value = true
       errorMsg.value = ''
-      resetAllState()
       try {
-        const regForm = {
-          ...authForm.value,
-          full_name: authForm.value.full_name.trim() || 'Ký Chủ'
-        }
-        const { data } = await api.post('/api/auth/register', regForm)
+        const { data } = await api.post('/api/auth/register', {
+          email: authForm.value.email,
+          password: authForm.value.password,
+          full_name: authForm.value.full_name
+        })
         token.value = data.token
-        userName.value = data.full_name || 'Ký Chủ'
+        userName.value = data.full_name || 'Người Dùng'
         userEmail.value = data.email
+        userRole.value = data.role || 'user'
+
+        localStorage.setItem('auth_token', data.token)
+        localStorage.setItem('auth_user', userName.value)
+        localStorage.setItem('auth_email', data.email)
+        localStorage.setItem('user_role', userRole.value)
+
+        showAuthModal.value = false
+        welcomeName.value = userName.value
+        showWelcomeToast.value = true
         isLoggedIn.value = true
-        localStorage.setItem('xianxia_token', data.token)
-        localStorage.setItem('xianxia_user', userName.value)
-        localStorage.setItem('xianxia_email', data.email)
+        updateVideoSource()
+
         await loadAllData()
+        setTimeout(() => { showWelcomeToast.value = false }, 3000)
       } catch (err) {
-        errorMsg.value = err.response?.data?.detail || 'Lỗi đăng ký!'
+        errorMsg.value = extractErrorMessage(err)
       }
       loading.value = false
     }
@@ -956,16 +1323,19 @@ export default {
     function doLogout() {
       isLoggedIn.value = false
       token.value = ''
-      userName.value = 'Ký Chủ'
+      userName.value = 'Người Dùng'
       userEmail.value = ''
-      localStorage.removeItem('xianxia_token')
-      localStorage.removeItem('xianxia_user')
-      localStorage.removeItem('xianxia_email')
-      authForm.value = { email: '', password: '', full_name: '' }
+      userRole.value = 'user'
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_user')
+      localStorage.removeItem('auth_email')
+      localStorage.removeItem('user_role')
       resetAllState()
+      updateVideoSource()
+      showToast('Đã đăng xuất khỏi hệ thống an toàn.')
     }
 
-    // ─── USER PROFILE MANAGEMENT ──
+    // ─── PROFILE ──────────────────
     function openProfileModal() {
       profileForm.value.full_name = userName.value
       showProfileModal.value = true
@@ -974,129 +1344,180 @@ export default {
     async function saveProfile() {
       const newName = profileForm.value.full_name.trim()
       if (!newName) {
-        showToast('Vui lòng nhập đạo hiệu!', 'error')
+        showToast('Vui lòng nhập họ tên!', 'error')
         return
       }
       loadingProfile.value = true
       try {
         await api.put('/api/user/profile', { full_name: newName })
         userName.value = newName
-        localStorage.setItem('xianxia_user', newName)
-        showToast('✨ Đạo hiệu đã được cập nhật!')
+        localStorage.setItem('auth_user', newName)
+        showToast('✨ Cập nhật thông tin thành công!')
         showProfileModal.value = false
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi cập nhật tên!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loadingProfile.value = false
     }
 
-    async function fetchUserProfile() {
+    // ─── DATA FETCHING ────────────
+    async function loadAllData() {
+      await Promise.all([
+        loadWallets(), loadCategories(), loadTransactions(),
+        loadSummary(), loadBudgets(), checkBudgetAlerts(),
+        loadAnalytics(), loadTrend(), loadWeekly(), loadChatHistory(),
+      ])
+    }
+
+    async function loadWallets() {
       try {
-        const { data } = await api.get('/api/user/profile')
-        if (data && data.full_name) {
-          userName.value = data.full_name
-          userEmail.value = data.email
-          localStorage.setItem('xianxia_user', data.full_name)
+        const { data } = await api.get('/api/wallets')
+        wallets.value = data
+        if (data.length && !txnForm.value.wallet_id) {
+          txnForm.value.wallet_id = data[0].id
         }
       } catch {}
     }
 
-    // ─── DATA LOADING ─────────────
-    async function loadAllData() {
-      await Promise.all([
-        fetchUserProfile(),
-        loadWallets(), loadCategories(), loadTransactions(),
-        loadSummary(), loadBudgets(), checkBudgetAlerts(),
-        loadTrend(), loadWeekly(), loadChatHistory(),
-      ])
+    async function loadCategories() {
+      try {
+        const { data } = await api.get('/api/categories')
+        categories.value = data
+      } catch {}
+    }
+
+    async function doCleanupAll() {
+      loading.value = true
+      try {
+        const { data } = await api.post('/api/cleanup-all')
+        showToast(data.message)
+        await loadWallets()
+        await loadCategories()
+        await loadTransactions()
+        await loadSummary()
+      } catch (err) {
+        showToast(extractErrorMessage(err), 'error')
+      }
+      loading.value = false
+    }
+
+    async function doCleanupCategories() {
+      await doCleanupAll()
+    }
+
+    async function loadTransactions() {
+      try {
+        const { data } = await api.get('/api/transactions?limit=100')
+        transactions.value = data
+      } catch {}
+    }
+
+    async function loadSummary() {
+      try {
+        const { data } = await api.get('/api/reports/summary')
+        summary.value = data
+      } catch {}
+    }
+
+    async function loadAnalytics() {
+      try {
+        const { data } = await api.get('/api/analytics')
+        analyticsData.value = data
+      } catch (err) {
+        console.warn('Lỗi tải phân tích chi tiêu:', err)
+      }
+    }
+
+    async function loadBudgets() {
+      try {
+        const { data } = await api.get('/api/budgets')
+        budgets.value = data
+      } catch {}
+    }
+
+    async function checkBudgetAlerts() {
+      try {
+        const { data } = await api.post('/api/ai/check-budget')
+        budgetAlerts.value = data.alerts || []
+      } catch {}
+    }
+
+    async function loadTrend() {
+      try {
+        const { data } = await api.get('/api/reports/trend?months=6')
+        trendData.value = data
+      } catch {}
+    }
+
+    async function loadWeekly() {
+      try {
+        const { data } = await api.get('/api/reports/weekly?weeks=4')
+        weeklyData.value = data
+      } catch {}
+    }
+
+    async function loadCompare() {
+      if (!compareMonth1.value || !compareMonth2.value) return
+      try {
+        const { data } = await api.get(`/api/reports/compare?month1=${compareMonth1.value}&month2=${compareMonth2.value}`)
+        compareData.value = data
+      } catch {}
+    }
+
+    async function loadSavingTips() {
+      loadingTips.value = true
+      try {
+        const { data } = await api.post('/api/ai/saving-tips')
+        savingTips.value = data
+        showToast('💡 Đã nhận lời khuyên tài chính cá nhân!')
+      } catch (err) {
+        showToast(extractErrorMessage(err), 'error')
+      }
+      loadingTips.value = false
     }
 
     async function loadChatHistory() {
       try {
         const { data } = await api.get('/api/ai/chat-history')
         if (data && data.length) {
-          const history = []
-          const sorted = [...data].reverse()
-          for (const row of sorted) {
-            history.push({ role: 'user', text: row.prompt_question })
-            history.push({ role: 'ai', text: row.ai_response })
+          const list = []
+          for (const item of [...data].reverse()) {
+            list.push({ role: 'user', text: item.prompt_question })
+            list.push({ role: 'ai', text: item.ai_response })
           }
-          chatMessages.value = history
-        } else {
-          chatMessages.value = []
+          chatMessages.value = list
         }
       } catch {}
     }
 
-    async function loadWallets() {
-      try { wallets.value = (await api.get('/api/wallets')).data } catch {}
-    }
-    async function loadCategories() {
-      try { categories.value = (await api.get('/api/categories')).data } catch {}
-    }
-    async function loadTransactions() {
-      try { transactions.value = (await api.get('/api/transactions?limit=100')).data } catch {}
-    }
-    async function loadSummary() {
-      try { summary.value = (await api.get('/api/reports/summary')).data } catch {}
-    }
-    async function loadBudgets() {
-      try { budgets.value = (await api.get('/api/budgets')).data } catch {}
-    }
-    async function checkBudgetAlerts() {
-      try { budgetAlerts.value = (await api.post('/api/ai/check-budget')).data.alerts } catch {}
-    }
-    async function loadTrend() {
-      try { trendData.value = (await api.get('/api/reports/trend?months=6')).data } catch {}
-    }
-    async function loadWeekly() {
-      try { weeklyData.value = (await api.get('/api/reports/weekly?weeks=4')).data } catch {}
-    }
-    async function loadCompare() {
-      if (!compareMonth1.value || !compareMonth2.value) return
-      try {
-        compareData.value = (await api.get(`/api/reports/compare?month1=${compareMonth1.value}&month2=${compareMonth2.value}`)).data
-      } catch {}
-    }
-    async function loadSavingTips() {
-      loadingTips.value = true
-      try {
-        savingTips.value = (await api.post('/api/ai/saving-tips')).data
-        showToast('🔮 Khai Thị Tiết Kiệm đã đến!')
-      } catch (err) {
-        showToast(err.response?.data?.detail || 'Không thể nhận khai thị (cần API key Gemini)', 'error')
-      }
-      loadingTips.value = false
-    }
-
-    // ─── CRUD ─────────────────────
+    // ─── CRUD OPERATIONS ──────────
     async function createTransaction() {
-      if (!txnForm.value.amount || !txnForm.value.wallet_id || !txnForm.value.category_id) {
-        showToast('Vui lòng điền đầy đủ thông tin!', 'error')
+      if (!txnForm.value.amount || !txnForm.value.category_id) {
+        showToast('Vui lòng nhập số tiền và chọn danh mục!', 'error')
         return
       }
       loading.value = true
       try {
         await api.post('/api/transactions', txnForm.value)
-        showToast('⚡ Giao dịch Linh Thạch đã ghi nhận!')
-        txnForm.value = {
-          transaction_type: 'EXPENSE', amount: 0, wallet_id: txnForm.value.wallet_id,
-          category_id: null, transaction_date: new Date().toISOString().slice(0, 10), note: ''
-        }
+        showToast('⚡ Đã thêm giao dịch thành công!')
+        txnForm.value.amount = 0
+        txnForm.value.note = ''
         await loadAllData()
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi tạo giao dịch!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loading.value = false
     }
 
     async function deleteTransaction(id) {
-      if (!confirm('Xóa giao dịch này?')) return
+      if (!confirm('Bạn có chắc muốn xóa giao dịch này?')) return
       try {
         await api.delete(`/api/transactions/${id}`)
-        showToast('Giao dịch đã xóa!')
+        showToast('Đã xóa giao dịch.')
         await loadAllData()
-      } catch {}
+      } catch (err) {
+        showToast(extractErrorMessage(err), 'error')
+      }
     }
 
     async function createWallet() {
@@ -1107,23 +1528,26 @@ export default {
       loading.value = true
       try {
         await api.post('/api/wallets', walletForm.value)
-        showToast('✨ Túi Càn Khôn mới đã khai mở!')
+        showToast('✨ Ví tiền mới đã được tạo!')
         walletForm.value = { wallet_name: '', balance: 0, wallet_type: 'cash' }
         await loadWallets()
         await loadSummary()
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi tạo ví!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loading.value = false
     }
 
     async function deleteWallet(id) {
-      if (!confirm('Xóa ví này? Các giao dịch thuộc ví cũng sẽ bị ảnh hưởng.')) return
+      if (!confirm('Bạn có chắc muốn xóa ví này?')) return
       try {
         await api.delete(`/api/wallets/${id}`)
-        showToast('Ví đã xóa!')
-        await loadAllData()
-      } catch {}
+        showToast('Đã xóa ví.')
+        await loadWallets()
+        await loadSummary()
+      } catch (err) {
+        showToast(extractErrorMessage(err), 'error')
+      }
     }
 
     async function doTransfer() {
@@ -1139,7 +1563,7 @@ export default {
         await loadWallets()
         await loadSummary()
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi chuyển tiền!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loading.value = false
     }
@@ -1152,37 +1576,39 @@ export default {
       loading.value = true
       try {
         await api.post('/api/categories', catForm.value)
-        showToast('✨ Danh mục mới đã khai mở!')
-        catForm.value = { category_name: '', category_type: 'EXPENSE', icon: '📦' }
+        showToast('✨ Danh mục mới đã được tạo!')
+        catForm.value = { category_name: '', category_type: 'EXPENSE', icon: 'fa-solid fa-utensils' }
         await loadCategories()
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loading.value = false
     }
 
     async function deleteCategory(id) {
-      if (!confirm('Xóa danh mục này?')) return
+      if (!confirm('Bạn có chắc muốn xóa danh mục này?')) return
       try {
         await api.delete(`/api/categories/${id}`)
-        showToast('Danh mục đã xóa!')
+        showToast('Đã xóa danh mục.')
         await loadCategories()
-      } catch {}
+      } catch (err) {
+        showToast(extractErrorMessage(err), 'error')
+      }
     }
 
     async function createBudget() {
       if (!budgetForm.value.category_id || !budgetForm.value.limit_amount) {
-        showToast('Vui lòng điền đầy đủ!', 'error')
+        showToast('Vui lòng chọn danh mục và hạn mức!', 'error')
         return
       }
       loading.value = true
       try {
         await api.post('/api/budgets', budgetForm.value)
-        showToast('🎯 Hạn mức tu luyện đã thiết lập!')
+        showToast('🎯 Hạn mức chi tiêu đã được thiết lập!')
         await loadBudgets()
         await checkBudgetAlerts()
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loading.value = false
     }
@@ -1191,18 +1617,19 @@ export default {
       if (!confirm('Xóa hạn mức này?')) return
       try {
         await api.delete(`/api/budgets/${id}`)
-        showToast('Hạn mức đã xóa!')
+        showToast('Đã xóa hạn mức.')
         await loadBudgets()
-      } catch {}
+      } catch (err) {
+        showToast(extractErrorMessage(err), 'error')
+      }
     }
 
-    // ─── OCR ──────────────────────
+    // ─── OCR METHODS ──────────────
     function handleOCRUpload(e) {
       const file = e.target.files[0]
       if (file) {
         ocrFile.value = file
         ocrPreview.value = URL.createObjectURL(file)
-        ocrResult.value = null
       }
     }
 
@@ -1211,66 +1638,63 @@ export default {
       if (file && file.type.startsWith('image/')) {
         ocrFile.value = file
         ocrPreview.value = URL.createObjectURL(file)
-        ocrResult.value = null
       }
     }
 
     async function scanInvoice() {
-      if (!ocrFile.value) return
+      if (!ocrFile.value) {
+        showToast('Vui lòng chọn ảnh hóa đơn trước khi quét!', 'error')
+        return
+      }
       loading.value = true
       try {
         const formData = new FormData()
         formData.append('file', ocrFile.value)
-        const { data } = await api.post('/api/ai/scan-invoice', formData)
-        ocrResult.value = data.data
-
-        const defaultWallet = wallets.value.length ? wallets.value[0].id : null
-        const defaultCat = expenseCategories.value.length ? expenseCategories.value[0].id : null
+        const { data } = await api.post('/api/ocr', formData)
+        
+        const resData = data.data || data
+        ocrResult.value = resData
+        const dWallet = wallets.value.length ? wallets.value[0].id : null
+        const dCat = expenseCategories.value.length ? expenseCategories.value[0].id : null
+        
         ocrConfirmForm.value = {
-          note: data.data.store_name || 'Chi tiêu từ hóa đơn',
-          amount: data.data.total_amount || 0,
-          transaction_date: data.data.date || new Date().toISOString().slice(0, 10),
-          wallet_id: defaultWallet,
-          category_id: defaultCat,
+          note: resData.items || resData.store_name || 'Hóa đơn mua sắm tiêu dùng',
+          amount: resData.total_amount || resData.amount || 0,
+          transaction_date: resData.date || new Date().toISOString().slice(0, 10),
+          wallet_id: dWallet,
+          category_id: dCat,
           transaction_type: 'EXPENSE'
         }
-        showToast('👁️ Linh Nhãn đã hoàn thành phân tích! Vui lòng kiểm tra và xác nhận.')
+        showToast('🧾 AI Vision đã phân tích xong! Vui lòng kiểm tra và xác nhận.')
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi OCR!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loading.value = false
     }
 
     async function confirmOCRTransaction() {
-      if (!ocrConfirmForm.value.amount || ocrConfirmForm.value.amount <= 0) {
-        showToast('Vui lòng nhập số tiền hợp lệ!', 'error')
-        return
-      }
-      if (!ocrConfirmForm.value.wallet_id || !ocrConfirmForm.value.category_id) {
-        showToast('Vui lòng chọn Túi Càn Khôn và Danh Mục Chi!', 'error')
+      if (!ocrConfirmForm.value.amount || !ocrConfirmForm.value.category_id) {
+        showToast('Vui lòng chọn danh mục và nhập số tiền!', 'error')
         return
       }
       loading.value = true
       try {
         await api.post('/api/transactions', ocrConfirmForm.value)
-        showToast('⚡ Giao dịch từ hóa đơn đã được thêm vào lịch sử!')
-        ocrResult.value = null
-        ocrFile.value = null
+        showToast('⚡ Giao dịch từ hóa đơn đã được lưu vào sổ thành công!')
         ocrPreview.value = null
+        ocrFile.value = null
+        ocrConfirmForm.value = null
         await loadAllData()
         activeTab.value = 'transactions'
       } catch (err) {
-        showToast(err.response?.data?.detail || 'Lỗi lưu giao dịch!', 'error')
+        showToast(extractErrorMessage(err), 'error')
       }
       loading.value = false
     }
 
-    // ─── AI CHAT ──────────────────
+    // ─── CHAT METHODS ─────────────
     async function sendChat() {
       if (!chatInput.value.trim() || chatLoading.value) return
-      if (!Array.isArray(chatMessages.value)) {
-        chatMessages.value = []
-      }
       const msg = chatInput.value.trim()
       chatMessages.value.push({ role: 'user', text: msg })
       chatInput.value = ''
@@ -1280,14 +1704,9 @@ export default {
       chatLoading.value = true
       try {
         const { data } = await api.post('/api/ai/chat', { message: msg })
-        if (!Array.isArray(chatMessages.value)) chatMessages.value = []
         chatMessages.value.push({ role: 'ai', text: data.response })
       } catch (err) {
-        if (!Array.isArray(chatMessages.value)) chatMessages.value = []
-        chatMessages.value.push({
-          role: 'ai',
-          text: '⚠️ Tiên Trí gặp trở ngại: ' + (err.response?.data?.detail || 'Không thể kết nối.')
-        })
+        chatMessages.value.push({ role: 'ai', text: '⚠️ Không thể kết nối tới Cố vấn AI: ' + extractErrorMessage(err) })
       } finally {
         chatLoading.value = false
         await nextTick()
@@ -1296,1218 +1715,1144 @@ export default {
     }
 
     function scrollChat() {
-      const el = chatMessagesEl.value
-      if (el) el.scrollTop = el.scrollHeight
+      if (chatMessagesEl.value) {
+        chatMessagesEl.value.scrollTop = chatMessagesEl.value.scrollHeight
+      }
     }
 
-    // ─── TAB SWITCH ───────────────
+    // ─── ADMIN METHODS ────────────
+    async function loadAdminData() {
+      if (userRole.value !== 'admin') return
+      try {
+        const resU = await api.get('/api/admin/users')
+        adminUsers.value = resU.data
+        const resT = await api.get('/api/admin/transactions')
+        adminTransactions.value = resT.data
+      } catch (e) {
+        showToast(extractErrorMessage(e), 'error')
+      }
+    }
+
+    async function toggleBlockUser(uId) {
+      try {
+        const res = await api.post(`/api/admin/users/${uId}/block`)
+        showToast(res.data.message)
+        loadAdminData()
+      } catch (e) {
+        showToast(extractErrorMessage(e), 'error')
+      }
+    }
+
+    async function adminDeleteTx(tId) {
+      if (!confirm('Bạn có chắc muốn xóa giao dịch này khỏi hệ thống?')) return
+      try {
+        const res = await api.delete(`/api/admin/transactions/${tId}`)
+        showToast(res.data.message)
+        loadAdminData()
+      } catch (e) {
+        showToast(extractErrorMessage(e), 'error')
+      }
+    }
+
     function switchTab(tabId) {
       activeTab.value = tabId
       if (tabId === 'stats') {
         loadTrend()
         loadWeekly()
         loadCompare()
+      } else if (tabId === 'admin') {
+        loadAdminData()
       }
     }
 
-    // ─── INIT ─────────────────────
+    // ─── MOUNTED ──────────────────
     onMounted(() => {
-      const savedToken = localStorage.getItem('xianxia_token')
-      const savedUser = localStorage.getItem('xianxia_user')
-      const savedEmail = localStorage.getItem('xianxia_email')
+      document.body.setAttribute('data-theme', currentTheme.value)
+      updateVideoSource()
+
+      const savedToken = localStorage.getItem('auth_token') || localStorage.getItem('xianxia_token')
+      const savedUser = localStorage.getItem('auth_user') || localStorage.getItem('xianxia_user')
+      const savedEmail = localStorage.getItem('auth_email') || localStorage.getItem('xianxia_email')
+      const savedRole = localStorage.getItem('user_role')
+
+      if (savedRole) userRole.value = savedRole
       if (savedToken) {
         token.value = savedToken
-        userName.value = (savedUser && savedUser !== 'Đạo Hữu Admin') ? savedUser : 'Ký Chủ'
+        userName.value = savedUser || 'Người Dùng'
         userEmail.value = savedEmail || 'admin@gmail.com'
         isLoggedIn.value = true
+        updateVideoSource()
         loadAllData()
       }
     })
 
     return {
-      isLoggedIn, authMode, authForm, loading, loadingTips, loadingProfile, errorMsg, toast,
-      activeTab, tabs, userName, userEmail,
-      showProfileModal, profileForm,
-      wallets, categories, transactions, budgets, summary, budgetAlerts,
+      isLoggedIn, authMode, showAuthModal, authForm, token, userName, userEmail, userRole, currentTheme,
+      adminUsers, adminTransactions, loading, loadingTips, loadingProfile, errorMsg, toast, activeTab,
+      bgVideo, isMuted, videoSource, showWelcomeToast, welcomeName, updateVideoSource, toggleAudio,
+      publicTabs, tabs, wallets, categories, transactions, budgets, summary, budgetAlerts, analyticsData,
       chatMessages, chatInput, chatMessagesEl, chatLoading,
+      trendData, weeklyData, compareData, savingTips, compareMonth1, compareMonth2,
+      showProfileModal, profileForm,
       txnForm, walletForm, catForm, budgetForm, transferForm,
-      ocrFile, ocrPreview, ocrResult, ocrConfirmForm,
-      iconOptions,
-      incomeCategories, expenseCategories, filteredCategories, maxCategoryExpense,
-      // v3 data
-      trendData, weeklyData, compareData, savingTips,
-      compareMonth1, compareMonth2,
-      // chart computed
-      dashboardDoughnutData, dashboardBarData,
-      trendBarData, weeklyLineData, statsDoughnutData,
-      // methods
-      formatVND, showToast, budgetPct, formatChatText, walletTypeIcon,
-      doLogin, doRegister, doLogout,
-      openProfileModal, saveProfile,
-      switchTab, loadAllData, loadCompare, loadSavingTips,
-      createTransaction, deleteTransaction,
-      createWallet, deleteWallet, doTransfer,
-      createCategory, deleteCategory,
-      createBudget, deleteBudget,
+      ocrFile, ocrPreview, ocrResult, ocrConfirmForm, iconOptions,
+      incomeCategories, expenseCategories, filteredCategories,
+      dashboardDoughnutData, dashboardBarData, trendBarData, weeklyLineData,
+      formatVND, showToast, budgetPct, formatChatText, walletTypeIcon, openAuthModal, isFontAwesome,
+      doLogin, doRegister, doLogout, openProfileModal, saveProfile, doCleanupCategories, doCleanupAll,
+      loadAllData, loadAnalytics, createTransaction, deleteTransaction, createWallet, deleteWallet, doTransfer,
+      createCategory, deleteCategory, createBudget, deleteBudget,
       handleOCRUpload, handleOCRDrop, scanInvoice, confirmOCRTransaction,
-      sendChat,
+      sendChat, switchTab, switchTheme, loadAdminData, toggleBlockUser, adminDeleteTx, loadSavingTips, loadCompare
     }
   }
 }
 </script>
 
 <style>
-/* ═══════════════════════════════════════════════════════════
-   CÀN KHÔN LINH THẠCH CÁC v3.0 — XIANXIA/TIÊN HIỆP THEME
-   ═══════════════════════════════════════════════════════════ */
-
-/* ─── RESET & BASE ─────────────────────── */
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+/* ─── RESET & CSS VARIABLES ──────────────── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
 :root {
-  --bg-primary: #080C0A;
-  --bg-secondary: #0F1714;
-  --bg-card: #15221D;
-  --bg-card-hover: #1D2E28;
+  --bg-primary: rgba(10, 15, 29, 0.7);
+  --bg-secondary: rgba(17, 24, 39, 0.85);
+  --bg-card: rgba(17, 27, 46, 0.75);
+  --bg-card-hover: rgba(30, 41, 59, 0.85);
   --jade: #059669;
   --jade-glow: #10B981;
-  --jade-dim: #064E3B;
+  --jade-dim: rgba(16, 185, 129, 0.15);
   --gold: #D97706;
   --gold-glow: #F59E0B;
-  --gold-dim: #78350F;
+  --gold-dim: rgba(245, 158, 11, 0.15);
   --purple: #7C3AED;
   --purple-glow: #A78BFA;
   --crimson: #DC2626;
-  --crimson-glow: #F87171;
-  --text-primary: #F8FAF9;
-  --text-secondary: #A7F3D0;
-  --text-dim: #6EE7B7;
-  --border: #1F3A30;
+  --crimson-glow: #EF4444;
+  --text-primary: #F8FAFC;
+  --text-secondary: #CBD5E1;
+  --text-dim: #94A3B8;
+  --border: rgba(255, 255, 255, 0.12);
   --border-glow: rgba(16, 185, 129, 0.4);
-  --radius: 12px;
+  --radius: 14px;
   --radius-lg: 20px;
-  --shadow-jade: 0 0 25px rgba(16, 185, 129, 0.2), 0 0 60px rgba(16, 185, 129, 0.08);
-  --shadow-gold: 0 0 25px rgba(245, 158, 11, 0.25);
-  --font-calligraphy: 'Noto Serif TC', 'Georgia', serif;
   --font-body: 'Inter', -apple-system, sans-serif;
-
-  /* Custom Cursor: Embedded Sword SVG với Hotspot chính xác tại ĐẦU MŨI KIẾM (22 2) */
-  --cursor-sword: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2310B981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m14.5 17.5-5-5'/><path d='m10 13-6.5 6.5a1 1 0 0 0 1.4 1.4L11.4 14'/><path d='m12.5 8.5 7-7a2.12 2.12 0 0 1 3 3l-7 7'/><path d='M9 11 3 5'/><path d='M15 17l6 6'/></svg>") 22 2, auto;
-  --cursor-pointer: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23F59E0B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m14.5 17.5-5-5'/><path d='m10 13-6.5 6.5a1 1 0 0 0 1.4 1.4L11.4 14'/><path d='m12.5 8.5 7-7a2.12 2.12 0 0 1 3 3l-7 7'/><path d='M9 11 3 5'/><path d='M15 17l6 6'/></svg>") 22 2, pointer;
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --cursor-pointer: pointer;
 }
 
 body {
   font-family: var(--font-body);
-  background: var(--bg-primary);
+  background: #060913;
   color: var(--text-primary);
   line-height: 1.6;
   min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-  cursor: var(--cursor-sword);
+  overflow-x: hidden;
 }
 
-button, a, select, input, textarea, label, [role="button"], .clickable-brand, .user-badge-btn, .tab-btn, .btn-jade, .btn-jade-sm, .ocr-dropzone {
-  cursor: var(--cursor-pointer) !important;
+button, a, select, input, textarea, label {
+  cursor: var(--cursor-pointer);
 }
 
-/* ─── SCROLLBAR ────────────────────────── */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb { background: var(--jade-dim); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--jade-glow); }
-
-/* ─── MIST & MOUNTAIN BACKGROUND ───────── */
-.mist-layer {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 700px 300px at 20% 20%, rgba(16, 185, 129, 0.06) 0%, transparent 70%),
-    radial-gradient(ellipse 600px 400px at 80% 80%, rgba(124, 58, 237, 0.05) 0%, transparent 70%),
-    radial-gradient(ellipse 500px 300px at 50% 50%, rgba(245, 158, 11, 0.04) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-  animation: pulseGlow 8s ease-in-out infinite alternate;
-}
-
-.mountain-silhouette {
+/* ─── VIDEO BACKGROUND ───────────────────── */
+#bg-video, .global-video-bg {
   position: fixed;
-  bottom: 0;
+  top: 0;
   left: 0;
-  right: 0;
-  height: 180px;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320' preserveAspectRatio='none'><path fill='%23050C0A' fill-opacity='0.8' d='M0,192L60,181.3C120,171,240,149,360,165.3C480,181,600,235,720,240C840,245,960,203,1080,181.3C1200,160,1320,160,1380,160L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z'></path><path fill='%2308120F' fill-opacity='0.6' d='M0,224L80,213.3C160,203,320,181,480,197.3C640,213,800,267,960,256C1120,245,1280,171,1360,133.3L1440,96L1440,320L1360,320C1280,320,1120,320,960,320C800,320,640,320,480,320C320,320,160,320,80,320L0,320Z'></path></svg>");
-  background-size: cover;
-  background-repeat: no-repeat;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  z-index: -2;
   pointer-events: none;
-  z-index: 0;
-  opacity: 0.85;
 }
 
-.spirit-particles {
+.global-video-overlay {
   position: fixed;
   inset: 0;
+  background: rgba(6, 9, 19, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: -1;
   pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
-}
-.spirit-particles::before,
-.spirit-particles::after {
-  content: '✦';
-  position: absolute;
-  font-size: 14px;
-  color: var(--jade-glow);
-  animation: cosmicDrift 6s infinite ease-out;
-  text-shadow: 0 0 10px var(--jade-glow);
-}
-.spirit-particles::before { top: 25%; left: 15%; --dx: 60px; --dy: -90px; }
-.spirit-particles::after { top: 75%; left: 80%; --dx: -50px; --dy: -70px; animation-delay: 3s; color: var(--gold-glow); text-shadow: 0 0 10px var(--gold-glow); }
-
-/* ─── ANIMATIONS ───────────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes fadeInScale {
-  from { opacity: 0; transform: scale(0.96) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-@keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.2); }
-  50% { box-shadow: 0 0 35px rgba(16, 185, 129, 0.4), 0 0 70px rgba(16, 185, 129, 0.15); }
-}
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-@keyframes rotateSymbol {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-@keyframes cosmicDrift {
-  0% { opacity: 0; transform: translate(0, 0) scale(0.5); }
-  50% { opacity: 0.9; }
-  100% { opacity: 0; transform: translate(var(--dx, 50px), var(--dy, -80px)) scale(1.6); }
-}
-@keyframes typingBounce {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40% { transform: scale(1); opacity: 1; }
-}
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-@keyframes pulseGlow {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.9; }
 }
 
-/* ─── LOGIN REALM ──────────────────────── */
-.login-realm {
-  min-height: 100vh;
+/* ─── MODERN THEME OVERRIDES ─────────────── */
+body[data-theme='modern'] {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+body[data-theme='modern'] #bg-video,
+body[data-theme='modern'] .global-video-bg,
+body[data-theme='modern'] .global-video-overlay {
+  display: none !important;
+}
+
+body[data-theme='modern'] {
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F1F5F9;
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-dim: #64748B;
+  --border: #E2E8F0;
+  --border-glow: #2563EB;
+  --jade: #2563EB;
+  --jade-glow: #3B82F6;
+  --jade-dim: rgba(59, 130, 246, 0.1);
+  --glass-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── AUDIO FAB & WELCOME ────────────────── */
+.audio-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--glass-shadow);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #040806 0%, #0C1613 40%, #0A120F 70%, #150A26 100%);
-  position: relative;
-  overflow: hidden;
+  font-size: 20px;
+  z-index: 999;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s;
+}
+.audio-fab:hover {
+  transform: scale(1.1);
+  border-color: var(--gold-glow);
 }
 
-.cosmic-particles {
-  position: absolute;
+.welcome-overlay {
+  position: fixed;
   inset: 0;
-  overflow: hidden;
-  pointer-events: none;
+  background: rgba(6, 9, 19, 0.85);
+  backdrop-filter: blur(16px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.5s ease-out;
+}
+.welcome-text {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--gold-glow);
+  text-shadow: 0 0 25px rgba(245, 158, 11, 0.5);
+  text-align: center;
 }
 
-.login-card {
-  position: relative;
-  z-index: 10;
-  background: rgba(21, 34, 29, 0.95);
+/* ─── GLASS PANEL UTILITY ────────────────── */
+.glass-panel {
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 48px 40px;
-  width: 100%;
-  max-width: 460px;
-  animation: fadeIn 0.8s ease-out, glowPulse 4s ease-in-out infinite;
   backdrop-filter: blur(16px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--glass-shadow);
 }
 
-.login-header { text-align: center; margin-bottom: 36px; }
-
-.dao-symbol {
-  font-size: 56px;
-  display: inline-block;
-  animation: rotateSymbol 20s linear infinite;
-  filter: drop-shadow(0 0 18px var(--jade-glow));
-  margin-bottom: 16px;
-}
-
-.title-calligraphy {
-  font-family: var(--font-calligraphy);
-  font-size: 28px;
-  font-weight: 900;
-  background: linear-gradient(135deg, var(--jade-glow), var(--gold-glow));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: 2px;
-}
-
-.subtitle-glow {
-  color: var(--text-secondary);
-  font-size: 13px;
-  margin-top: 8px;
-  letter-spacing: 1px;
-}
-
-.form-title {
-  font-family: var(--font-calligraphy);
-  color: var(--gold-glow);
-  font-size: 18px;
-  margin-bottom: 24px;
-  text-align: center;
-}
-
-.input-group-xianxia {
-  margin-bottom: 16px;
-}
-.input-group-xianxia label {
-  display: block;
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
-  font-weight: 500;
-}
-.input-group-xianxia input,
-.input-group-xianxia select {
-  width: 100%;
-  padding: 12px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-family: var(--font-body);
-  transition: all 0.3s ease;
-  outline: none;
-}
-.input-group-xianxia input:focus,
-.input-group-xianxia select:focus {
-  border-color: var(--jade-glow);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
-}
-.input-group-xianxia input::placeholder {
-  color: var(--text-dim);
-}
-
-.btn-jade {
-  width: 100%;
-  padding: 14px;
-  background: linear-gradient(135deg, var(--jade) 0%, var(--jade-glow) 100%);
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  font-family: var(--font-body);
-  letter-spacing: 0.5px;
-}
-.btn-jade:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
-}
-.btn-jade:disabled {
-  opacity: 0.6;
-}
-
-.auth-switch {
-  text-align: center;
-  margin-top: 20px;
-  font-size: 13px;
-  color: var(--text-dim);
-}
-.auth-switch span {
-  color: var(--jade-glow);
-  font-weight: 600;
-}
-.auth-switch span:hover { text-decoration: underline; }
-
-.error-banner {
-  margin-top: 16px;
-  padding: 12px;
-  background: rgba(220, 38, 38, 0.12);
-  border: 1px solid rgba(220, 38, 38, 0.4);
-  border-radius: 8px;
-  color: var(--crimson-glow);
-  text-align: center;
-  font-size: 13px;
-}
-
-/* ─── MAIN APP REALM ───────────────────── */
-.app-realm {
-  min-height: 100vh;
-  position: relative;
-  background: var(--bg-primary);
-}
-
-/* ─── HEADER ───────────────────────────── */
+/* ─── HEADER / NAVBAR ────────────────────── */
 .realm-header {
-  background: rgba(15, 23, 20, 0.92);
-  border-bottom: 1px solid var(--border);
   position: sticky;
-  top: 0;
+  top: 12px;
+  margin: 12px 24px 0;
+  padding: 14px 28px;
   z-index: 100;
-  backdrop-filter: blur(16px);
 }
 .header-inner {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 0 24px;
-  height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-
-/* REQUIREMENT 4: Clickable Header Title */
-.clickable-brand {
+.header-left {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 12px;
-  border-radius: 10px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
+  cursor: pointer;
 }
-.clickable-brand:hover {
-  background: rgba(16, 185, 129, 0.15);
-  transform: translateY(-2px) scale(1.02);
-  filter: drop-shadow(0 0 12px var(--jade-glow));
-}
-
 .header-symbol {
-  font-size: 28px;
-  animation: rotateSymbol 30s linear infinite;
-  filter: drop-shadow(0 0 10px var(--jade-glow));
+  font-size: 24px;
+  color: var(--jade-glow);
 }
 .header-title {
-  font-family: var(--font-calligraphy);
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(90deg, var(--jade-glow), var(--gold-glow));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  letter-spacing: 0.3px;
 }
 .version-badge {
-  font-size: 10px;
+  font-size: 11px;
+  background: var(--jade-dim);
+  color: var(--jade-glow);
+  border: 1px solid var(--jade-glow);
   padding: 2px 8px;
-  background: linear-gradient(135deg, var(--purple), var(--purple-glow));
-  color: white;
   border-radius: 12px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
 }
 .header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
-/* REQUIREMENT 5: User Badge Button */
-.user-badge-btn {
-  font-size: 14px;
-  color: var(--gold-glow);
-  padding: 7px 16px;
-  background: rgba(21, 34, 29, 0.9);
-  border-radius: 20px;
-  border: 1px solid var(--gold-glow);
-  font-family: var(--font-body);
-  font-weight: 600;
-  transition: all 0.3s ease;
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.15);
-}
-.user-badge-btn:hover {
-  background: rgba(245, 158, 11, 0.15);
-  box-shadow: var(--shadow-gold);
-  transform: translateY(-2px);
-}
-
-.btn-logout {
-  padding: 7px 16px;
-  background: transparent;
-  border: 1px solid var(--crimson);
-  color: var(--crimson-glow);
-  border-radius: 8px;
+.theme-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: 10px;
   font-size: 13px;
-  font-family: var(--font-body);
+  font-weight: 600;
   transition: all 0.3s;
 }
-.btn-logout:hover {
-  background: rgba(220, 38, 38, 0.15);
+.theme-btn:hover {
+  border-color: var(--gold-glow);
 }
 
-/* ─── TAB NAV ──────────────────────────── */
-.tab-nav {
-  background: rgba(15, 23, 20, 0.85);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 68px;
-  z-index: 99;
-  backdrop-filter: blur(12px);
-}
-.tab-nav-inner {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 0 24px;
+.btn-auth-login {
+  background: linear-gradient(135deg, var(--jade), var(--jade-glow));
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
   display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s;
 }
-.tab-nav-inner::-webkit-scrollbar { display: none; }
+.btn-auth-login:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+}
 
-.tab-btn {
+.btn-auth-register {
+  background: linear-gradient(135deg, var(--gold), var(--gold-glow));
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s;
+}
+.btn-auth-register:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+}
+
+.user-badge-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 18px;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
   transition: all 0.3s;
-  font-family: var(--font-body);
+}
+.user-badge-btn:hover {
+  border-color: var(--jade-glow);
+}
+
+.btn-logout {
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid var(--crimson-glow);
+  color: var(--crimson-glow);
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s;
+}
+.btn-logout:hover {
+  background: var(--crimson);
+  color: white;
+}
+
+/* ─── TAB NAVIGATION ─────────────────────── */
+.tab-nav {
+  margin: 16px 24px 0;
+}
+.tab-nav-inner {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.tab-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s;
+  white-space: nowrap;
 }
 .tab-btn:hover {
   color: var(--text-primary);
-  background: rgba(16, 185, 129, 0.08);
+  border-color: var(--gold-glow);
 }
 .tab-btn.active {
-  color: var(--jade-glow);
-  border-bottom-color: var(--jade-glow);
-  background: rgba(16, 185, 129, 0.12);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(245, 158, 11, 0.2));
+  border-color: var(--gold-glow);
+  color: var(--gold-glow);
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
 }
-.tab-icon { font-size: 16px; }
 
-/* ─── CONTENT ──────────────────────────── */
+/* ─── MAIN REALM CONTENT ─────────────────── */
 .realm-content {
-  position: relative;
-  z-index: 1;
+  padding: 24px;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 32px 24px 100px;
 }
 
-.tab-panel {
-  animation: fadeInScale 0.4s ease-out;
-}
-
-.section-title {
-  font-family: var(--font-calligraphy);
-  font-size: 25px;
-  font-weight: 700;
-  color: var(--gold-glow);
-  margin-bottom: 28px;
-  letter-spacing: 1px;
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
-}
-
-.sub-title {
-  font-family: var(--font-calligraphy);
-  font-size: 17px;
-  color: var(--text-primary);
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-/* ─── METRICS ──────────────────────────── */
-.metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
-  margin-bottom: 36px;
-}
-
-.metric-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px;
+.section-header-flex {
   display: flex;
   align-items: center;
-  gap: 18px;
-  transition: all 0.4s ease;
-  position: relative;
-  overflow: hidden;
-  backdrop-filter: blur(8px);
+  justify-content: space-between;
+  margin-bottom: 20px;
 }
-.metric-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-.metric-card.jade::before { background: linear-gradient(90deg, var(--jade), var(--jade-glow)); }
-.metric-card.crimson::before { background: linear-gradient(90deg, var(--crimson), var(--crimson-glow)); }
-.metric-card.gold::before { background: linear-gradient(90deg, var(--gold), var(--gold-glow)); }
-.metric-card.purple::before { background: linear-gradient(90deg, var(--purple), var(--purple-glow)); }
-
-.metric-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--border-glow);
-}
-.metric-card.jade:hover { box-shadow: var(--shadow-jade); }
-.metric-card.crimson:hover { box-shadow: 0 0 20px rgba(220, 38, 38, 0.2); }
-.metric-card.gold:hover { box-shadow: var(--shadow-gold); }
-.metric-card.purple:hover { box-shadow: 0 0 20px rgba(124, 58, 237, 0.2); }
-
-.metric-icon {
-  font-size: 36px;
-  animation: float 3s ease-in-out infinite;
-}
-.metric-card:nth-child(2) .metric-icon { animation-delay: 0.5s; }
-.metric-card:nth-child(3) .metric-icon { animation-delay: 1s; }
-.metric-card:nth-child(4) .metric-icon { animation-delay: 1.5s; }
-
-.metric-info { display: flex; flex-direction: column; gap: 6px; }
-.metric-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
-.metric-value {
+.section-title {
   font-size: 22px;
   font-weight: 700;
-  font-family: var(--font-calligraphy);
+  color: var(--gold-glow);
+}
+.sub-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
   color: var(--text-primary);
 }
-.metric-value.positive, .positive { color: var(--jade-glow); }
-.metric-value.negative, .negative { color: var(--crimson-glow); }
 
-/* ─── ALERTS ───────────────────────────── */
-.alerts-section { margin-bottom: 32px; }
-.alert-card {
+/* ─── LANDING WELCOME HERO ───────────────── */
+.landing-welcome-section {
+  padding: 48px 36px;
+  text-align: center;
+  margin-bottom: 28px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(245, 158, 11, 0.1));
+}
+.welcome-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  background: var(--gold-dim);
+  color: var(--gold-glow);
+  border: 1px solid var(--gold-glow);
+  padding: 4px 14px;
+  border-radius: 20px;
+  margin-bottom: 16px;
+}
+.landing-title {
+  font-size: 32px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+.landing-desc {
+  max-width: 780px;
+  margin: 0 auto 28px;
+  font-size: 16px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+.landing-cta-row {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.btn-lg {
+  padding: 14px 28px;
+  font-size: 15px;
+  border-radius: 12px;
+  font-weight: 700;
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+.btn-jade {
+  background: linear-gradient(135deg, var(--jade), var(--jade-glow));
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s;
+}
+.btn-jade:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+}
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold), var(--gold-glow));
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s;
+}
+.btn-gold:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+}
+.btn-secondary-sm {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s;
+}
+.btn-secondary-sm:hover {
+  border-color: var(--gold-glow);
+  color: var(--gold-glow);
+}
+
+/* ─── METRICS CARDS ──────────────────────── */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--glass-shadow);
+  transition: transform 0.3s;
+}
+.metric-card:hover {
+  transform: translateY(-3px);
+}
+.metric-card.jade { border-left: 4px solid var(--jade-glow); }
+.metric-card.crimson { border-left: 4px solid var(--crimson-glow); }
+.metric-card.gold { border-left: 4px solid var(--gold-glow); }
+.metric-card.purple { border-left: 4px solid var(--purple-glow); }
+
+.metric-icon {
+  font-size: 28px;
+  color: var(--gold-glow);
+}
+.metric-card.jade .metric-icon { color: var(--jade-glow); }
+.metric-card.crimson .metric-icon { color: var(--crimson-glow); }
+.metric-card.purple .metric-icon { color: var(--purple-glow); }
+
+.metric-info {
+  display: flex;
+  flex-direction: column;
+}
+.metric-label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.metric-value {
+  font-size: 20px;
+  font-weight: 700;
+}
+.metric-value.positive { color: var(--jade-glow); }
+.metric-value.negative { color: var(--crimson-glow); }
+
+/* ─── SMART ANALYTICS & FORECASTING CARD ── */
+.smart-analytics-card {
+  padding: 24px;
+  margin-bottom: 28px;
+  border-left: 4px solid var(--jade-glow);
+  transition: all 0.3s ease;
+}
+.smart-analytics-card.warning-border {
+  border-left: 4px solid var(--gold-glow);
+}
+.analytics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.analytics-title-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.analytics-icon {
+  font-size: 32px;
+}
+.analytics-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gold-glow);
+}
+.analytics-subtitle {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.analytics-status-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+}
+.badge-success {
+  background: var(--jade-dim);
+  color: var(--jade-glow);
+  border: 1px solid var(--jade-glow);
+}
+.badge-warning {
+  background: var(--gold-dim);
+  color: var(--gold-glow);
+  border: 1px solid var(--gold-glow);
+}
+.badge-danger {
+  background: rgba(220, 38, 38, 0.15);
+  color: var(--crimson-glow);
+  border: 1px solid var(--crimson-glow);
+}
+
+.analytics-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.analytics-metric-box {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.box-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.box-value {
+  font-size: 18px;
+  font-weight: 800;
+}
+.box-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.gold-text {
+  color: var(--gold-glow);
+}
+
+.warning-reasons-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.warning-reason-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--gold-glow);
+}
+.reason-bullet {
+  font-size: 16px;
+}
+
+.forecast-message-box {
+  display: flex;
+  align-items: flex-start;
   gap: 12px;
   padding: 14px 18px;
-  border-radius: 10px;
-  margin-bottom: 8px;
-  animation: fadeIn 0.5s ease-out;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
 }
-.alert-card.danger {
-  background: rgba(220, 38, 38, 0.12);
-  border: 1px solid rgba(220, 38, 38, 0.35);
+.message-icon {
+  font-size: 20px;
+  flex-shrink: 0;
 }
-.alert-card.warning {
+.box-success {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--text-primary);
+}
+.box-warning {
   background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--text-primary);
 }
-.alert-icon { font-size: 20px; }
-.alert-msg { flex: 1; font-size: 14px; color: var(--text-primary); }
-.alert-pct { font-weight: 700; font-size: 15px; color: var(--crimson-glow); }
+.box-danger {
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  color: var(--text-primary);
+}
 
-/* ─── DASHBOARD CHARTS ROW ─────────────── */
+/* ─── FEATURES GRID ──────────────────────── */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+}
+.feature-card {
+  padding: 28px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--gold-glow);
+}
+.feature-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  color: var(--gold-glow);
+}
+.feature-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--gold-glow);
+}
+.feature-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ─── CHARTS & SECTIONS ──────────────────── */
 .dashboard-charts-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  margin-bottom: 36px;
+  margin-bottom: 28px;
+}
+.charts-grid-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
 }
 .chart-card {
-  background: rgba(19, 36, 56, 0.9);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 24px;
-  transition: all 0.3s;
-  animation: fadeInScale 0.5s ease-out;
-  backdrop-filter: blur(8px);
-}
-.chart-card:hover {
-  border-color: var(--border-glow);
-  box-shadow: var(--shadow-jade);
+  padding: 20px;
 }
 
-/* ─── SAVING TIPS ──────────────────────── */
 .saving-tips-section {
-  margin-bottom: 36px;
+  margin-bottom: 28px;
 }
 .saving-tips-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
-}
-.saving-tips-header .sub-title {
-  margin-bottom: 0;
-  border-bottom: none;
-  padding-bottom: 0;
+  margin-bottom: 12px;
 }
 .saving-tips-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid rgba(124, 58, 237, 0.35);
-  border-radius: var(--radius);
-  padding: 28px;
-  animation: fadeInScale 0.5s ease-out;
-  position: relative;
-  overflow: hidden;
-  backdrop-filter: blur(8px);
-}
-.saving-tips-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--purple), var(--gold-glow), var(--jade-glow));
+  padding: 20px;
 }
 .tips-meta {
   display: flex;
   gap: 24px;
-  margin-bottom: 16px;
-  font-size: 13px;
-  color: var(--text-secondary);
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: var(--text-dim);
 }
 .tips-content {
   font-size: 14px;
-  line-height: 1.8;
-  color: var(--text-primary);
+  color: var(--text-secondary);
+  line-height: 1.7;
 }
 
-/* ─── TABLE ────────────────────────────── */
-.table-scroll { overflow-x: auto; }
-
+/* ─── TABLES ─────────────────────────────── */
+.table-scroll {
+  overflow-x: auto;
+}
 .xianxia-table {
   width: 100%;
   border-collapse: collapse;
+  text-align: left;
+}
+.xianxia-table th {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.xianxia-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
   font-size: 14px;
 }
-.xianxia-table thead th {
-  text-align: left;
-  padding: 12px 16px;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-weight: 600;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.xianxia-table tbody td {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-primary);
-  vertical-align: middle;
-}
-.xianxia-table tbody tr {
-  transition: background 0.2s;
-}
 .xianxia-table tbody tr:hover {
-  background: rgba(16, 185, 129, 0.06);
+  background: rgba(255, 255, 255, 0.02);
 }
-
+.amt-income { color: var(--jade-glow); font-weight: 600; }
+.amt-expense { color: var(--crimson-glow); font-weight: 600; }
 .cat-badge {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  background: var(--bg-secondary);
-  border-radius: 6px;
-  font-size: 13px;
-  white-space: nowrap;
 }
-
-.amt-income { color: var(--jade-glow); font-weight: 600; white-space: nowrap; }
-.amt-expense { color: var(--crimson-glow); font-weight: 600; white-space: nowrap; }
-.empty-row { text-align: center; color: var(--text-dim); font-style: italic; }
-
-/* ─── CATEGORY BREAKDOWN ──────────────── */
-.category-breakdown { margin-top: 32px; }
-.cat-bars { display: flex; flex-direction: column; gap: 12px; }
-.cat-bar-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.cat-bar-label {
-  min-width: 180px;
+.cat-inline-icon {
+  color: var(--gold-glow);
   font-size: 14px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.cat-bar-track {
-  flex: 1;
-  height: 10px;
-  background: var(--bg-secondary);
-  border-radius: 5px;
-  overflow: hidden;
-}
-.cat-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--jade), var(--jade-glow));
-  border-radius: 5px;
-  transition: width 0.8s ease;
-}
-.cat-bar-value {
-  min-width: 120px;
-  text-align: right;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
 }
 
-/* ─── FORM CARD ────────────────────────── */
-.form-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 28px;
+/* ─── FORMS & INPUTS ─────────────────────── */
+.form-card, .table-card {
+  padding: 24px;
   margin-bottom: 24px;
-  backdrop-filter: blur(8px);
 }
-
+.form-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: var(--gold-glow);
+}
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
+  margin-bottom: 16px;
 }
-
-/* ─── WALLET TRANSFER ──────────────────── */
-.transfer-card {
-  border-color: rgba(124, 58, 237, 0.35);
-  position: relative;
-}
-.transfer-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--jade-glow), var(--purple-glow), var(--gold-glow));
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-.transfer-arrow-col {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.transfer-arrow {
-  font-size: 24px;
-  color: var(--gold-glow);
-  animation: pulseGlow 2s ease-in-out infinite;
-  margin-top: 20px;
-}
-
-/* ─── WALLET CARDS ─────────────────────── */
-.wallet-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-  margin-top: 28px;
-}
-.wallet-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px;
-  transition: all 0.3s;
-  position: relative;
-  overflow: hidden;
-  backdrop-filter: blur(8px);
-}
-.wallet-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--jade), var(--gold-glow), var(--purple-glow));
-}
-.wallet-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-jade);
-  border-color: var(--border-glow);
-}
-.wallet-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.wallet-type-icon { font-size: 28px; }
-.wallet-name {
-  font-family: var(--font-calligraphy);
-  font-size: 16px;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-}
-.wallet-balance {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--jade-glow);
-  font-family: var(--font-calligraphy);
-  margin-bottom: 4px;
-}
-.wallet-type-label {
-  font-size: 12px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-/* ─── CATEGORIES ───────────────────────── */
-.categories-split {
+.two-col-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  margin-top: 28px;
 }
-.cat-col { display: flex; flex-direction: column; gap: 8px; }
-.cat-item {
+.input-group-xianxia {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 18px;
-  background: rgba(19, 36, 56, 0.9);
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.input-group-xianxia label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.input-group-xianxia input,
+.input-group-xianxia select {
+  padding: 10px 14px;
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 10px;
-  font-size: 14px;
-  transition: all 0.3s;
-}
-.cat-item:hover { border-color: var(--border-glow); }
-.cat-item.income { border-left: 3px solid var(--jade); }
-.cat-item.expense { border-left: 3px solid var(--crimson); }
-
-/* ─── BUTTONS SMALL ────────────────────── */
-.btn-sm-danger {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid rgba(220, 38, 38, 0.3);
-  border-radius: 6px;
-  color: var(--crimson-glow);
-  font-size: 14px;
-  transition: all 0.3s;
-}
-.btn-sm-danger:hover {
-  background: rgba(220, 38, 38, 0.2);
-  border-color: var(--crimson);
-}
-
-/* ─── OCR UPLOAD ───────────────────────── */
-.hint-text {
-  color: var(--text-dim);
-  font-size: 13px;
-  margin-bottom: 16px;
-}
-.upload-zone {
-  border: 2px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 48px 24px;
-  text-align: center;
-  transition: all 0.3s;
-  background: var(--bg-secondary);
-}
-.upload-zone:hover {
-  border-color: var(--jade-glow);
-  background: rgba(16, 185, 129, 0.05);
-}
-.upload-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  color: var(--text-dim);
-}
-.upload-icon { font-size: 40px; }
-.ocr-preview-img {
-  max-width: 100%;
-  max-height: 300px;
-  border-radius: 8px;
-  object-fit: contain;
-}
-
-.ocr-result-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid var(--jade-dim);
-  border-radius: var(--radius);
-  padding: 28px;
-  margin-top: 24px;
-  animation: fadeIn 0.5s ease-out;
-}
-.ocr-info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.ocr-info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.ocr-info-item label {
-  font-size: 12px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-.ocr-info-item span {
-  font-size: 16px;
   color: var(--text-primary);
-  font-weight: 600;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.3s;
 }
-.ocr-total {
-  color: var(--jade-glow) !important;
-  font-family: var(--font-calligraphy);
-  font-size: 22px !important;
+.input-group-xianxia input:focus,
+.input-group-xianxia select:focus {
+  border-color: var(--gold-glow);
 }
-.ocr-items { margin-top: 16px; }
-.ocr-items h4 { margin-bottom: 12px; color: var(--text-secondary); font-size: 14px; }
-.ocr-raw { margin-top: 16px; }
-.ocr-raw h4 { margin-bottom: 8px; color: var(--text-dim); font-size: 13px; }
-.ocr-raw pre {
-  background: var(--bg-secondary);
-  padding: 16px;
+.form-action-right {
+  display: flex;
+  justify-content: flex-end;
+}
+.btn-block {
+  width: 100%;
+}
+.btn-jade-sm {
+  padding: 8px 16px;
+  background: var(--jade);
+  color: white;
+  border: none;
   border-radius: 8px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  overflow-x: auto;
-  white-space: pre-wrap;
-}
-
-/* ─── BUDGETS ──────────────────────────── */
-.budget-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  gap: 16px;
-  margin-top: 24px;
-}
-.budget-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  transition: all 0.3s;
-}
-.budget-card:hover { border-color: var(--border-glow); }
-.budget-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.budget-amounts {
-  display: flex;
-  justify-content: space-between;
   font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
-.progress-track {
-  height: 12px;
-  background: var(--bg-secondary);
-  border-radius: 6px;
-  overflow: hidden;
-  margin-bottom: 8px;
+.btn-del-sm, .btn-del-mini {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-dim);
+  transition: color 0.2s;
 }
-.progress-fill {
-  height: 100%;
-  border-radius: 6px;
-  transition: width 0.8s ease;
-}
-.progress-fill.safe { background: linear-gradient(90deg, var(--jade), var(--jade-glow)); }
-.progress-fill.warning { background: linear-gradient(90deg, var(--gold), var(--gold-glow)); }
-.progress-fill.danger {
-  background: linear-gradient(90deg, var(--crimson), var(--crimson-glow));
-  animation: glowPulse 1.5s ease-in-out infinite;
-}
-.budget-pct { font-size: 13px; font-weight: 600; }
-.pct-safe { color: var(--jade-glow); }
-.pct-warning { color: var(--gold-glow); }
-.pct-danger { color: var(--crimson-glow); }
-
-/* ─── STATISTICS TAB ───────────────────── */
-.stats-chart-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 28px;
-  margin-bottom: 28px;
-  animation: fadeInScale 0.5s ease-out;
-  transition: all 0.3s;
-}
-.stats-chart-card:hover {
-  border-color: var(--border-glow);
-  box-shadow: var(--shadow-jade);
+.btn-del-sm:hover, .btn-del-mini:hover {
+  color: var(--crimson-glow);
 }
 
-/* ─── COMPARE SECTION ──────────────────── */
-.compare-section {
-  margin-top: 8px;
-}
-.compare-controls {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
+/* ─── WALLET CARDS ───────────────────────── */
+.wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
   margin-bottom: 24px;
 }
-.compare-vs {
-  font-size: 20px;
-  font-weight: 900;
-  color: var(--gold-glow);
-  font-family: var(--font-calligraphy);
-  padding-bottom: 16px;
+.wallet-card {
+  padding: 20px;
 }
-.compare-grid {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 20px;
-  align-items: stretch;
-}
-.compare-card {
-  background: rgba(19, 36, 56, 0.9);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px;
-  animation: slideInRight 0.5s ease-out;
-}
-.compare-card h4 {
-  font-family: var(--font-calligraphy);
-  color: var(--gold-glow);
-  margin-bottom: 16px;
-  font-size: 16px;
-}
-.compare-stat {
+.wallet-header {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  font-size: 14px;
-  color: var(--text-secondary);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
 }
-.compare-stat strong {
-  font-size: 16px;
-}
-.compare-delta {
+.wallet-type-icon { font-size: 24px; }
+.wallet-name { font-size: 16px; font-weight: 700; }
+.wallet-balance-val { font-size: 22px; font-weight: 800; color: var(--jade-glow); }
+
+/* ─── CATEGORY CHOICES ───────────────────── */
+.icon-selector {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.icon-choice {
+  font-size: 16px;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  gap: 12px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s;
 }
-.delta-item {
+.icon-choice:hover {
+  border-color: var(--gold-glow);
+  color: var(--gold-glow);
+}
+.icon-choice.active {
+  border-color: var(--gold-glow);
+  background: var(--gold-dim);
+  color: var(--gold-glow);
+}
+.category-badges-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cat-pill {
   display: flex;
   align-items: center;
   gap: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.cat-pill-icon {
+  color: var(--gold-glow);
+  font-size: 15px;
+}
+.cat-pill-name {
   font-weight: 600;
-  white-space: nowrap;
 }
-.delta-up {
-  background: rgba(16, 185, 129, 0.12);
-  color: var(--jade-glow);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+.cat-pill-type {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 6px;
 }
-.delta-down {
-  background: rgba(248, 113, 113, 0.12);
-  color: var(--crimson-glow);
-  border: 1px solid rgba(248, 113, 113, 0.3);
+.cat-pill-type.INCOME { background: var(--jade-dim); color: var(--jade-glow); }
+.cat-pill-type.EXPENSE { background: rgba(220, 38, 38, 0.15); color: var(--crimson-glow); }
+
+/* ─── OCR DROPZONE ───────────────────────── */
+.ocr-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px 20px;
+  text-align: center;
+  margin-bottom: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
-.delta-arrow {
+.ocr-dropzone:hover {
+  border-color: var(--gold-glow);
+  background: rgba(245, 158, 11, 0.05);
+}
+.ocr-file-input { display: none; }
+.ocr-camera-icon { font-size: 36px; margin-bottom: 8px; display: block; color: var(--gold-glow); }
+.ocr-img-preview { max-width: 100%; max-height: 250px; border-radius: 8px; margin-bottom: 12px; object-fit: contain; }
+.btn-reupload {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ─── BUDGETS PROGRESS ───────────────────── */
+.budget-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+.budget-item-card {
+  padding: 20px;
+}
+.budget-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.budget-cat-name { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.budget-cat-val { font-size: 13px; color: var(--text-dim); }
+.budget-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.budget-progress-fill {
+  height: 100%;
+  background: var(--jade-glow);
+  border-radius: 4px;
+  transition: width 0.4s;
+}
+.budget-progress-fill.warning { background: var(--gold-glow); }
+.budget-progress-fill.danger { background: var(--crimson-glow); }
+.budget-pct-text { font-size: 12px; color: var(--text-dim); text-align: right; }
+
+/* ─── COMPARE CONTROLS ───────────────────── */
+.compare-controls {
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.compare-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.compare-vs { font-weight: 800; color: var(--gold-glow); }
+.compare-results {
+  display: flex;
+  gap: 24px;
+}
+.compare-card {
+  background: var(--bg-secondary);
+  padding: 12px 18px;
+  border-radius: 10px;
   font-size: 14px;
 }
 
-/* ─── AI CHAT ──────────────────────────── */
+/* ─── CHAT CONTAINER ─────────────────────── */
 .chat-container {
-  background: rgba(19, 36, 56, 0.95);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 280px);
-  min-height: 500px;
+  height: 600px;
 }
-
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
-
 .chat-welcome {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding: 20px;
+  gap: 12px;
   background: rgba(124, 58, 237, 0.1);
-  border: 1px solid rgba(124, 58, 237, 0.25);
-  border-radius: var(--radius);
-  margin-bottom: 8px;
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 12px;
+  padding: 16px;
 }
-.chat-ai-avatar {
-  font-size: 36px;
-  animation: float 3s ease-in-out infinite;
-}
-.chat-welcome p {
-  font-size: 14px;
-  color: var(--text-secondary);
-  line-height: 1.7;
-}
-
+.chat-ai-avatar { font-size: 24px; color: var(--purple-glow); }
 .chat-bubble {
   display: flex;
-  gap: 12px;
-  max-width: 85%;
-  animation: fadeIn 0.3s ease-out;
+  gap: 10px;
+  max-width: 80%;
 }
 .user-bubble { align-self: flex-end; flex-direction: row-reverse; }
 .ai-bubble { align-self: flex-start; }
-
-.bubble-avatar { font-size: 24px; flex-shrink: 0; }
+.bubble-avatar { font-size: 18px; color: var(--gold-glow); display: flex; align-items: center; justify-content: center; }
 .bubble-content {
-  padding: 14px 18px;
-  border-radius: 16px;
+  padding: 12px 16px;
+  border-radius: 14px;
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 .user-bubble .bubble-content {
-  background: linear-gradient(135deg, var(--jade), var(--jade-dim));
+  background: var(--jade);
   color: white;
-  border-bottom-right-radius: 4px;
 }
 .ai-bubble .bubble-content {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  border-bottom-left-radius: 4px;
-}
-
-.typing-indicator {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px !important;
 }
 .typing-indicator span {
+  display: inline-block;
   width: 8px;
   height: 8px;
-  background: var(--jade-glow);
+  background: var(--gold-glow);
   border-radius: 50%;
-  animation: typingBounce 1.4s infinite ease-in-out;
+  margin: 0 2px;
+  animation: bounce 1.2s infinite ease-in-out;
 }
 .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
 .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
@@ -2515,67 +2860,34 @@ button, a, select, input, textarea, label, [role="button"], .clickable-brand, .u
 .chat-input-area {
   display: flex;
   gap: 12px;
-  padding: 16px 24px;
+  padding: 16px;
   border-top: 1px solid var(--border);
-  background: var(--bg-secondary);
 }
 .chat-input-area input {
   flex: 1;
-  padding: 12px 16px;
-  background: var(--bg-card);
+  padding: 10px 16px;
+  background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
-  font-family: var(--font-body);
-  transition: border-color 0.3s;
-}
-.chat-input-area input:focus {
-  border-color: var(--purple);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
 }
 
-.btn-jade-sm {
-  padding: 12px 24px;
-  background: linear-gradient(135deg, var(--purple), var(--purple-glow));
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-weight: 600;
-  font-family: var(--font-body);
-  font-size: 14px;
-  transition: all 0.3s;
-  white-space: nowrap;
-}
-.btn-jade-sm:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
-}
-.btn-jade-sm:disabled { opacity: 0.5; }
-
-/* ─── MODAL ACCOUNT MANAGEMENT ────────── */
+/* ─── MODALS & BACKDROP ──────────────────── */
 .modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(8px);
-  z-index: 999;
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  animation: fadeIn 0.3s ease-out;
 }
 .modal-card {
-  background: var(--bg-card);
-  border: 1px solid var(--gold-glow);
-  border-radius: var(--radius-lg);
   width: 100%;
-  max-width: 440px;
+  max-width: 480px;
   padding: 28px;
-  box-shadow: var(--shadow-gold), 0 20px 50px rgba(0, 0, 0, 0.8);
-  animation: fadeInScale 0.3s ease-out;
 }
 .modal-header {
   display: flex;
@@ -2583,104 +2895,104 @@ button, a, select, input, textarea, label, [role="button"], .clickable-brand, .u
   justify-content: space-between;
   margin-bottom: 20px;
 }
-.modal-title {
-  font-family: var(--font-calligraphy);
-  font-size: 18px;
+.modal-title { font-size: 18px; font-weight: 700; color: var(--gold-glow); }
+.modal-close { background: transparent; border: none; font-size: 20px; color: var(--text-dim); }
+.modal-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.modal-tab-btn {
+  flex: 1;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  font-weight: 600;
+}
+.modal-tab-btn.active {
+  background: var(--gold-dim);
+  border-color: var(--gold-glow);
   color: var(--gold-glow);
-}
-.modal-close {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font-size: 18px;
-  transition: color 0.2s;
-}
-.modal-close:hover { color: var(--crimson-glow); }
-.disabled-input {
-  opacity: 0.6;
-  background: rgba(0, 0, 0, 0.3) !important;
 }
 .modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 20px;
 }
 .btn-secondary {
-  padding: 10px 20px;
+  padding: 8px 16px;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-secondary);
   border-radius: 8px;
-  font-size: 14px;
-  transition: all 0.2s;
 }
-.btn-secondary:hover { background: rgba(255, 255, 255, 0.05); }
 
-/* ─── TOAST ────────────────────────────── */
+/* ─── TOASTS & ALERTS ────────────────────── */
 .toast-notification {
   position: fixed;
-  bottom: 30px;
-  right: 30px;
-  padding: 14px 24px;
-  border-radius: 12px;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: 10px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   z-index: 9999;
-  animation: fadeIn 0.3s ease-out;
-  max-width: 400px;
-  backdrop-filter: blur(8px);
 }
-.toast-notification.success {
-  background: rgba(5, 150, 105, 0.95);
-  color: white;
-  border: 1px solid var(--jade-glow);
-  box-shadow: 0 8px 30px rgba(16, 185, 129, 0.4);
-}
-.toast-notification.error {
-  background: rgba(220, 38, 38, 0.95);
-  color: white;
+.toast-notification.success { background: var(--jade); color: white; }
+.toast-notification.error { background: var(--crimson); color: white; }
+
+.error-banner {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.2);
   border: 1px solid var(--crimson-glow);
-  box-shadow: 0 8px 30px rgba(220, 38, 38, 0.4);
+  color: var(--crimson-glow);
+  font-size: 13px;
 }
 
-/* ─── EMPTY STATE ──────────────────────── */
-.empty-state {
-  text-align: center;
-  padding: 32px;
-  color: var(--text-dim);
-  font-size: 14px;
-  font-style: italic;
+.alerts-section { margin-bottom: 24px; }
+.alert-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.alert-card.warning { background: rgba(245, 158, 11, 0.15); border: 1px solid var(--gold-glow); color: var(--gold-glow); }
+.alert-card.danger { background: rgba(220, 38, 38, 0.15); border: 1px solid var(--crimson-glow); color: var(--crimson-glow); }
+.alert-msg { flex: 1; font-size: 14px; }
+.alert-pct { font-weight: 700; }
+
+.role-badge.admin { background: var(--gold-dim); color: var(--gold-glow); padding: 2px 8px; border-radius: 6px; }
+.role-badge.user { background: var(--jade-dim); color: var(--jade-glow); padding: 2px 8px; border-radius: 6px; }
+.status-active { color: var(--jade-glow); }
+.status-blocked { color: var(--crimson-glow); }
+.btn-block-sm {
+  padding: 4px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 6px;
 }
 
-/* ─── RESPONSIVE ───────────────────────── */
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 @media (max-width: 768px) {
-  .header-title { font-size: 16px; }
-  .version-badge { display: none; }
-  .realm-content { padding: 20px 16px 80px; }
-  .metrics-grid { grid-template-columns: 1fr; }
-  .categories-split { grid-template-columns: 1fr; }
-  .form-grid { grid-template-columns: 1fr; }
-  .wallet-grid { grid-template-columns: 1fr; }
-  .budget-list { grid-template-columns: 1fr; }
-  .tab-btn .tab-label { display: none; }
-  .tab-btn { padding: 14px 12px; }
-  .login-card { margin: 16px; padding: 32px 24px; }
-  .chat-container { height: calc(100vh - 240px); min-height: 400px; }
-  .user-badge-btn { padding: 6px 10px; font-size: 12px; }
-  .dashboard-charts-row { grid-template-columns: 1fr; }
-  .compare-grid { grid-template-columns: 1fr; }
-  .compare-delta { flex-direction: row; flex-wrap: wrap; justify-content: center; }
-  .compare-controls { flex-direction: column; }
-  .compare-vs { padding-bottom: 0; }
-  .transfer-arrow-col { display: none; }
-}
-
-@media (max-width: 480px) {
-  .metric-value { font-size: 18px; }
-  .section-title { font-size: 20px; }
-  .cat-bar-label { min-width: 120px; font-size: 12px; }
-  .cat-bar-value { min-width: 90px; font-size: 12px; }
-  .saving-tips-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+  .dashboard-charts-row, .two-col-grid, .charts-grid-stats, .analytics-metrics-grid { grid-template-columns: 1fr; }
+  .header-inner { flex-direction: column; gap: 12px; }
+  .landing-cta-row { flex-direction: column; }
+  .analytics-header { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 </style>
