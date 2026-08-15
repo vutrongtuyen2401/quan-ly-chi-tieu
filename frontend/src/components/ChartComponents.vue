@@ -35,18 +35,18 @@ ChartJS.register(
   Title, Tooltip, Legend, Filler
 )
 
-// Xianxia color palette
+// Xianxia color palette (light theme)
 const XIANXIA_COLORS = [
-  '#10B981', '#F59E0B', '#A78BFA', '#F87171', '#38BDF8',
-  '#FB923C', '#34D399', '#C084FC', '#FBBF24', '#60A5FA',
-  '#E879F9', '#2DD4BF', '#F472B6', '#818CF8', '#FCA5A1',
+  '#4fa8a0', '#e8c874', '#8b5cf6', '#ef4444', '#3b82f6',
+  '#f97316', '#10b981', '#ec4899', '#f59e0b', '#06b6d4',
+  '#a855f7', '#14b8a6', '#f43f5e', '#6366f1', '#fb923c',
 ]
 
 const JADE_GRADIENT = (ctx) => {
-  if (!ctx?.chart?.ctx) return '#10B981'
+  if (!ctx?.chart?.ctx) return '#4fa8a0'
   const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height || 300)
-  gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)')
-  gradient.addColorStop(1, 'rgba(16, 185, 129, 0.02)')
+  gradient.addColorStop(0, 'rgba(79, 168, 160, 0.4)')
+  gradient.addColorStop(1, 'rgba(79, 168, 160, 0.02)')
   return gradient
 }
 
@@ -64,8 +64,8 @@ export default {
       family: "'Inter', sans-serif",
       size: 12,
     }
-    const gridColor = 'rgba(30, 41, 59, 0.8)'
-    const tickColor = '#94A3B8'
+    const gridColor = 'rgba(71, 101, 130, 0.18)'
+    const tickColor = '#2c3e50'
 
     // ─── DOUGHNUT ─────────────────────
     const doughnutData = computed(() => {
@@ -75,9 +75,9 @@ export default {
         datasets: [{
           data: d.values || [],
           backgroundColor: XIANXIA_COLORS.slice(0, (d.values || []).length),
-          borderColor: '#0B1120',
+          borderColor: '#ffffff',
           borderWidth: 2,
-          hoverBorderColor: '#10B981',
+          hoverBorderColor: '#e8c874',
           hoverBorderWidth: 3,
           hoverOffset: 8,
         }]
@@ -102,15 +102,15 @@ export default {
         title: {
           display: !!props.title,
           text: props.title,
-          color: '#F59E0B',
-          font: { ...baseFont, size: 15, weight: 'bold', family: "'Noto Serif TC', serif" },
+          color: '#b38217',
+          font: { ...baseFont, size: 15, weight: 'bold', family: "'Lora', 'Cormorant Garamond', serif" },
           padding: { bottom: 20 },
         },
         tooltip: {
-          backgroundColor: 'rgba(17, 27, 46, 0.95)',
-          titleColor: '#E2E8F0',
-          bodyColor: '#94A3B8',
-          borderColor: 'rgba(5, 150, 105, 0.3)',
+          backgroundColor: 'rgba(255, 255, 255, 0.96)',
+          titleColor: '#1a3a5c',
+          bodyColor: '#2c3e50',
+          borderColor: 'rgba(232, 200, 116, 0.6)',
           borderWidth: 1,
           cornerRadius: 8,
           padding: 12,
@@ -135,8 +135,8 @@ export default {
           {
             label: '💎 Thu nhập',
             data: d.income || [],
-            backgroundColor: 'rgba(16, 185, 129, 0.7)',
-            borderColor: '#10B981',
+            backgroundColor: 'rgba(79, 168, 160, 0.8)',
+            borderColor: '#4fa8a0',
             borderWidth: 1,
             borderRadius: 6,
             borderSkipped: false,
@@ -144,8 +144,8 @@ export default {
           {
             label: '🔥 Chi tiêu',
             data: d.expense || [],
-            backgroundColor: 'rgba(248, 113, 113, 0.7)',
-            borderColor: '#F87171',
+            backgroundColor: 'rgba(224, 102, 102, 0.8)',
+            borderColor: '#e06666',
             borderWidth: 1,
             borderRadius: 6,
             borderSkipped: false,
@@ -170,15 +170,15 @@ export default {
         title: {
           display: !!props.title,
           text: props.title,
-          color: '#F59E0B',
-          font: { ...baseFont, size: 15, weight: 'bold', family: "'Noto Serif TC', serif" },
+          color: '#b38217',
+          font: { ...baseFont, size: 15, weight: 'bold', family: "'Lora', 'Cormorant Garamond', serif" },
           padding: { bottom: 16 },
         },
         tooltip: {
-          backgroundColor: 'rgba(17, 27, 46, 0.95)',
-          titleColor: '#E2E8F0',
-          bodyColor: '#94A3B8',
-          borderColor: 'rgba(5, 150, 105, 0.3)',
+          backgroundColor: 'rgba(255, 255, 255, 0.96)',
+          titleColor: '#1a3a5c',
+          bodyColor: '#2c3e50',
+          borderColor: 'rgba(232, 200, 116, 0.6)',
           borderWidth: 1,
           cornerRadius: 8,
           padding: 12,
@@ -213,18 +213,18 @@ export default {
           {
             label: '🔥 Chi tiêu',
             data: d.expense || [],
-            borderColor: '#F87171',
+            borderColor: '#e06666',
             backgroundColor: (ctx) => {
-              if (!ctx?.chart?.ctx) return 'rgba(248, 113, 113, 0.1)'
+              if (!ctx?.chart?.ctx) return 'rgba(224, 102, 102, 0.1)'
               const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height || 300)
-              gradient.addColorStop(0, 'rgba(248, 113, 113, 0.3)')
-              gradient.addColorStop(1, 'rgba(248, 113, 113, 0.02)')
+              gradient.addColorStop(0, 'rgba(224, 102, 102, 0.3)')
+              gradient.addColorStop(1, 'rgba(224, 102, 102, 0.02)')
               return gradient
             },
             fill: true,
             tension: 0.4,
-            pointBackgroundColor: '#F87171',
-            pointBorderColor: '#0B1120',
+            pointBackgroundColor: '#e06666',
+            pointBorderColor: '#ffffff',
             pointBorderWidth: 2,
             pointRadius: 5,
             pointHoverRadius: 8,
@@ -232,12 +232,12 @@ export default {
           {
             label: '💎 Thu nhập',
             data: d.income || [],
-            borderColor: '#10B981',
+            borderColor: '#4fa8a0',
             backgroundColor: JADE_GRADIENT,
             fill: true,
             tension: 0.4,
-            pointBackgroundColor: '#10B981',
-            pointBorderColor: '#0B1120',
+            pointBackgroundColor: '#4fa8a0',
+            pointBorderColor: '#ffffff',
             pointBorderWidth: 2,
             pointRadius: 5,
             pointHoverRadius: 8,
@@ -266,15 +266,15 @@ export default {
         title: {
           display: !!props.title,
           text: props.title,
-          color: '#F59E0B',
-          font: { ...baseFont, size: 15, weight: 'bold', family: "'Noto Serif TC', serif" },
+          color: '#b38217',
+          font: { ...baseFont, size: 15, weight: 'bold', family: "'Lora', 'Cormorant Garamond', serif" },
           padding: { bottom: 16 },
         },
         tooltip: {
-          backgroundColor: 'rgba(17, 27, 46, 0.95)',
-          titleColor: '#E2E8F0',
-          bodyColor: '#94A3B8',
-          borderColor: 'rgba(5, 150, 105, 0.3)',
+          backgroundColor: 'rgba(255, 255, 255, 0.96)',
+          titleColor: '#1a3a5c',
+          bodyColor: '#2c3e50',
+          borderColor: 'rgba(232, 200, 116, 0.6)',
           borderWidth: 1,
           cornerRadius: 8,
           padding: 12,
