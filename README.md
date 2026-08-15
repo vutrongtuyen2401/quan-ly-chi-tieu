@@ -69,19 +69,29 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
 
 ---
 
-## 👤 Tài Khoản Mẫu Mặc Định (Đã Seed Dữ Liệu)
+## 👤 Tài Khoản Mẫu (Seed Data)
 - **Linh Bưu (Email)**: `admin@gmail.com`
-- **Khẩu Quyết (Mật khẩu)**: `123456`
+- **Khẩu Quyết (Mật khẩu)**: Được sinh ngẫu nhiên khi khởi tạo cơ sở dữ liệu lần đầu và in trực tiếp ra console terminal. Bạn cũng có thể thiết lập mật khẩu cố định qua biến `SEED_ADMIN_PASSWORD` trong file `.env`.
 
 ---
 
-## 🔮 Các Tính Năng Chính (v3.0)
+## ⚙️ Biến Môi Trường (.env)
+- `JWT_SECRET`: Khóa bí mật ký JWT (bắt buộc, server sẽ dừng nếu chưa cấu hình).
+- `ALLOWED_ORIGINS`: Danh sách tên miền CORS được phép truy cập (mặc định: `http://localhost:5173`).
+- `GEMINI_API_KEY`: Khóa API Google Gemini cho tính năng AI OCR và trợ lý Khí Linh.
+- `SEED_ADMIN_PASSWORD`: (Tùy chọn) Mật khẩu cho tài khoản seed `admin@gmail.com`.
+
+---
+
+## 🔮 Các Tính Năng Nổi Bật (v3.5)
 1. **📊 Đạo Đường Tổng Quan**: Thống kê Thu/Chi/Tiết kiệm, biểu đồ phân bổ chi tiêu Doughnut & Bar mini, cảnh báo hạn mức.
-2. **💸 Tàng Kinh Giao Dịch**: Ghi nhận, chỉnh sửa, xóa giao dịch thu/chi.
-3. **💳 Túi Càn Khôn & Chuyển Tiền**: Quản lý nhiều loại ví và chuyển Linh Thạch trực tiếp giữa các ví.
-4. **🏷️ Danh Mục Thu Chi**: Thêm/xóa các loại danh mục với Icon đa dạng.
-5. **🧾 Linh Nhãn OCR**: Quét ảnh hóa đơn bằng Google Gemini Vision API.
-6. **🎯 Hạn Mức Tu Luyện**: Thiết lập ngân sách hàng tháng, tự động cảnh báo *"Tẩu Hỏa Nhập Ma"*.
-7. **📈 Thiên Cơ Thống Kê (Mới)**: Biểu đồ xu hướng 6 tháng, chi tiêu 4 tuần, so sánh 2 tháng side-by-side.
-8. **💬 Khí Linh AI & Khai Thị Tiết Kiệm**: Trợ lý tư vấn tài chính Gemini và đề xuất 5 mẹo tiết kiệm thông minh.
+2. **💸 Tàng Kinh Giao Dịch**: Ghi nhận, chỉnh sửa, lọc theo ngày/danh mục/ví/từ khóa, phân trang và xuất báo cáo CSV/Excel.
+3. **🔄 Giao Dịch Định Kỳ**: Tự động sinh giao dịch định kỳ (hàng tuần / hàng tháng).
+4. **💳 Túi Càn Khôn & Chuyển Tiền**: Quản lý, chỉnh sửa ví và chuyển Linh Thạch trực tiếp giữa các ví.
+5. **🏷️ Danh Mục Thu Chi**: Thêm, chỉnh sửa, xóa các loại danh mục với Icon đa dạng.
+6. **🧾 Linh Nhãn OCR**: Quét ảnh hóa đơn bằng Google Gemini Vision API.
+7. **🎯 Hạn Mức Tu Luyện**: Thiết lập ngân sách hàng tháng, tự động cảnh báo *"Tẩu Hỏa Nhập Ma"*.
+8. **📈 Thiên Cơ Thống Kê**: Biểu đồ xu hướng 6 tháng, chi tiêu 4 tuần, so sánh 2 tháng side-by-side.
+9. **💬 Khí Linh AI & Khai Thị Tiết Kiệm**: Trợ lý tư vấn tài chính Gemini và đề xuất 5 mẹo tiết kiệm thông minh.
+10. **🛡️ An Ninh & Bảo Mật**: Rate limiting chống brute-force đăng nhập, đặt lại mật khẩu bằng mã OTP, CORS & JWT bảo mật cao.
 

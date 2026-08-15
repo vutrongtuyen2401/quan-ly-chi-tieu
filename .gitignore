@@ -25,3 +25,6 @@ frontend/.vite/
 Thumbs.db
 scratch/
 .specify/
+.gemini/
+.codex/
+xianxia.db

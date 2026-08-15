@@ -13,6 +13,10 @@ import json
 import base64
 import datetime
 import hashlib
+import secrets
+import time
+import csv
+import io
 from contextlib import contextmanager
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
@@ -24,8 +28,9 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional, List
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 
 import jwt
@@ -37,17 +42,37 @@ load_dotenv()
 # CONFIG
 # ──────────────────────────────────────────────
 DATABASE = "app.db"
-JWT_SECRET = os.getenv("JWT_SECRET", "xianxia_cankhon_default_secret")
+
+# Change 2: JWT_SECRET bắt buộc — dừng server nếu thiếu
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "\n" + "=" * 62 + "\n"
+        "  ❌ LỖI NGHIÊM TRỌNG: Biến môi trường JWT_SECRET chưa được đặt!\n"
+        "  Hãy thêm JWT_SECRET vào file .env trước khi khởi động server.\n"
+        "  Ví dụ: JWT_SECRET=my_super_secret_key_here\n"
+        + "=" * 62
+    )
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Change 1: CORS an toàn — đọc danh sách origins từ biến môi trường
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
+
+# Change 6: Rate limiting đăng nhập — in-memory tracker
+# {email: {"count": int, "first_attempt": float}}
+login_attempts = {}
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCKOUT_SECONDS = 15 * 60  # 15 phút
 
 app = FastAPI(title="Càn Khôn Linh Thạch Các API", version="2.1")
 security = HTTPBearer()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,7 +95,7 @@ def get_db():
 
 
 def init_db():
-    """Tạo 7 bảng cốt lõi + seed dữ liệu mẫu"""
+    """Tạo các bảng cốt lõi + seed dữ liệu mẫu"""
     with get_db() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
@@ -78,6 +103,8 @@ def init_db():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 full_name TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                is_active INTEGER DEFAULT 1,
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
@@ -145,25 +172,112 @@ def init_db():
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+
+            /* Change 5: Bảng password_reset_tokens */
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                token TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            /* Change 8: Bảng recurring_transactions */
+            CREATE TABLE IF NOT EXISTS recurring_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                wallet_id INTEGER NOT NULL,
+                category_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                transaction_type TEXT CHECK(transaction_type IN ('INCOME','EXPENSE')) NOT NULL,
+                frequency TEXT CHECK(frequency IN ('weekly','monthly')) NOT NULL DEFAULT 'monthly',
+                next_run_date TEXT NOT NULL,
+                note TEXT DEFAULT '',
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (wallet_id) REFERENCES wallets(id),
+                FOREIGN KEY (category_id) REFERENCES categories(id)
+            );
+
+            /* Bảng debts (Theo dõi Nợ / Vay mượn) */
+            CREATE TABLE IF NOT EXISTS debts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                wallet_id INTEGER,
+                debt_type TEXT CHECK(debt_type IN ('BORROW','LEND')) NOT NULL,
+                person_name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                due_date TEXT DEFAULT '',
+                is_settled INTEGER DEFAULT 0,
+                note TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (wallet_id) REFERENCES wallets(id)
+            );
+
+            /* Bảng saving_goals (Mục Tiêu Tiết Kiệm) */
+            CREATE TABLE IF NOT EXISTS saving_goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                target_name TEXT NOT NULL,
+                target_amount REAL NOT NULL,
+                current_amount REAL DEFAULT 0,
+                target_date TEXT DEFAULT '',
+                icon TEXT DEFAULT '🎯',
+                is_completed INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
         """)
 
-        # Seed dữ liệu mẫu nếu chưa có user
+        # Migration: Ensure role and is_active columns exist on users table
+        user_cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "role" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+        if "is_active" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+        
+        # Ensure default admin has role = 'admin' and valid hash
+        admin_row = conn.execute("SELECT id, password_hash FROM users WHERE email = 'admin@gmail.com'").fetchone()
+        if admin_row:
+            admin_hash = admin_row["password_hash"] or ""
+            need_pw_reset = False
+            try:
+                if not (admin_hash.startswith("$2b$") or admin_hash.startswith("$2a$") or admin_hash.startswith("$2y$")):
+                    need_pw_reset = True
+                else:
+                    bcrypt.checkpw(b"test", admin_hash.encode())
+            except Exception:
+                need_pw_reset = True
+            
+            seed_password = os.getenv("SEED_ADMIN_PASSWORD", "admin123").strip() or "admin123"
+            if need_pw_reset:
+                new_pw_hash = bcrypt.hashpw(seed_password.encode(), bcrypt.gensalt()).decode()
+                conn.execute("UPDATE users SET role = 'admin', is_active = 1, password_hash = ? WHERE email = 'admin@gmail.com'", (new_pw_hash,))
+            else:
+                conn.execute("UPDATE users SET role = 'admin', is_active = 1 WHERE email = 'admin@gmail.com'")
+
+        # Change 9: Seed dữ liệu mẫu — mật khẩu an toàn
         user_check = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
         if not user_check:
-            # Admin user: admin@gmail.com / 123456
-            pw_hash = bcrypt.hashpw("123456".encode(), bcrypt.gensalt()).decode()
+            # Đọc mật khẩu từ biến môi trường, hoặc tự sinh ngẫu nhiên
+            seed_password = os.getenv("SEED_ADMIN_PASSWORD", "admin123").strip() or "admin123"
+            pw_hash = bcrypt.hashpw(seed_password.encode(), bcrypt.gensalt()).decode()
             conn.execute(
-                "INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)",
+                "INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES (?, ?, ?, 'admin', 1)",
                 ("admin@gmail.com", pw_hash, "Ký Chủ")
             )
             uid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        else:
-            # Update default name from old 'Đạo Hữu Admin' to 'Ký Chủ' if unchanged
-            conn.execute(
-                "UPDATE users SET full_name = 'Ký Chủ' WHERE email = 'admin@gmail.com' AND full_name = 'Đạo Hữu Admin'"
-            )
-            uid = conn.execute("SELECT id FROM users WHERE email = 'admin@gmail.com'").fetchone()[0]
 
+            # In mật khẩu mẫu ra console với banner nổi bật
+            print("\n" + "🔑" * 31)
+            print("  ⚠️  MẬT KHẨU TÀI KHOẢN MẪU (Seed Account)")
+            print(f"  📧  Email:     admin@gmail.com")
+            print(f"  🔐  Mật khẩu: {seed_password}")
+            print("  ℹ️  Đặt biến SEED_ADMIN_PASSWORD trong .env để cố định mật khẩu.")
+            print("🔑" * 31 + "\n")
 
             # 3 Ví Linh Thạch
             wallets_data = [
@@ -201,7 +315,9 @@ def init_db():
                 (uid, 2, 2, 1200000, "EXPENSE", str(today - datetime.timedelta(days=4)), "Pháp bảo tai nghe mới"),
             ]
             conn.executemany(
-                "INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO transactions
+                   (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 transactions_data
             )
 
@@ -216,6 +332,11 @@ def init_db():
                 "INSERT INTO budgets (user_id, category_id, limit_amount, month_year) VALUES (?, ?, ?, ?)",
                 budgets_data
             )
+        else:
+            # Update default name from old 'Đạo Hữu Admin' to 'Ký Chủ' if unchanged
+            conn.execute(
+                "UPDATE users SET full_name = 'Ký Chủ' WHERE email = 'admin@gmail.com' AND full_name = 'Đạo Hữu Admin'"
+            )
 
         # Dọn dẹp dữ liệu mồ côi không gắn user_id hợp lệ
         conn.execute("DELETE FROM transactions WHERE user_id NOT IN (SELECT id FROM users)")
@@ -229,7 +350,7 @@ def init_db():
 
 
 # ──────────────────────────────────────────────
-# PYDANTIC MODELS
+# PYDANTIC SCHEMAS
 # ──────────────────────────────────────────────
 class RegisterBody(BaseModel):
     email: str
@@ -240,23 +361,47 @@ class LoginBody(BaseModel):
     email: str
     password: str
 
+class ForgotPasswordBody(BaseModel):
+    email: str
+
+class ResetPasswordBody(BaseModel):
+    token: str
+    new_password: str
+
+class UserProfileUpdateBody(BaseModel):
+    full_name: str
+
 class WalletBody(BaseModel):
     wallet_name: str
-    balance: float = 0
+    balance: float
     wallet_type: str = "cash"
+
+class WalletUpdateBody(BaseModel):
+    wallet_name: Optional[str] = None
+    wallet_type: Optional[str] = None
+
+class TransferBody(BaseModel):
+    from_wallet_id: int
+    to_wallet_id: int
+    amount: float
+    note: Optional[str] = None
 
 class CategoryBody(BaseModel):
     category_name: str
-    category_type: str  # INCOME or EXPENSE
+    category_type: str
     icon: str = "📦"
+
+class CategoryUpdateBody(BaseModel):
+    category_name: Optional[str] = None
+    icon: Optional[str] = None
 
 class TransactionBody(BaseModel):
     wallet_id: int
     category_id: int
     amount: float
-    transaction_type: str  # INCOME or EXPENSE
+    transaction_type: str
     transaction_date: str
-    note: str = ""
+    note: Optional[str] = None
 
 class TransactionUpdateBody(BaseModel):
     wallet_id: Optional[int] = None
@@ -271,18 +416,76 @@ class BudgetBody(BaseModel):
     limit_amount: float
     month_year: str
 
+class RecurringBody(BaseModel):
+    wallet_id: int
+    category_id: int
+    amount: float
+    transaction_type: str = "EXPENSE"
+    frequency: str = "monthly"
+    next_run_date: str
+    note: Optional[str] = None
+
+class RecurringUpdateBody(BaseModel):
+    wallet_id: Optional[int] = None
+    category_id: Optional[int] = None
+    amount: Optional[float] = None
+    transaction_type: Optional[str] = None
+    frequency: Optional[str] = None
+    next_run_date: Optional[str] = None
+    note: Optional[str] = None
+    is_active: Optional[int] = None
+
+RecurringTransactionBody = RecurringBody
+RecurringTransactionUpdateBody = RecurringUpdateBody
+
 class ChatBody(BaseModel):
     message: str
+
+class DebtCreateBody(BaseModel):
+    debt_type: str
+    person_name: str
+    amount: float
+    due_date: Optional[str] = None
+    note: Optional[str] = None
+    wallet_id: Optional[int] = None
+
+class DebtUpdateBody(BaseModel):
+    debt_type: Optional[str] = None
+    person_name: Optional[str] = None
+    amount: Optional[float] = None
+    due_date: Optional[str] = None
+    note: Optional[str] = None
+    wallet_id: Optional[int] = None
+
+class SavingGoalCreateBody(BaseModel):
+    target_name: str
+    target_amount: float
+    current_amount: Optional[float] = 0.0
+    target_date: Optional[str] = None
+    icon: Optional[str] = "🎯"
+
+class SavingGoalUpdateBody(BaseModel):
+    target_name: Optional[str] = None
+    target_amount: Optional[float] = None
+    current_amount: Optional[float] = None
+    target_date: Optional[str] = None
+    icon: Optional[str] = None
+    is_completed: Optional[int] = None
+
+class SavingGoalDepositBody(BaseModel):
+    amount: float
+    wallet_id: Optional[int] = None
 
 
 # ──────────────────────────────────────────────
 # AUTH HELPERS
 # ──────────────────────────────────────────────
-def create_token(user_id: int, email: str) -> str:
+def create_token(user_id: int, email: str, role: str = "user") -> str:
     payload = {
         "user_id": user_id,
         "email": email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_EXPIRATION_HOURS),
+        "role": (role or "user").lower(),
+        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=JWT_EXPIRATION_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -290,17 +493,29 @@ def create_token(user_id: int, email: str) -> str:
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return {"user_id": payload["user_id"], "email": payload["email"]}
+        return {
+            "user_id": payload["user_id"],
+            "email": payload["email"],
+            "role": str(payload.get("role", "user")).lower()
+        }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token đã hết hạn. Hãy đăng nhập lại.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token không hợp lệ.")
 
 
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if str(user.get("role", "")).lower() != "admin":
+        raise HTTPException(status_code=403, detail="Quyền hạn không đủ! Chỉ Chưởng Môn (Admin) mới có quyền truy cập.")
+    return user
+
+
 # ──────────────────────────────────────────────
 # AUTH ROUTES
 # ──────────────────────────────────────────────
 @app.post("/api/auth/register")
+@app.post("/api/register")
+@app.post("/register")
 def register(body: RegisterBody):
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE email = ?", (body.email,)).fetchone()
@@ -308,7 +523,7 @@ def register(body: RegisterBody):
             raise HTTPException(status_code=400, detail="Email đã tồn tại trong Tông Môn.")
         pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
         conn.execute(
-            "INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)",
+            "INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES (?, ?, ?, 'user', 1)",
             (body.email, pw_hash, body.full_name)
         )
         user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -336,20 +551,137 @@ def register(body: RegisterBody):
             categories_data
         )
 
-        token = create_token(user_id, body.email)
-        return {"token": token, "user_id": user_id, "full_name": body.full_name, "email": body.email}
+        token = create_token(user_id, body.email, role="user")
+        return {"token": token, "user_id": user_id, "full_name": body.full_name, "email": body.email, "role": "user"}
 
 
 @app.post("/api/auth/login")
+@app.post("/api/login")
+@app.post("/login")
 def login(body: LoginBody):
+    # Change 6: Rate limiting — kiểm tra số lần đăng nhập sai
+    email_lower = body.email.lower().strip()
+    now_ts = time.time()
+
+    if email_lower in login_attempts:
+        attempt = login_attempts[email_lower]
+        elapsed = now_ts - attempt["first_attempt"]
+        if elapsed > LOGIN_LOCKOUT_SECONDS:
+            del login_attempts[email_lower]
+        elif attempt["count"] >= LOGIN_MAX_ATTEMPTS:
+            remaining = int(LOGIN_LOCKOUT_SECONDS - elapsed)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Tài khoản tạm khóa do đăng nhập sai quá nhiều lần. Vui lòng thử lại sau {remaining // 60} phút."
+            )
+
     with get_db() as conn:
         user = conn.execute("SELECT * FROM users WHERE email = ?", (body.email,)).fetchone()
         if not user:
-            raise HTTPException(status_code=401, detail="Đạo Tâm không tồn tại.")
-        if not bcrypt.checkpw(body.password.encode(), user["password_hash"].encode()):
-            raise HTTPException(status_code=401, detail="Mật khẩu sai. Đạo Tâm bị phong ấn.")
-        token = create_token(user["id"], user["email"])
-        return {"token": token, "user_id": user["id"], "full_name": user["full_name"], "email": user["email"]}
+            raise HTTPException(status_code=401, detail="Email hoặc mật khẩu không chính xác.")
+        if "is_active" in user.keys() and user["is_active"] == 0:
+            raise HTTPException(status_code=403, detail="Tài khoản này đã bị phong ấn (khóa). Vui lòng liên hệ Chưởng Môn (Admin).")
+        
+        is_pw_valid = False
+        stored_hash = user["password_hash"] or ""
+        try:
+            if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$") or stored_hash.startswith("$2y$"):
+                is_pw_valid = bcrypt.checkpw(body.password.encode("utf-8"), stored_hash.encode("utf-8"))
+            else:
+                # Fallback for plain sha256 or plain text legacy, and auto-upgrade to bcrypt
+                sha256_hash = hashlib.sha256(body.password.encode("utf-8")).hexdigest()
+                if stored_hash == sha256_hash or stored_hash == body.password:
+                    is_pw_valid = True
+                    new_pw_hash = bcrypt.hashpw(body.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+                    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_pw_hash, user["id"]))
+        except Exception:
+            is_pw_valid = False
+
+        if not is_pw_valid:
+            if email_lower not in login_attempts:
+                login_attempts[email_lower] = {"count": 1, "first_attempt": now_ts}
+            else:
+                login_attempts[email_lower]["count"] += 1
+            remaining_attempts = LOGIN_MAX_ATTEMPTS - login_attempts[email_lower]["count"]
+            if remaining_attempts <= 0:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Tài khoản tạm khóa do đăng nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút."
+                )
+            raise HTTPException(status_code=401, detail=f"Mật khẩu sai. Đạo Tâm bị phong ấn. (Còn {remaining_attempts} lần thử)")
+
+        # Đăng nhập thành công → reset bộ đếm
+        if email_lower in login_attempts:
+            del login_attempts[email_lower]
+
+        user_role = user["role"] if "role" in user.keys() and user["role"] else "user"
+        token = create_token(user["id"], user["email"], role=user_role)
+        return {
+            "token": token,
+            "user_id": user["id"],
+            "full_name": user["full_name"],
+            "email": user["email"],
+            "role": user_role
+        }
+
+
+# ──────────────────────────────────────────────
+# Change 5: FORGOT / RESET PASSWORD
+# ──────────────────────────────────────────────
+@app.post("/api/auth/forgot-password")
+def forgot_password(body: ForgotPasswordBody):
+    """Tạo mã reset mật khẩu — TODO: tích hợp gửi email thật khi lên production"""
+    with get_db() as conn:
+        user = conn.execute("SELECT id FROM users WHERE email = ?", (body.email,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Email không tồn tại trong hệ thống.")
+
+        # Tạo mã reset 6 ký tự, hạn 30 phút
+        reset_token = secrets.token_urlsafe(4)[:6].upper()
+        expires_at = (datetime.datetime.utcnow() + datetime.timedelta(minutes=30)).isoformat()
+
+        conn.execute(
+            "INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (?, ?, ?)",
+            (body.email, reset_token, expires_at)
+        )
+
+    # TODO: Gửi email thật khi lên production. Hiện tại trả trực tiếp cho dev/đồ án.
+    return {
+        "message": "Mã reset đã được tạo. (Chế độ phát triển: mã hiển thị trực tiếp)",
+        "reset_token": reset_token,
+        "expires_in_minutes": 30,
+        "note": "⚠️ DEV MODE: Trong production, mã này sẽ được gửi qua email thay vì hiển thị trực tiếp."
+    }
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(body: ResetPasswordBody):
+    """Đặt lại mật khẩu bằng mã reset"""
+    with get_db() as conn:
+        token_row = conn.execute(
+            "SELECT * FROM password_reset_tokens WHERE email = ? AND token = ? AND used = 0 ORDER BY id DESC LIMIT 1",
+            (body.email, body.token.upper())
+        ).fetchone()
+
+        if not token_row:
+            raise HTTPException(status_code=400, detail="Mã reset không hợp lệ hoặc đã được sử dụng.")
+
+        # Kiểm tra hết hạn
+        expires_at = datetime.datetime.fromisoformat(token_row["expires_at"])
+        if datetime.datetime.utcnow() > expires_at:
+            raise HTTPException(status_code=400, detail="Mã reset đã hết hạn. Vui lòng yêu cầu mã mới.")
+
+        if len(body.new_password) < 4:
+            raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 4 ký tự.")
+
+        # Cập nhật mật khẩu mới
+        pw_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+        conn.execute("UPDATE users SET password_hash = ? WHERE email = ?", (pw_hash, body.email))
+
+        # Đánh dấu token đã sử dụng
+        conn.execute("UPDATE password_reset_tokens SET used = 1 WHERE id = ?", (token_row["id"],))
+
+    return {"message": "Mật khẩu đã được đặt lại thành công! Hãy đăng nhập bằng mật khẩu mới."}
 
 
 # ──────────────────────────────────────────────
@@ -371,6 +703,21 @@ def create_wallet(body: WalletBody, user: dict = Depends(get_current_user)):
         )
         new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {"id": new_id, "message": "Túi Càn Khôn đã được khai mở!"}
+
+
+# Change 3: Sửa ví
+@app.put("/api/wallets/{wallet_id}")
+def update_wallet(wallet_id: int, body: WalletUpdateBody, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        wallet = conn.execute("SELECT * FROM wallets WHERE id = ? AND user_id = ?",
+                              (wallet_id, user["user_id"])).fetchone()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
+        new_name = body.wallet_name if body.wallet_name is not None else wallet["wallet_name"]
+        new_type = body.wallet_type if body.wallet_type is not None else wallet["wallet_type"]
+        conn.execute("UPDATE wallets SET wallet_name = ?, wallet_type = ? WHERE id = ? AND user_id = ?",
+                     (new_name, new_type, wallet_id, user["user_id"]))
+        return {"message": "Túi Càn Khôn đã được cập nhật!", "wallet_name": new_name, "wallet_type": new_type}
 
 
 @app.delete("/api/wallets/{wallet_id}")
@@ -401,6 +748,21 @@ def create_category(body: CategoryBody, user: dict = Depends(get_current_user)):
         return {"id": new_id, "message": "Danh mục mới đã khai mở!"}
 
 
+# Change 3: Sửa danh mục
+@app.put("/api/categories/{cat_id}")
+def update_category(cat_id: int, body: CategoryUpdateBody, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        cat = conn.execute("SELECT * FROM categories WHERE id = ? AND user_id = ?",
+                           (cat_id, user["user_id"])).fetchone()
+        if not cat:
+            raise HTTPException(status_code=404, detail="Danh mục không tồn tại hoặc không thuộc quyền sở hữu.")
+        new_name = body.category_name if body.category_name is not None else cat["category_name"]
+        new_icon = body.icon if body.icon is not None else cat["icon"]
+        conn.execute("UPDATE categories SET category_name = ?, icon = ? WHERE id = ? AND user_id = ?",
+                     (new_name, new_icon, cat_id, user["user_id"]))
+        return {"message": "Danh mục đã được cập nhật!", "category_name": new_name, "icon": new_icon}
+
+
 @app.delete("/api/categories/{cat_id}")
 def delete_category(cat_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
@@ -409,24 +771,121 @@ def delete_category(cat_id: int, user: dict = Depends(get_current_user)):
 
 
 # ──────────────────────────────────────────────
+# Change 8: RECURRING TRANSACTIONS HELPER
+# ──────────────────────────────────────────────
+def process_recurring_transactions(conn, user_id: int):
+    """Xử lý các giao dịch định kỳ đã đến hạn và tự động sinh giao dịch thực tế"""
+    today = datetime.date.today()
+    today_str = today.strftime("%Y-%m-%d")
+
+    recurring_items = conn.execute("""
+        SELECT * FROM recurring_transactions
+        WHERE user_id = ? AND is_active = 1 AND next_run_date <= ?
+    """, (user_id, today_str)).fetchall()
+
+    for item in recurring_items:
+        r_id = item["id"]
+        run_date_str = item["next_run_date"]
+        freq = item["frequency"]
+        wallet_id = item["wallet_id"]
+        cat_id = item["category_id"]
+        amount = item["amount"]
+        txn_type = item["transaction_type"]
+        note = item["note"] or f"Định kỳ ({'Hàng tuần' if freq == 'weekly' else 'Hàng tháng'})"
+
+        # Tạo giao dịch thực tế
+        conn.execute("""
+            INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, wallet_id, cat_id, amount, txn_type, run_date_str, note))
+
+        # Cập nhật số dư ví
+        if txn_type == "INCOME":
+            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (amount, wallet_id))
+        else:
+            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (amount, wallet_id))
+
+        # Tính ngày tiếp theo
+        try:
+            cur_dt = datetime.datetime.strptime(run_date_str, "%Y-%m-%d").date()
+        except Exception:
+            cur_dt = today
+
+        if freq == "weekly":
+            next_dt = cur_dt + datetime.timedelta(days=7)
+        else:  # monthly
+            year = cur_dt.year + ((cur_dt.month) // 12)
+            month = (cur_dt.month % 12) + 1
+            day = min(cur_dt.day, 28)
+            next_dt = datetime.date(year, month, day)
+
+        conn.execute("UPDATE recurring_transactions SET next_run_date = ? WHERE id = ?", (next_dt.strftime("%Y-%m-%d"), r_id))
+
+
+# ──────────────────────────────────────────────
 # TRANSACTIONS ROUTES
 # ──────────────────────────────────────────────
+# Change 4: Tìm kiếm, lọc và phân trang giao dịch
 @app.get("/api/transactions")
 def get_transactions(
     limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    category_id: Optional[int] = Query(None),
+    wallet_id: Optional[int] = Query(None),
+    transaction_type: Optional[str] = Query(None),
+    keyword: Optional[str] = Query(None),
     user: dict = Depends(get_current_user)
 ):
     with get_db() as conn:
-        rows = conn.execute("""
+        process_recurring_transactions(conn, user["user_id"])
+        where_clauses = ["t.user_id = ?"]
+        params = [user["user_id"]]
+
+        if start_date:
+            where_clauses.append("t.transaction_date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_clauses.append("t.transaction_date <= ?")
+            params.append(end_date)
+        if category_id:
+            where_clauses.append("t.category_id = ?")
+            params.append(category_id)
+        if wallet_id:
+            where_clauses.append("t.wallet_id = ?")
+            params.append(wallet_id)
+        if transaction_type:
+            where_clauses.append("t.transaction_type = ?")
+            params.append(transaction_type)
+        if keyword:
+            where_clauses.append("t.note LIKE ?")
+            params.append(f"%{keyword}%")
+
+        where_sql = " AND ".join(where_clauses)
+
+        # Tổng số kết quả (cho phân trang)
+        count_row = conn.execute(f"""
+            SELECT COUNT(*) as total FROM transactions t WHERE {where_sql}
+        """, params).fetchone()
+        total_count = count_row["total"] if count_row else 0
+
+        rows = conn.execute(f"""
             SELECT t.*, w.wallet_name, c.category_name, c.icon as category_icon
             FROM transactions t
             LEFT JOIN wallets w ON t.wallet_id = w.id
             LEFT JOIN categories c ON t.category_id = c.id
-            WHERE t.user_id = ?
+            WHERE {where_sql}
             ORDER BY t.transaction_date DESC, t.id DESC
-            LIMIT ?
-        """, (user["user_id"], limit)).fetchall()
-        return [dict(r) for r in rows]
+            LIMIT ? OFFSET ?
+        """, params + [limit, offset]).fetchall()
+
+        return {
+            "data": [dict(r) for r in rows],
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+        }
 
 
 @app.post("/api/transactions")
@@ -561,6 +1020,7 @@ def get_reports_summary(month_year: str = Query(None), user: dict = Depends(get_
     if not month_year:
         month_year = datetime.date.today().strftime("%Y-%m")
     with get_db() as conn:
+        process_recurring_transactions(conn, user["user_id"])
         income = conn.execute("""
             SELECT COALESCE(SUM(amount), 0) as total FROM transactions
             WHERE user_id = ? AND transaction_type = 'INCOME'
@@ -596,6 +1056,437 @@ def get_reports_summary(month_year: str = Query(None), user: dict = Depends(get_
             "total_balance": total_balance,
             "expense_by_category": [dict(r) for r in by_category],
         }
+
+
+# ──────────────────────────────────────────────
+# Change 7: EXPORT REPORTS (CSV / EXCEL)
+# ──────────────────────────────────────────────
+@app.get("/api/reports/export")
+def export_reports(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    format: str = Query("csv", pattern="^(csv|excel)$"),
+    user: dict = Depends(get_current_user)
+):
+    """Xuất lịch sử thu chi ra file CSV hoặc Excel"""
+    with get_db() as conn:
+        where_clauses = ["t.user_id = ?"]
+        params = [user["user_id"]]
+
+        if start_date:
+            where_clauses.append("t.transaction_date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_clauses.append("t.transaction_date <= ?")
+            params.append(end_date)
+
+        where_sql = " AND ".join(where_clauses)
+        rows = conn.execute(f"""
+            SELECT t.transaction_date, c.category_name, t.transaction_type,
+                   t.amount, w.wallet_name, t.note
+            FROM transactions t
+            LEFT JOIN wallets w ON t.wallet_id = w.id
+            LEFT JOIN categories c ON t.category_id = c.id
+            WHERE {where_sql}
+            ORDER BY t.transaction_date DESC, t.id DESC
+        """, params).fetchall()
+
+    today_str = datetime.date.today().strftime("%Y%m%d")
+
+    if format == "csv":
+        output = io.StringIO()
+        output.write('\ufeff')  # UTF-8 BOM
+        writer = csv.writer(output)
+        writer.writerow(["Ngày Giao Dịch", "Danh Mục", "Loại Giao Dịch", "Số Tiền (VNĐ)", "Túi / Ví", "Ghi Chú"])
+
+        for r in rows:
+            t_type_str = "Thu Nhập" if r["transaction_type"] == "INCOME" else "Chi Tiêu"
+            writer.writerow([
+                r["transaction_date"],
+                r["category_name"] or "Không rõ",
+                t_type_str,
+                f"{r['amount']:,.0f}",
+                r["wallet_name"] or "Không rõ",
+                r["note"] or ""
+            ])
+
+        csv_bytes = output.getvalue().encode("utf-8-sig")
+        return StreamingResponse(
+            io.BytesIO(csv_bytes),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=bao_cao_chi_tieu_{today_str}.csv"}
+        )
+
+    else:  # format == "excel"
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Báo Cáo Chi Tiêu"
+
+        headers = ["Ngày Giao Dịch", "Danh Mục", "Loại Giao Dịch", "Số Tiền (VNĐ)", "Túi / Ví", "Ghi Chú"]
+        ws.append(headers)
+
+        header_fill = PatternFill(start_color="2B8A82", end_color="2B8A82", fill_type="solid")
+        header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        for col_num in range(1, len(headers) + 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        for r in rows:
+            t_type_str = "Thu Nhập" if r["transaction_type"] == "INCOME" else "Chi Tiêu"
+            ws.append([
+                r["transaction_date"],
+                r["category_name"] or "Không rõ",
+                t_type_str,
+                r["amount"],
+                r["wallet_name"] or "Không rõ",
+                r["note"] or ""
+            ])
+
+        for row_idx in range(2, len(rows) + 2):
+            amount_cell = ws.cell(row=row_idx, column=4)
+            amount_cell.number_format = '#,##0'
+
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = openpyxl.utils.get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+
+        excel_stream = io.BytesIO()
+        wb.save(excel_stream)
+        excel_stream.seek(0)
+
+        return StreamingResponse(
+            excel_stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=bao_cao_chi_tieu_{today_str}.xlsx"}
+        )
+
+
+# ──────────────────────────────────────────────
+# Change 8: RECURRING TRANSACTIONS ROUTES
+# ──────────────────────────────────────────────
+@app.get("/api/recurring-transactions")
+def get_recurring_transactions(user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        process_recurring_transactions(conn, user["user_id"])
+        rows = conn.execute("""
+            SELECT r.*, w.wallet_name, c.category_name, c.icon as category_icon
+            FROM recurring_transactions r
+            LEFT JOIN wallets w ON r.wallet_id = w.id
+            LEFT JOIN categories c ON r.category_id = c.id
+            WHERE r.user_id = ?
+            ORDER BY r.id DESC
+        """, (user["user_id"],)).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/recurring-transactions")
+def create_recurring_transaction(body: RecurringTransactionBody, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO recurring_transactions (user_id, wallet_id, category_id, amount, transaction_type, frequency, next_run_date, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user["user_id"], body.wallet_id, body.category_id, body.amount, body.transaction_type, body.frequency, body.next_run_date, body.note))
+        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        process_recurring_transactions(conn, user["user_id"])
+        return {"id": new_id, "message": "Giao dịch định kỳ đã được thiết lập!"}
+
+
+@app.put("/api/recurring-transactions/{rec_id}")
+def update_recurring_transaction(rec_id: int, body: RecurringTransactionUpdateBody, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        rec = conn.execute("SELECT * FROM recurring_transactions WHERE id = ? AND user_id = ?", (rec_id, user["user_id"])).fetchone()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Giao dịch định kỳ không tồn tại.")
+
+        w_id = body.wallet_id if body.wallet_id is not None else rec["wallet_id"]
+        c_id = body.category_id if body.category_id is not None else rec["category_id"]
+        amt = body.amount if body.amount is not None else rec["amount"]
+        t_type = body.transaction_type if body.transaction_type is not None else rec["transaction_type"]
+        freq = body.frequency if body.frequency is not None else rec["frequency"]
+        n_date = body.next_run_date if body.next_run_date is not None else rec["next_run_date"]
+        note = body.note if body.note is not None else rec["note"]
+        active = body.is_active if body.is_active is not None else rec["is_active"]
+
+        conn.execute("""
+            UPDATE recurring_transactions SET wallet_id=?, category_id=?, amount=?,
+            transaction_type=?, frequency=?, next_run_date=?, note=?, is_active=?
+            WHERE id=? AND user_id=?
+        """, (w_id, c_id, amt, t_type, freq, n_date, note, active, rec_id, user["user_id"]))
+
+        process_recurring_transactions(conn, user["user_id"])
+        return {"message": "Giao dịch định kỳ đã được cập nhật!"}
+
+
+@app.delete("/api/recurring-transactions/{rec_id}")
+def delete_recurring_transaction(rec_id: int, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM recurring_transactions WHERE id = ? AND user_id = ?", (rec_id, user["user_id"]))
+        return {"message": "Giao dịch định kỳ đã được xóa!"}
+
+
+# ──────────────────────────────────────────────
+# DEBTS ROUTES (THEO DÕI SỔ NỢ / VAY MƯỢN)
+# ──────────────────────────────────────────────
+@app.get("/api/debts")
+def get_debts(debt_type: Optional[str] = Query(None), is_settled: Optional[int] = Query(None), user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        where_clauses = ["d.user_id = ?"]
+        params = [user["user_id"]]
+
+        if debt_type and debt_type in ("BORROW", "LEND"):
+            where_clauses.append("d.debt_type = ?")
+            params.append(debt_type)
+
+        if is_settled is not None:
+            where_clauses.append("d.is_settled = ?")
+            params.append(is_settled)
+
+        where_sql = " AND ".join(where_clauses)
+        rows = conn.execute(f"""
+            SELECT d.*, w.wallet_name
+            FROM debts d
+            LEFT JOIN wallets w ON d.wallet_id = w.id
+            WHERE {where_sql}
+            ORDER BY d.is_settled ASC, d.due_date ASC, d.id DESC
+        """, params).fetchall()
+
+        # Thống kê tổng hợp nợ
+        stats = conn.execute("""
+            SELECT 
+                COALESCE(SUM(CASE WHEN debt_type = 'BORROW' AND is_settled = 0 THEN amount ELSE 0 END), 0) as total_borrow_unsettled,
+                COALESCE(SUM(CASE WHEN debt_type = 'LEND' AND is_settled = 0 THEN amount ELSE 0 END), 0) as total_lend_unsettled,
+                COALESCE(SUM(CASE WHEN debt_type = 'BORROW' AND is_settled = 1 THEN amount ELSE 0 END), 0) as total_borrow_settled,
+                COALESCE(SUM(CASE WHEN debt_type = 'LEND' AND is_settled = 1 THEN amount ELSE 0 END), 0) as total_lend_settled
+            FROM debts
+            WHERE user_id = ?
+        """, (user["user_id"],)).fetchone()
+
+        return {
+            "debts": [dict(r) for r in rows],
+            "summary": {
+                "total_borrow_unsettled": stats["total_borrow_unsettled"],
+                "total_lend_unsettled": stats["total_lend_unsettled"],
+                "total_borrow_settled": stats["total_borrow_settled"],
+                "total_lend_settled": stats["total_lend_settled"],
+            }
+        }
+
+
+@app.post("/api/debts")
+def create_debt(body: DebtCreateBody, user: dict = Depends(get_current_user)):
+    if body.debt_type not in ("BORROW", "LEND"):
+        raise HTTPException(status_code=400, detail="Loại nợ phải là BORROW (Vay nợ) hoặc LEND (Cho vay).")
+    if not body.person_name.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng nhập tên đối tác / người liên quan.")
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số tiền nợ phải lớn hơn 0.")
+
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO debts (user_id, wallet_id, debt_type, person_name, amount, due_date, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user["user_id"], body.wallet_id, body.debt_type, body.person_name.strip(), body.amount, body.due_date or "", body.note or ""))
+        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return {"id": new_id, "message": "Đã ghi nhận vào Sổ Nợ!"}
+
+
+@app.put("/api/debts/{debt_id}")
+def update_debt(debt_id: int, body: DebtUpdateBody, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        debt = conn.execute("SELECT * FROM debts WHERE id = ? AND user_id = ?", (debt_id, user["user_id"])).fetchone()
+        if not debt:
+            raise HTTPException(status_code=404, detail="Khoản nợ không tồn tại.")
+
+        w_id = body.wallet_id if body.wallet_id is not None else debt["wallet_id"]
+        d_type = body.debt_type if body.debt_type in ("BORROW", "LEND") else debt["debt_type"]
+        p_name = body.person_name.strip() if body.person_name else debt["person_name"]
+        amt = body.amount if body.amount is not None and body.amount > 0 else debt["amount"]
+        d_date = body.due_date if body.due_date is not None else debt["due_date"]
+        note = body.note if body.note is not None else debt["note"]
+        settled = body.is_settled if body.is_settled is not None else debt["is_settled"]
+
+        conn.execute("""
+            UPDATE debts SET wallet_id=?, debt_type=?, person_name=?, amount=?, due_date=?, note=?, is_settled=?
+            WHERE id=? AND user_id=?
+        """, (w_id, d_type, p_name, amt, d_date, note, settled, debt_id, user["user_id"]))
+
+        return {"message": "Khoản nợ đã được cập nhật!"}
+
+
+@app.post("/api/debts/{debt_id}/settle")
+def toggle_settle_debt(debt_id: int, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        debt = conn.execute("SELECT * FROM debts WHERE id = ? AND user_id = ?", (debt_id, user["user_id"])).fetchone()
+        if not debt:
+            raise HTTPException(status_code=404, detail="Khoản nợ không tồn tại.")
+
+        new_settled = 0 if debt["is_settled"] == 1 else 1
+        conn.execute("UPDATE debts SET is_settled = ? WHERE id = ? AND user_id = ?", (new_settled, debt_id, user["user_id"]))
+        msg = "Khoản nợ đã được tất toán thành công!" if new_settled == 1 else "Đã hoàn tác trạng thái chưa tất toán."
+        return {"is_settled": new_settled, "message": msg}
+
+
+@app.delete("/api/debts/{debt_id}")
+def delete_debt(debt_id: int, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM debts WHERE id = ? AND user_id = ?", (debt_id, user["user_id"]))
+        return {"message": "Đã xóa khoản nợ khỏi sổ!"}
+
+
+# ──────────────────────────────────────────────
+# SAVING GOALS ROUTES (MỤC TIÊU TIẾT KIỆM)
+# ──────────────────────────────────────────────
+@app.get("/api/saving-goals")
+def get_saving_goals(user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT * FROM saving_goals
+            WHERE user_id = ?
+            ORDER BY is_completed ASC, target_date ASC, id DESC
+        """, (user["user_id"],)).fetchall()
+
+        goals = []
+        today = datetime.date.today()
+        for r in rows:
+            g = dict(r)
+            t_amt = g["target_amount"] or 1
+            c_amt = g["current_amount"] or 0
+            g["percent"] = round(min((c_amt / t_amt) * 100, 100), 1)
+            g["remaining_amount"] = max(t_amt - c_amt, 0)
+
+            if g.get("target_date"):
+                try:
+                    t_date = datetime.date.fromisoformat(g["target_date"])
+                    g["days_left"] = (t_date - today).days
+                except Exception:
+                    g["days_left"] = None
+            else:
+                g["days_left"] = None
+            goals.append(g)
+
+        # Summary
+        total_target = sum(g["target_amount"] for g in goals)
+        total_saved = sum(g["current_amount"] for g in goals)
+        completed_count = sum(1 for g in goals if g["is_completed"])
+        active_count = len(goals) - completed_count
+
+        return {
+            "goals": goals,
+            "summary": {
+                "total_target": total_target,
+                "total_saved": total_saved,
+                "completed_count": completed_count,
+                "active_count": active_count,
+                "overall_percent": round((total_saved / total_target * 100) if total_target > 0 else 0, 1)
+            }
+        }
+
+
+@app.post("/api/saving-goals")
+def create_saving_goal(body: SavingGoalCreateBody, user: dict = Depends(get_current_user)):
+    if not body.target_name.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng nhập tên mục tiêu tiết kiệm.")
+    if body.target_amount <= 0:
+        raise HTTPException(status_code=400, detail="Số tiền mục tiêu phải lớn hơn 0.")
+
+    curr = max(body.current_amount or 0, 0)
+    is_comp = 1 if curr >= body.target_amount else 0
+
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO saving_goals (user_id, target_name, target_amount, current_amount, target_date, icon, is_completed)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user["user_id"], body.target_name.strip(), body.target_amount, curr, body.target_date or "", body.icon or "🎯", is_comp))
+        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return {"id": new_id, "message": "Mục tiêu tiết kiệm đã được thiết lập!"}
+
+
+@app.put("/api/saving-goals/{goal_id}")
+def update_saving_goal(goal_id: int, body: SavingGoalUpdateBody, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        goal = conn.execute("SELECT * FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
+        if not goal:
+            raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại.")
+
+        name = body.target_name.strip() if body.target_name else goal["target_name"]
+        t_amt = body.target_amount if body.target_amount is not None and body.target_amount > 0 else goal["target_amount"]
+        c_amt = body.current_amount if body.current_amount is not None and body.current_amount >= 0 else goal["current_amount"]
+        t_date = body.target_date if body.target_date is not None else goal["target_date"]
+        icon = body.icon if body.icon else goal["icon"]
+        is_comp = body.is_completed if body.is_completed is not None else (1 if c_amt >= t_amt else 0)
+
+        conn.execute("""
+            UPDATE saving_goals SET target_name=?, target_amount=?, current_amount=?, target_date=?, icon=?, is_completed=?
+            WHERE id=? AND user_id=?
+        """, (name, t_amt, c_amt, t_date, icon, is_comp, goal_id, user["user_id"]))
+
+        return {"message": "Mục tiêu tiết kiệm đã được cập nhật!"}
+
+
+@app.post("/api/saving-goals/{goal_id}/deposit")
+def deposit_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict = Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số tiền tích lũy phải lớn hơn 0.")
+
+    with get_db() as conn:
+        goal = conn.execute("SELECT * FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
+        if not goal:
+            raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại.")
+
+        if body.wallet_id:
+            w = conn.execute("SELECT * FROM wallets WHERE id = ? AND user_id = ?", (body.wallet_id, user["user_id"])).fetchone()
+            if not w:
+                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại.")
+            if w["balance"] < body.amount:
+                raise HTTPException(status_code=400, detail=f"Số dư ví không đủ (Còn {w['balance']:,.0f} VNĐ).")
+            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (body.amount, body.wallet_id))
+
+        new_amt = goal["current_amount"] + body.amount
+        is_comp = 1 if new_amt >= goal["target_amount"] else goal["is_completed"]
+
+        conn.execute("UPDATE saving_goals SET current_amount = ?, is_completed = ? WHERE id = ? AND user_id = ?",
+                     (new_amt, is_comp, goal_id, user["user_id"]))
+
+        msg = "🎉 Chúc mừng đạo hữu đã hoàn thành mục tiêu tiết kiệm!" if is_comp and not goal["is_completed"] else "Đã tích lũy thêm thành công!"
+        return {"current_amount": new_amt, "is_completed": is_comp, "message": msg}
+
+
+@app.post("/api/saving-goals/{goal_id}/withdraw")
+def withdraw_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict = Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số tiền rút phải lớn hơn 0.")
+
+    with get_db() as conn:
+        goal = conn.execute("SELECT * FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
+        if not goal:
+            raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại.")
+        if goal["current_amount"] < body.amount:
+            raise HTTPException(status_code=400, detail=f"Số dư mục tiêu không đủ (Hiện có {goal['current_amount']:,.0f} VNĐ).")
+
+        if body.wallet_id:
+            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
+                         (body.amount, body.wallet_id, user["user_id"]))
+
+        new_amt = goal["current_amount"] - body.amount
+        is_comp = 1 if new_amt >= goal["target_amount"] else 0
+
+        conn.execute("UPDATE saving_goals SET current_amount = ?, is_completed = ? WHERE id = ? AND user_id = ?",
+                     (new_amt, is_comp, goal_id, user["user_id"]))
+
+        return {"current_amount": new_amt, "is_completed": is_comp, "message": "Đã rút linh thạch khỏi mục tiêu!"}
+
+
+@app.delete("/api/saving-goals/{goal_id}")
+def delete_saving_goal(goal_id: int, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"]))
+        return {"message": "Đã xóa mục tiêu tiết kiệm!"}
 
 
 class ProfileUpdateBody(BaseModel):
@@ -1103,6 +1994,111 @@ Format: Đánh số 1-5, mỗi lời khuyên ngắn gọn 2-3 câu."""
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Tiên Trí gặp trở ngại: {str(e)}")
 
+
+# ──────────────────────────────────────────────
+# USER PROFILE ROUTES
+# ──────────────────────────────────────────────
+@app.get("/api/user/profile")
+def get_user_profile(user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        u = conn.execute("SELECT id, email, full_name, role, is_active, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="Không tìm thấy thông tin đạo hữu.")
+        return dict(u)
+
+
+class ProfileUpdateBody(BaseModel):
+    full_name: str
+
+
+@app.put("/api/user/profile")
+def update_user_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_user)):
+    if not body.full_name.strip():
+        raise HTTPException(status_code=400, detail="Họ tên không được để trống.")
+    with get_db() as conn:
+        conn.execute("UPDATE users SET full_name = ? WHERE id = ?", (body.full_name.strip(), user["user_id"]))
+        return {"message": "Cập nhật đạo hiệu thành công!", "full_name": body.full_name.strip()}
+
+
+# ──────────────────────────────────────────────
+# ADMIN ROUTES (QUẢN TRỊ TÔNG MÔN)
+# ──────────────────────────────────────────────
+@app.get("/api/admin/stats")
+def get_admin_stats(admin: dict = Depends(require_admin)):
+    with get_db() as conn:
+        total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        active_users = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 1").fetchone()[0]
+        locked_users = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 0").fetchone()[0]
+        total_wallets = conn.execute("SELECT COUNT(*) FROM wallets").fetchone()[0]
+        total_txns = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+        total_income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE transaction_type = 'INCOME'").fetchone()[0]
+        total_expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE transaction_type = 'EXPENSE'").fetchone()[0]
+        total_balance = conn.execute("SELECT COALESCE(SUM(balance), 0) FROM wallets").fetchone()[0]
+        total_debts = conn.execute("SELECT COUNT(*) FROM debts").fetchone()[0]
+        total_goals = conn.execute("SELECT COUNT(*) FROM saving_goals").fetchone()[0]
+
+        return {
+            "total_users": total_users,
+            "active_users": active_users,
+            "locked_users": locked_users,
+            "total_wallets": total_wallets,
+            "total_transactions": total_txns,
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "total_system_cashflow": total_income + total_expense,
+            "total_balance": total_balance,
+            "total_debts": total_debts,
+            "total_goals": total_goals,
+        }
+
+
+@app.get("/api/admin/users")
+def get_admin_users(admin: dict = Depends(require_admin)):
+    with get_db() as conn:
+        users = conn.execute("""
+            SELECT 
+                u.id, u.email, u.full_name, u.role, u.is_active, u.created_at,
+                COUNT(DISTINCT w.id) as wallet_count,
+                COALESCE(SUM(w.balance), 0) as total_balance,
+                (SELECT COUNT(*) FROM transactions t WHERE t.user_id = u.id) as txn_count
+            FROM users u
+            LEFT JOIN wallets w ON w.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.id ASC
+        """).fetchall()
+        return [dict(u) for u in users]
+
+
+@app.put("/api/admin/users/{user_id}/toggle-active")
+def toggle_user_active(user_id: int, admin: dict = Depends(require_admin)):
+    if user_id == admin["user_id"]:
+        raise HTTPException(status_code=400, detail="Không thể tự khóa tài khoản của chính mình!")
+    with get_db() as conn:
+        target = conn.execute("SELECT id, is_active, email FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+        new_status = 0 if target["is_active"] == 1 else 1
+        conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (new_status, user_id))
+        msg = f"Đã mở khóa tài khoản {target['email']}!" if new_status == 1 else f"Đã phong ấn (khóa) tài khoản {target['email']}!"
+        return {"message": msg, "user_id": user_id, "is_active": new_status}
+
+
+class RoleUpdateBody(BaseModel):
+    role: str
+
+
+@app.put("/api/admin/users/{user_id}/role")
+def change_user_role(user_id: int, body: RoleUpdateBody, admin: dict = Depends(require_admin)):
+    if body.role not in ("user", "admin"):
+        raise HTTPException(status_code=400, detail="Vai trò không hợp lệ.")
+    if user_id == admin["user_id"] and body.role != "admin":
+        raise HTTPException(status_code=400, detail="Không thể tự giáng chức của chính mình!")
+    with get_db() as conn:
+        target = conn.execute("SELECT id, email FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", (body.role, user_id))
+        return {"message": f"Đã cập nhật vai trò của {target['email']} thành {body.role}!", "user_id": user_id, "role": body.role}
 
 
 # ──────────────────────────────────────────────
