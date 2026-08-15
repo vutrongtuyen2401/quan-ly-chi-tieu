@@ -1,19 +1,20 @@
 # Python
+venv/
+env/
+.venv/
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
-venv/
-.venv/
-env/
 
-# Database
-# Un-comment if you don't want to upload test database
-# app.db
-
-# Environment variables
+# Environment variables & DB
 .env
+*.db
+*.sqlite3
+app.db
 
 # Node / Vue
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
