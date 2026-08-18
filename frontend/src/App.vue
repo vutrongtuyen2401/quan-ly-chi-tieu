@@ -85,6 +85,13 @@
           <label>🔑 Khẩu Quyết (Mật khẩu)</label>
           <input v-model="authForm.password" type="password" placeholder="••••••" />
         </div>
+        <div class="input-group-xianxia">
+          <label>🪔 Bản Mệnh Hồn Đăng (Bí mật bảo mật)</label>
+          <input v-model="authForm.soul_lamp" type="text" placeholder="VD: Tên con vật đầu tiên, người thân..." />
+          <p class="hint-text-small" style="font-size: 0.78rem; opacity: 0.8; margin-top: 4px; line-height: 1.3;">
+            Đây là câu trả lời bí mật chỉ mình bạn biết, dùng để khôi phục tài khoản khi quên mật khẩu — hãy chọn thứ dễ nhớ nhưng khó đoán.
+          </p>
+        </div>
         <button class="btn-jade" @click="doRegister" :disabled="loading">
           {{ loading ? '⏳ Đang khai mở...' : '🌟 Nhập Môn Tông Phái' }}
         </button>
@@ -94,12 +101,16 @@
       <!-- Mode: Quên Mật Khẩu -->
       <div v-else-if="authMode === 'forgot'" class="auth-form">
         <h2 class="form-title">🔑 Khôi Phục Khẩu Quyết</h2>
-        <p class="hint-text" style="margin-bottom: 14px;">Nhập email để nhận mã xác thực đặt lại mật khẩu</p>
+        <p class="hint-text" style="margin-bottom: 14px;">Nhập Email và Bản Mệnh Hồn Đăng để nhận mã xác thực đặt lại mật khẩu</p>
         <div class="input-group-xianxia">
           <label>📧 Linh Bưu (Email)</label>
           <input v-model="forgotForm.email" type="email" placeholder="dao.huu@tongmon.com" @keyup.enter="doForgotPassword" />
         </div>
-        <button class="btn-jade" @click="doForgotPassword" :disabled="loading || !forgotForm.email">
+        <div class="input-group-xianxia">
+          <label>🪔 Bản Mệnh Hồn Đăng</label>
+          <input v-model="forgotForm.soul_lamp" type="text" placeholder="Nhập câu trả lời bí mật..." @keyup.enter="doForgotPassword" />
+        </div>
+        <button class="btn-jade" @click="doForgotPassword" :disabled="loading || !forgotForm.email || !forgotForm.soul_lamp">
           {{ loading ? '⏳ Đang truyền tin...' : '📩 Gửi Mã Khôi Phục' }}
         </button>
         <p class="auth-switch" @click="authMode = 'login'">Trở về <span>Đăng nhập</span></p>
@@ -1237,6 +1248,11 @@
               </div>
             </div>
           </div>
+          <div v-if="suggestedQuestions.length > 0" class="suggested-questions-container">
+            <span class="suggested-chip" v-for="q in suggestedQuestions" :key="q" @click="chatInput = q">
+              {{ q }}
+            </span>
+          </div>
           <div class="chat-input-area">
             <input v-model="chatInput" type="text"
                    placeholder="Hỏi Tiên Trí về tài chính..."
@@ -1388,26 +1404,49 @@
 
     <!-- REQUIREMENT 5: ACCOUNT MANAGEMENT MODAL -->
     <div v-if="showProfileModal" class="modal-backdrop" @click.self="showProfileModal = false">
-      <div class="modal-card">
+      <div class="modal-card modal-card-wide" style="max-width: 520px;">
         <div class="modal-header">
           <h3 class="modal-title">🧘 Quản Lý Đạo Tâm (Tài Khoản)</h3>
           <button class="modal-close" @click="showProfileModal = false">✕</button>
         </div>
         <div class="modal-body">
-          <div class="input-group-xianxia">
-            <label>📧 Linh Bưu (Email)</label>
-            <input :value="userEmail" type="email" disabled class="disabled-input" />
+          <div class="profile-section">
+            <h4 class="sub-title-sm" style="font-size: 1rem; color: #48bb78; margin-bottom: 12px;">👤 Thông Tin Cá Nhân</h4>
+            <div class="input-group-xianxia">
+              <label>📧 Linh Bưu (Email)</label>
+              <input :value="userEmail" type="email" disabled class="disabled-input" />
+            </div>
+            <div class="input-group-xianxia">
+              <label>👤 Đạo Hiệu Hiển Thị</label>
+              <input v-model="profileForm.full_name" type="text" placeholder="Nhập đạo hiệu mới..." @keyup.enter="saveProfile" />
+            </div>
+            <button class="btn-jade-sm" @click="saveProfile" :disabled="loadingProfile" style="margin-top: 8px;">
+              {{ loadingProfile ? '⏳ Đang lưu...' : '✨ Lưu Đạo Hiệu' }}
+            </button>
           </div>
-          <div class="input-group-xianxia">
-            <label>👤 Đạo Hiệu Hiển Thị</label>
-            <input v-model="profileForm.full_name" type="text" placeholder="Nhập đạo hiệu mới..." @keyup.enter="saveProfile" />
+
+          <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.12); margin: 20px 0;" />
+
+          <div class="profile-section">
+            <h4 class="sub-title-sm" style="font-size: 1rem; color: #ecc94b; margin-bottom: 6px;">🪔 Bản Mệnh Hồn Đăng (Xác Thực Khôi Phục Mật Khẩu)</h4>
+            <p class="hint-text-small" style="font-size: 0.8rem; opacity: 0.75; margin-bottom: 12px; line-height: 1.3;">
+              Đặt lại hoặc đổi giá trị bí mật dùng để xác thực danh tính khi quên mật khẩu. Yêu cầu nhập mật khẩu hiện tại để bảo mật.
+            </p>
+            <div class="input-group-xianxia">
+              <label>🔑 Khẩu Quyết (Mật khẩu) Hiện Tại</label>
+              <input v-model="soulLampForm.current_password" type="password" placeholder="••••••" />
+            </div>
+            <div class="input-group-xianxia">
+              <label>🪔 Bản Mệnh Hồn Đăng Mới</label>
+              <input v-model="soulLampForm.new_soul_lamp" type="text" placeholder="Nhập giá trị bí mật mới (tối thiểu 3 ký tự)..." @keyup.enter="saveSoulLamp" />
+            </div>
+            <button class="btn-jade-sm" @click="saveSoulLamp" :disabled="loadingSoulLamp || !soulLampForm.current_password || !soulLampForm.new_soul_lamp" style="margin-top: 8px; background: linear-gradient(135deg, #d69e2e, #b7791f);">
+              {{ loadingSoulLamp ? '⏳ Đang lưu...' : '⚡ Cập Nhật Bản Mệnh Hồn Đăng' }}
+            </button>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="showProfileModal = false">Hủy</button>
-          <button class="btn-jade-sm" @click="saveProfile" :disabled="loadingProfile">
-            {{ loadingProfile ? '⏳ Đang lưu...' : '✨ Lưu Đạo Hiệu' }}
-          </button>
+          <button class="btn-secondary" @click="showProfileModal = false">Đóng</button>
         </div>
       </div>
     </div>
@@ -1689,7 +1728,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, onErrorCaptured } from 'vue'
 import axios from 'axios'
 import ChartComponent from './components/ChartComponents.vue'
 
@@ -1700,9 +1739,9 @@ export default {
     // ─── STATE ────────────────────
     const isLoggedIn = ref(false)
     const authMode = ref('login')
-    const authForm = ref({ email: '', password: '', full_name: '' })
+    const authForm = ref({ email: '', password: '', full_name: '', soul_lamp: '' })
     const currentTheme = ref(localStorage.getItem('app_theme') || 'xianxia')
-    const forgotForm = ref({ email: '' })
+    const forgotForm = ref({ email: '', soul_lamp: '' })
     const resetForm = ref({ email: '', token: '', new_password: '' })
     const devResetToken = ref('')
     const token = ref('')
@@ -1711,6 +1750,7 @@ export default {
     const loading = ref(false)
     const loadingTips = ref(false)
     const loadingProfile = ref(false)
+    const loadingSoulLamp = ref(false)
     const errorMsg = ref('')
     const toast = ref(null)
     const activeTab = ref('dashboard')
@@ -1718,6 +1758,7 @@ export default {
     // Profile modal state
     const showProfileModal = ref(false)
     const profileForm = ref({ full_name: '' })
+    const soulLampForm = ref({ current_password: '', new_soul_lamp: '' })
 
     // Edit Modals state
     const showEditWalletModal = ref(false)
@@ -1769,6 +1810,7 @@ export default {
     const chatMessages = ref([])
     const chatInput = ref('')
     const chatMessagesEl = ref(null)
+    const suggestedQuestions = ref([])
 
     // Debts State
     const debts = ref([])
@@ -2066,13 +2108,18 @@ export default {
     }
 
     async function doRegister() {
+      if (!authForm.value.soul_lamp || authForm.value.soul_lamp.trim().length < 3) {
+        errorMsg.value = 'Bản Mệnh Hồn Đăng không được để trống và phải có ít nhất 3 ký tự.'
+        return
+      }
       loading.value = true
       errorMsg.value = ''
       resetAllState()
       try {
         const regForm = {
           ...authForm.value,
-          full_name: authForm.value.full_name.trim() || 'Ký Chủ'
+          full_name: authForm.value.full_name.trim() || 'Ký Chủ',
+          soul_lamp: authForm.value.soul_lamp.trim()
         }
         const { data } = await api.post('/api/auth/register', regForm)
         token.value = data.token
@@ -2095,20 +2142,24 @@ export default {
 
     function openForgotPassword() {
       forgotForm.value.email = authForm.value.email || ''
+      forgotForm.value.soul_lamp = ''
       devResetToken.value = ''
       authMode.value = 'forgot'
       errorMsg.value = ''
     }
 
     async function doForgotPassword() {
-      if (!forgotForm.value.email) {
-        errorMsg.value = 'Vui lòng nhập email!'
+      if (!forgotForm.value.email || !forgotForm.value.soul_lamp) {
+        errorMsg.value = 'Vui lòng nhập đầy đủ Email và Bản Mệnh Hồn Đăng!'
         return
       }
       loading.value = true
       errorMsg.value = ''
       try {
-        const { data } = await api.post('/api/auth/forgot-password', { email: forgotForm.value.email })
+        const { data } = await api.post('/api/auth/forgot-password', {
+          email: forgotForm.value.email,
+          soul_lamp: forgotForm.value.soul_lamp.trim()
+        })
         devResetToken.value = data.reset_token
         resetForm.value.email = forgotForm.value.email
         resetForm.value.token = data.reset_token
@@ -2116,7 +2167,7 @@ export default {
         authMode.value = 'reset'
         showToast('🔑 Đã tạo mã xác thực khôi phục!')
       } catch (err) {
-        errorMsg.value = err.response?.data?.detail || 'Lỗi gửi yêu cầu!'
+        errorMsg.value = err.response?.data?.detail || 'Thông tin xác thực không chính xác, vui lòng kiểm tra lại'
       }
       loading.value = false
     }
@@ -2153,13 +2204,15 @@ export default {
       localStorage.removeItem('xianxia_email')
       localStorage.removeItem('xianxia_role')
       localStorage.removeItem('xianxia_uid')
-      authForm.value = { email: '', password: '', full_name: '' }
+      authForm.value = { email: '', password: '', full_name: '', soul_lamp: '' }
+      forgotForm.value = { email: '', soul_lamp: '' }
       resetAllState()
     }
 
     // ─── USER PROFILE MANAGEMENT ──
     function openProfileModal() {
       profileForm.value.full_name = userName.value
+      soulLampForm.value = { current_password: '', new_soul_lamp: '' }
       showProfileModal.value = true
     }
 
@@ -2180,6 +2233,29 @@ export default {
         showToast(err.response?.data?.detail || 'Lỗi cập nhật tên!', 'error')
       }
       loadingProfile.value = false
+    }
+
+    async function saveSoulLamp() {
+      if (!soulLampForm.value.current_password) {
+        showToast('Vui lòng nhập khẩu quyết (mật khẩu) hiện tại!', 'error')
+        return
+      }
+      if (!soulLampForm.value.new_soul_lamp || soulLampForm.value.new_soul_lamp.trim().length < 3) {
+        showToast('Bản Mệnh Hồn Đăng mới phải có ít nhất 3 ký tự!', 'error')
+        return
+      }
+      loadingSoulLamp.value = true
+      try {
+        const { data } = await api.put('/api/user/soul-lamp', {
+          current_password: soulLampForm.value.current_password,
+          new_soul_lamp: soulLampForm.value.new_soul_lamp.trim()
+        })
+        showToast(data.message || '✨ Đã cập nhật Bản Mệnh Hồn Đăng thành công!')
+        soulLampForm.value = { current_password: '', new_soul_lamp: '' }
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi khi cập nhật Bản Mệnh Hồn Đăng!', 'error')
+      }
+      loadingSoulLamp.value = false
     }
 
     async function fetchUserProfile() {
@@ -2251,7 +2327,7 @@ export default {
         loadWallets(), loadCategories(), loadTransactions(true),
         loadDebts(), loadSavingGoals(),
         loadRecurring(), loadSummary(), loadBudgets(), checkBudgetAlerts(),
-        loadTrend(), loadWeekly(), loadChatHistory(),
+        loadTrend(), loadWeekly(), loadSuggestedQuestions(),
       ])
       if (userRole.value === 'admin') {
         loadAdminStats()
@@ -2259,20 +2335,10 @@ export default {
       }
     }
 
-    async function loadChatHistory() {
+    async function loadSuggestedQuestions() {
       try {
-        const { data } = await api.get('/api/ai/chat-history')
-        if (data && data.length) {
-          const history = []
-          const sorted = [...data].reverse()
-          for (const row of sorted) {
-            history.push({ role: 'user', text: row.prompt_question })
-            history.push({ role: 'ai', text: row.ai_response })
-          }
-          chatMessages.value = history
-        } else {
-          chatMessages.value = []
-        }
+        const { data } = await api.get('/api/chat/suggested-questions')
+        suggestedQuestions.value = data || []
       } catch {}
     }
 
@@ -2991,14 +3057,17 @@ export default {
 
       chatLoading.value = true
       try {
-        const { data } = await api.post('/api/ai/chat', { message: msg })
+        const { data } = await api.post('/api/ai/chat', { message: msg }, { timeout: 15000 })
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
         chatMessages.value.push({ role: 'ai', text: data.response })
       } catch (err) {
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
+        const errMsg = err.code === 'ECONNABORTED'
+          ? '🔮 Tiên Trí phản hồi quá lâu do nghẽn mạng, vui lòng thử lại.'
+          : (err.response?.data?.detail || 'Không thể kết nối với thần trí AI.')
         chatMessages.value.push({
           role: 'ai',
-          text: '⚠️ Tiên Trí gặp trở ngại: ' + (err.response?.data?.detail || 'Không thể kết nối.')
+          text: '⚠️ ' + errMsg
         })
       } finally {
         chatLoading.value = false
@@ -3077,12 +3146,18 @@ export default {
       window.addEventListener('resize', checkNavScroll)
     })
 
+    onErrorCaptured((err, instance, info) => {
+      console.error('Captured Vue Render Error:', err, info)
+      showToast('Có lỗi xảy ra khi hiển thị thành phần giao diện!', 'error')
+      return false
+    })
+
     return {
       isLoggedIn, authMode, authForm, forgotForm, resetForm, devResetToken,
-      loading, loadingTips, loadingProfile, errorMsg, toast,
+      loading, loadingTips, loadingProfile, loadingSoulLamp, errorMsg, toast,
       activeTab, tabs, displayTabs, userName, userEmail, userRole, currentUserId, currentTheme, isUserAdmin,
       tabNavEl, canScrollNavLeft, canScrollNavRight, checkNavScroll, scrollNav, handleNavWheel,
-      showProfileModal, profileForm,
+      showProfileModal, profileForm, soulLampForm, saveSoulLamp,
       showEditWalletModal, editWalletForm,
       showEditCatModal, editCatForm,
       showEditRecurringModal, editRecurringForm,
@@ -3096,9 +3171,9 @@ export default {
       // admin
       adminStats, adminUsers, adminFilter, filteredAdminUsers,
       loadAdminStats, loadAdminUsers, toggleUserActive, changeUserRole,
-      txnFilter, txnPagination, totalPages,
+      txnFilter, txnPagination, totalPages, loadTransactions,
       wallets, categories, transactions, budgets, summary, budgetAlerts,
-      chatMessages, chatInput, chatMessagesEl, chatLoading,
+      chatMessages, chatInput, chatMessagesEl, chatLoading, suggestedQuestions,
       txnForm, walletForm, catForm, budgetForm, transferForm,
       ocrFile, ocrPreview, ocrResult, ocrConfirmForm,
       iconOptions,
@@ -5358,5 +5433,31 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
   .cat-bar-label { min-width: 120px; font-size: 12px; }
   .cat-bar-value { min-width: 90px; font-size: 12px; }
   .saving-tips-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+}
+
+.suggested-questions-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 15px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  align-items: center;
+}
+.suggested-chip {
+  background: rgba(14, 165, 233, 0.1);
+  color: var(--primary-color);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+.suggested-chip:hover {
+  background: var(--primary-color);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(14, 165, 233, 0.3);
 }
 </style>

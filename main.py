@@ -103,6 +103,7 @@ def init_db():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 full_name TEXT NOT NULL,
+                soul_lamp_hash TEXT,
                 role TEXT DEFAULT 'user',
                 is_active INTEGER DEFAULT 1,
                 created_at TEXT DEFAULT (datetime('now'))
@@ -232,15 +233,17 @@ def init_db():
             );
         """)
 
-        # Migration: Ensure role and is_active columns exist on users table
+        # Migration: Ensure role, is_active, and soul_lamp_hash columns exist on users table
         user_cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "role" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
         if "is_active" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+        if "soul_lamp_hash" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN soul_lamp_hash TEXT")
         
-        # Ensure default admin has role = 'admin' and valid hash
-        admin_row = conn.execute("SELECT id, password_hash FROM users WHERE email = 'admin@gmail.com'").fetchone()
+        # Ensure default admin has role = 'admin', valid hash, and default soul_lamp_hash if NULL
+        admin_row = conn.execute("SELECT id, password_hash, soul_lamp_hash FROM users WHERE email = 'admin@gmail.com'").fetchone()
         if admin_row:
             admin_hash = admin_row["password_hash"] or ""
             need_pw_reset = False
@@ -258,6 +261,11 @@ def init_db():
                 conn.execute("UPDATE users SET role = 'admin', is_active = 1, password_hash = ? WHERE email = 'admin@gmail.com'", (new_pw_hash,))
             else:
                 conn.execute("UPDATE users SET role = 'admin', is_active = 1 WHERE email = 'admin@gmail.com'")
+            
+            # Gán giá trị mặc định cho Bản Mệnh Hồn Đăng của tài khoản Admin nếu đang là NULL
+            if admin_row["soul_lamp_hash"] is None or admin_row["soul_lamp_hash"] == "":
+                default_soul_lamp_hash = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode()
+                conn.execute("UPDATE users SET soul_lamp_hash = ? WHERE email = 'admin@gmail.com'", (default_soul_lamp_hash,))
 
         # Change 9: Seed dữ liệu mẫu — mật khẩu an toàn
         user_check = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
@@ -265,9 +273,10 @@ def init_db():
             # Đọc mật khẩu từ biến môi trường, hoặc tự sinh ngẫu nhiên
             seed_password = os.getenv("SEED_ADMIN_PASSWORD", "admin123").strip() or "admin123"
             pw_hash = bcrypt.hashpw(seed_password.encode(), bcrypt.gensalt()).decode()
+            admin_soul_lamp_hash = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode()
             conn.execute(
-                "INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES (?, ?, ?, 'admin', 1)",
-                ("admin@gmail.com", pw_hash, "Ký Chủ")
+                "INSERT INTO users (email, password_hash, full_name, soul_lamp_hash, role, is_active) VALUES (?, ?, ?, ?, 'admin', 1)",
+                ("admin@gmail.com", pw_hash, "Ký Chủ", admin_soul_lamp_hash)
             )
             uid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -356,6 +365,7 @@ class RegisterBody(BaseModel):
     email: str
     password: str
     full_name: str
+    soul_lamp: str
 
 class LoginBody(BaseModel):
     email: str
@@ -363,10 +373,16 @@ class LoginBody(BaseModel):
 
 class ForgotPasswordBody(BaseModel):
     email: str
+    soul_lamp: str
 
 class ResetPasswordBody(BaseModel):
+    email: str
     token: str
     new_password: str
+
+class SoulLampUpdateBody(BaseModel):
+    current_password: str
+    new_soul_lamp: str
 
 class UserProfileUpdateBody(BaseModel):
     full_name: str
@@ -517,14 +533,18 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
 @app.post("/api/register")
 @app.post("/register")
 def register(body: RegisterBody):
+    if not body.soul_lamp or len(body.soul_lamp.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Bản Mệnh Hồn Đăng không được để trống và phải có ít nhất 3 ký tự.")
+
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE email = ?", (body.email,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="Email đã tồn tại trong Tông Môn.")
         pw_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+        soul_lamp_hash = bcrypt.hashpw(body.soul_lamp.strip().encode(), bcrypt.gensalt()).decode()
         conn.execute(
-            "INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES (?, ?, ?, 'user', 1)",
-            (body.email, pw_hash, body.full_name)
+            "INSERT INTO users (email, password_hash, full_name, soul_lamp_hash, role, is_active) VALUES (?, ?, ?, ?, 'user', 1)",
+            (body.email, pw_hash, body.full_name, soul_lamp_hash)
         )
         user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -630,15 +650,30 @@ def login(body: LoginBody):
 # ──────────────────────────────────────────────
 @app.post("/api/auth/forgot-password")
 def forgot_password(body: ForgotPasswordBody):
-    """Tạo mã reset mật khẩu — TODO: tích hợp gửi email thật khi lên production"""
+    """Tạo mã reset mật khẩu — Yêu cầu xác thực Email + Bản Mệnh Hồn Đăng"""
+    if not body.email or not body.soul_lamp:
+        raise HTTPException(status_code=400, detail="Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
+
     with get_db() as conn:
-        user = conn.execute("SELECT id FROM users WHERE email = ?", (body.email,)).fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="Email không tồn tại trong hệ thống.")
+        user = conn.execute("SELECT id, soul_lamp_hash FROM users WHERE email = ?", (body.email,)).fetchone()
+        
+        is_valid = False
+        if user and user["soul_lamp_hash"]:
+            try:
+                is_valid = bcrypt.checkpw(body.soul_lamp.strip().encode("utf-8"), user["soul_lamp_hash"].encode("utf-8"))
+            except Exception:
+                is_valid = False
+
+        if not is_valid:
+            # QUAN TRỌNG VỀ BẢO MẬT: Trả về CÙNG MỘT thông báo lỗi chung cho cả 3 trường hợp:
+            # 1. Email không tồn tại
+            # 2. Bản Mệnh Hồn Đăng sai
+            # 3. User chưa từng đặt Bản Mệnh Hồn Đăng (soul_lamp_hash là NULL)
+            raise HTTPException(status_code=400, detail="Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
 
         # Tạo mã reset 6 ký tự, hạn 30 phút
         reset_token = secrets.token_urlsafe(4)[:6].upper()
-        expires_at = (datetime.datetime.utcnow() + datetime.timedelta(minutes=30)).isoformat()
+        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=30)).isoformat()
 
         conn.execute(
             "INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (?, ?, ?)",
@@ -668,7 +703,7 @@ def reset_password(body: ResetPasswordBody):
 
         # Kiểm tra hết hạn
         expires_at = datetime.datetime.fromisoformat(token_row["expires_at"])
-        if datetime.datetime.utcnow() > expires_at:
+        if datetime.datetime.now(datetime.timezone.utc) > expires_at:
             raise HTTPException(status_code=400, detail="Mã reset đã hết hạn. Vui lòng yêu cầu mã mới.")
 
         if len(body.new_password) < 4:
@@ -839,7 +874,6 @@ def get_transactions(
     user: dict = Depends(get_current_user)
 ):
     with get_db() as conn:
-        process_recurring_transactions(conn, user["user_id"])
         where_clauses = ["t.user_id = ?"]
         params = [user["user_id"]]
 
@@ -1528,68 +1562,21 @@ def get_gemini_models_list(vision=False):
     
     candidate_models = []
     
-    # 1. Thử gọi ListModels để lấy danh sách thực tế từ API bằng API key đang dùng
-    try:
-        models = genai.list_models()
-        for m in models:
-            methods = getattr(m, 'supported_generation_methods', [])
-            if 'generateContent' in methods:
-                name = m.name.replace("models/", "")
-                # Loại bỏ hoàn toàn model đã bị shutdown gemini-1.5-flash và mô hình tts/audio/embed
-                if name == "gemini-1.5-flash" or any(k in name.lower() for k in ["tts", "audio", "embed"]):
-                    continue
-                if vision:
-                    # Ưu tiên các model flash hỗ trợ vision, không lấy text-only models
-                    if name.lower() in ["gemini-pro", "gemini-1.0-pro"]:
-                        continue
-                    if "flash" in name.lower():
-                        candidate_models.insert(0, name)
-                    elif any(k in name.lower() for k in ["vision", "2.", "3."]):
-                        candidate_models.append(name)
-                else:
-                    if "flash" in name.lower():
-                        candidate_models.insert(0, name)
-                    else:
-                        candidate_models.append(name)
-    except Exception as e:
-        print(f"[Gemini ListModels Exception]: {e}")
-    
-    # 2. Danh sách dự phòng theo đúng thứ tự ưu tiên (không chứa gemini-1.5-flash):
-    if vision:
-        fallbacks = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-flash-latest",
-            "gemini-1.5-pro"
-        ]
-    else:
-        fallbacks = [
-            "gemini-flash-latest",
-            "gemini-2.5-flash",
-            "gemini-3.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-pro",
-            "gemini-pro"
-        ]
-    
-    final_list = []
-    for m in candidate_models + fallbacks:
-        if m != "gemini-1.5-flash" and m not in final_list:
-            if vision and m.lower() in ["gemini-pro", "gemini-1.0-pro"]:
-                continue
-            final_list.append(m)
-            
-    return final_list
+def get_gemini_models_list(vision=False):
+    """Trả về danh sách mô hình Gemini Flash ổn định, tốc độ phản hồi nhanh nhất"""
+    return [
+        "gemini-flash-lite-latest",
+        "gemini-3.5-flash",
+        "gemini-flash-latest"
+    ]
 
 
-def generate_gemini_content(contents, vision=False):
-    """Tự động thử lần lượt các model Gemini cho đến khi thành công"""
+def _call_gemini_sync(contents, vision=False):
+    """Tự động thử lần lượt các model Gemini Flash với Timeout 6 giây mỗi lượt"""
     if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
         raise HTTPException(
             status_code=500,
-            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để dùng tính năng AI!"
+            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để đàm đạo cùng Khí Linh!"
         )
     
     import google.generativeai as genai
@@ -1600,23 +1587,36 @@ def generate_gemini_content(contents, vision=False):
     
     for model_name in models:
         try:
-            print(f"[Gemini API] Thử mô hình: {model_name}")
+            t0 = time.time()
+            print(f"[Gemini API] Thử mô hình: {model_name}", flush=True)
             model = genai.GenerativeModel(model_name)
-            response = model.generate_content(contents)
+            response = model.generate_content(contents, request_options={"timeout": 6})
+            t1 = time.time()
             if response and response.text:
-                print(f"[Gemini API] Thành công với mô hình: {model_name}")
+                print(f"[Gemini API] Thành công với mô hình: {model_name} (Thời gian: {t1 - t0:.2f}s)", flush=True)
                 return response.text
         except HTTPException:
             raise
         except Exception as e:
-            print(f"[Gemini API] Lỗi mô hình {model_name}: {repr(e)}")
+            t1 = time.time()
+            print(f"[Gemini API] Bỏ qua mô hình {model_name} sau {t1 - t0:.2f}s do lỗi: {repr(e)}", flush=True)
             last_error = e
             continue
             
     raise HTTPException(
-        status_code=500,
-        detail=f"Tiên Trí đang tĩnh dưỡng. Mô hình Gemini gặp sự cố: {str(last_error) if last_error else 'Không thể kết nối Gemini API'}"
+        status_code=504,
+        detail=f"Tiên Trí phản hồi quá lâu hoặc gặp trở ngại: {str(last_error) if last_error else 'Không thể kết nối Gemini API'}"
     )
+
+
+async def generate_gemini_content_async(contents, vision=False):
+    """Gọi Gemini API bất đồng bộ qua threadpool để không block event loop của FastAPI"""
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(_call_gemini_sync, contents, vision)
+
+
+def generate_gemini_content(contents, vision=False):
+    return _call_gemini_sync(contents, vision)
 
 
 
@@ -1643,7 +1643,7 @@ async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_cu
             prompt,
             {"mime_type": file.content_type or "image/jpeg", "data": b64_data}
         ]
-        response_text = generate_gemini_content(gemini_input, vision=True).strip()
+        response_text = (await generate_gemini_content_async(gemini_input, vision=True)).strip()
         
         # Try to parse JSON from response
         if response_text.startswith("```"):
@@ -1725,10 +1725,13 @@ def check_budget(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/ai/chat")
-def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
-    """Khí Linh Tiên Trí — trợ lý AI Gemini tư vấn tài chính"""
+async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
+    """Khí Linh Tiên Trí — trợ lý AI Gemini tư vấn tài chính (bản async không block event loop)"""
+    t_start = time.time()
     month_year = datetime.date.today().strftime("%Y-%m")
+    
     with get_db() as conn:
+        t_db_0 = time.time()
         summary = conn.execute("""
             SELECT
                 COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
@@ -1741,19 +1744,37 @@ def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
             (user["user_id"],)
         ).fetchone()["total"]
 
+        # Lấy 3 lượt hội thoại gần nhất (6 tin nhắn) để giữ ngữ cảnh câu hỏi tiếp theo
+        history_rows = conn.execute("""
+            SELECT prompt_question, ai_response FROM chat_sessions
+            WHERE user_id = ? ORDER BY id DESC LIMIT 3
+        """, (user["user_id"],)).fetchall()
+        t_db_1 = time.time()
+
+    recent_history = ""
+    if history_rows:
+        history_items = list(reversed(history_rows))
+        lines = []
+        for r in history_items:
+            lines.append(f"Đạo hữu: {r['prompt_question']}")
+            lines.append(f"Tiên Trí: {r['ai_response'][:150]}...")
+        recent_history = "Hội thoại gần đây:\n" + "\n".join(lines) + "\n\n"
+
     context = f"""Bạn là "Khí Linh Tiên Trí" — trợ lý AI tài chính phong cách tu tiên.
-    Hãy trả lời câu hỏi của đạo hữu bằng giọng văn tu tiên huyền huyễn nhưng vẫn chính xác và hữu ích về mặt tài chính.
+Hãy trả lời câu hỏi bằng giọng văn tu tiên huyền huyễn nhưng ngắn gọn, súc tích và chính xác về tài chính.
 
-    Thông tin tài chính tháng {month_year} của đạo hữu:
-    - Tổng thu nhập (Khai Thác Linh Mạch): {summary['income']:,.0f} VNĐ
-    - Tổng chi tiêu (Tiêu Hao Linh Thạch): {summary['expense']:,.0f} VNĐ
-    - Tiết kiệm thuần: {summary['income'] - summary['expense']:,.0f} VNĐ
-    - Tổng số dư tất cả ví (Túi Càn Khôn): {total_balance:,.0f} VNĐ
+Thông tin tài chính tháng {month_year} của đạo hữu:
+- Tổng thu nhập (Khai Thác Linh Mạch): {summary['income']:,.0f} VNĐ
+- Tổng chi tiêu (Tiêu Hao Linh Thạch): {summary['expense']:,.0f} VNĐ
+- Tiết kiệm thuần: {summary['income'] - summary['expense']:,.0f} VNĐ
+- Tổng số dư tất cả ví (Túi Càn Khôn): {total_balance:,.0f} VNĐ
 
-    Câu hỏi của đạo hữu: {body.message}"""
+{recent_history}Câu hỏi mới của đạo hữu: {body.message}"""
 
     try:
-        ai_answer = generate_gemini_content(context, vision=False)
+        t_ai_0 = time.time()
+        ai_answer = await generate_gemini_content_async(context, vision=False)
+        t_ai_1 = time.time()
 
         # Lưu lịch sử chat
         with get_db() as conn:
@@ -1762,6 +1783,8 @@ def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
                 (user["user_id"], body.message, ai_answer)
             )
 
+        t_end = time.time()
+        print(f"[AI Chat Metric] DB: {t_db_1 - t_db_0:.3f}s | Gemini API: {t_ai_1 - t_ai_0:.3f}s | Total: {t_end - t_start:.3f}s")
         return {"response": ai_answer}
     except HTTPException:
         raise
@@ -1777,6 +1800,22 @@ def get_chat_history(user: dict = Depends(get_current_user)):
             (user["user_id"],)
         ).fetchall()
         return [dict(r) for r in rows]
+
+@app.get("/api/chat/suggested-questions")
+def get_suggested_questions(user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        # Get 5 unique most recent questions
+        rows = conn.execute(
+            """
+            SELECT DISTINCT prompt_question 
+            FROM chat_sessions 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT 5
+            """,
+            (user["user_id"],)
+        ).fetchall()
+        return [r["prompt_question"] for r in rows]
 
 
 
@@ -2018,6 +2057,37 @@ def update_user_profile(body: ProfileUpdateBody, user: dict = Depends(get_curren
     with get_db() as conn:
         conn.execute("UPDATE users SET full_name = ? WHERE id = ?", (body.full_name.strip(), user["user_id"]))
         return {"message": "Cập nhật đạo hiệu thành công!", "full_name": body.full_name.strip()}
+
+
+@app.put("/api/user/soul-lamp")
+def update_soul_lamp(body: SoulLampUpdateBody, user: dict = Depends(get_current_user)):
+    if not body.new_soul_lamp or len(body.new_soul_lamp.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Bản Mệnh Hồn Đăng mới không được để trống và phải có ít nhất 3 ký tự.")
+
+    with get_db() as conn:
+        u = conn.execute("SELECT id, password_hash FROM users WHERE id = ?", (user["user_id"],)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+
+        stored_hash = u["password_hash"] or ""
+        is_pw_valid = False
+        try:
+            if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$") or stored_hash.startswith("$2y$"):
+                is_pw_valid = bcrypt.checkpw(body.current_password.encode("utf-8"), stored_hash.encode("utf-8"))
+            else:
+                sha256_hash = hashlib.sha256(body.current_password.encode("utf-8")).hexdigest()
+                if stored_hash == sha256_hash or stored_hash == body.current_password:
+                    is_pw_valid = True
+        except Exception:
+            is_pw_valid = False
+
+        if not is_pw_valid:
+            raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác.")
+
+        new_hash = bcrypt.hashpw(body.new_soul_lamp.strip().encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        conn.execute("UPDATE users SET soul_lamp_hash = ? WHERE id = ?", (new_hash, user["user_id"]))
+
+        return {"message": "Đã cập nhật Bản Mệnh Hồn Đăng thành công!"}
 
 
 # ──────────────────────────────────────────────

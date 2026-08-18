@@ -55,7 +55,8 @@ class ComprehensiveTestSuite(unittest.TestCase):
         payload = {
             "email": "tu_si_1@gmail.com",
             "password": "password123",
-            "full_name": "Bạch Tiểu Thuần"
+            "full_name": "Bạch Tiểu Thuần",
+            "soul_lamp": "BiMatDaoTam123"
         }
         res = self.client.post("/api/auth/register", json=payload)
         self.assertEqual(res.status_code, 200)
@@ -68,7 +69,8 @@ class ComprehensiveTestSuite(unittest.TestCase):
         payload = {
             "email": "tu_si_1@gmail.com",
             "password": "password123",
-            "full_name": "Bạch Tiểu Thuần Trùng"
+            "full_name": "Bạch Tiểu Thuần Trùng",
+            "soul_lamp": "BiMatDaoTam123"
         }
         res = self.client.post("/api/auth/register", json=payload)
         self.assertEqual(res.status_code, 400)
@@ -102,6 +104,144 @@ class ComprehensiveTestSuite(unittest.TestCase):
         # Check again
         res_prof2 = self.client.get("/api/user/profile", headers=headers)
         self.assertEqual(res_prof2.json()["full_name"], "Bạch Đại Lão")
+
+    # ──────────────────────────────────────────────
+    # 1B. BẢN MỆNH HỒN ĐĂNG (8 STEPS VERIFICATION)
+    # ──────────────────────────────────────────────
+    def test_04b_soul_lamp_step1_register_and_db_hash(self):
+        """Bước 1: Đăng ký tài khoản mới với Bản Mệnh Hồn Đăng, xác nhận băm bcrypt trong DB (không lưu plaintext)"""
+        email = "soul_lamp_user@gmail.com"
+        plain_soul_lamp = "MatMaThienDinh789"
+        res = self.client.post("/api/auth/register", json={
+            "email": email,
+            "password": "password123",
+            "full_name": "Lâm Động",
+            "soul_lamp": plain_soul_lamp
+        })
+        self.assertEqual(res.status_code, 200)
+
+        # Kiểm tra trực tiếp trong DB
+        with main.get_db() as conn:
+            user = conn.execute("SELECT soul_lamp_hash FROM users WHERE email = ?", (email,)).fetchone()
+            self.assertIsNotNone(user)
+            db_hash = user["soul_lamp_hash"]
+            self.assertIsNotNone(db_hash)
+            self.assertNotEqual(db_hash, plain_soul_lamp)
+            self.assertTrue(db_hash.startswith("$2b$") or db_hash.startswith("$2a$") or db_hash.startswith("$2y$"))
+
+    def test_04c_soul_lamp_step2_forgot_password_success(self):
+        """Bước 2: Quên mật khẩu với email ĐÚNG + Bản Mệnh Hồn Đăng ĐÚNG -> cấp mã reset"""
+        res = self.client.post("/api/auth/forgot-password", json={
+            "email": "soul_lamp_user@gmail.com",
+            "soul_lamp": "MatMaThienDinh789"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("reset_token", data)
+
+    def test_04d_soul_lamp_step3_forgot_password_wrong_soul_lamp(self):
+        """Bước 3: Quên mật khẩu với email ĐÚNG + Bản Mệnh Hồn Đăng SAI -> bị từ chối với thông báo chung chung"""
+        res = self.client.post("/api/auth/forgot-password", json={
+            "email": "soul_lamp_user@gmail.com",
+            "soul_lamp": "GiaTriSaiHoanToan"
+        })
+        self.assertEqual(res.status_code, 400)
+        data = res.json()
+        self.assertEqual(data["detail"], "Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
+        self.assertNotIn("reset_token", data)
+
+    def test_04e_soul_lamp_step4_forgot_password_nonexistent_email(self):
+        """Bước 4: Quên mật khẩu với email KHÔNG tồn tại -> CÙNG thông báo lỗi như bước 3 (chống user enumeration)"""
+        res_step3 = self.client.post("/api/auth/forgot-password", json={
+            "email": "soul_lamp_user@gmail.com",
+            "soul_lamp": "GiaTriSaiHoanToan"
+        })
+        res_step4 = self.client.post("/api/auth/forgot-password", json={
+            "email": "nonexistent_email_9999@gmail.com",
+            "soul_lamp": "MatMaThienDinh789"
+        })
+        self.assertEqual(res_step4.status_code, 400)
+        self.assertEqual(res_step3.json()["detail"], res_step4.json()["detail"])
+        self.assertEqual(res_step4.json()["detail"], "Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
+
+    def test_04f_soul_lamp_step5_admin_forgot_password(self):
+        """Bước 5: Admin mặc định admin@gmail.com + soul_lamp 'admin' -> cấp mã reset thành công"""
+        res = self.client.post("/api/auth/forgot-password", json={
+            "email": "admin@gmail.com",
+            "soul_lamp": "admin"
+        })
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("reset_token", res.json())
+
+    def test_04g_soul_lamp_step6_and_7_update_and_verify_new_soul_lamp(self):
+        """Bước 6 & 7: Đổi Bản Mệnh Hồn Đăng qua API profile, sau đó thử lại luồng quên mật khẩu với giá trị MỚI và CŨ"""
+        # Login
+        login_res = self.client.post("/api/auth/login", json={"email": "soul_lamp_user@gmail.com", "password": "password123"})
+        token = login_res.json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 6.1 Thử đổi với mật khẩu hiện tại SAI
+        res_wrong_pw = self.client.put("/api/user/soul-lamp", json={
+            "current_password": "wrong_password",
+            "new_soul_lamp": "GiaTriMoiVuaDoi123"
+        }, headers=headers)
+        self.assertEqual(res_wrong_pw.status_code, 400)
+
+        # 6.2 Đổi với mật khẩu hiện tại ĐÚNG
+        res_ok = self.client.put("/api/user/soul-lamp", json={
+            "current_password": "password123",
+            "new_soul_lamp": "GiaTriMoiVuaDoi123"
+        }, headers=headers)
+        self.assertEqual(res_ok.status_code, 200)
+
+        # 7.1 Thử quên mật khẩu bằng giá trị CŨ -> phải THẤT BẠI
+        res_old = self.client.post("/api/auth/forgot-password", json={
+            "email": "soul_lamp_user@gmail.com",
+            "soul_lamp": "MatMaThienDinh789"
+        })
+        self.assertEqual(res_old.status_code, 400)
+        self.assertEqual(res_old.json()["detail"], "Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
+
+        # 7.2 Thử quên mật khẩu bằng giá trị MỚI -> phải THÀNH CÔNG
+        res_new = self.client.post("/api/auth/forgot-password", json={
+            "email": "soul_lamp_user@gmail.com",
+            "soul_lamp": "GiaTriMoiVuaDoi123"
+        })
+        self.assertEqual(res_new.status_code, 200)
+        self.assertIn("reset_token", res_new.json())
+
+    def test_04h_soul_lamp_step8_full_auth_and_reset_flow(self):
+        """Bước 8: Kiểm tra toàn bộ luồng đăng ký, đăng nhập, quên mật khẩu & reset mật khẩu hoàn chỉnh"""
+        email = "full_flow_user@gmail.com"
+        soul_lamp = "FullFlowLamp999"
+        new_pass = "brand_new_pass_456"
+
+        # Register
+        reg = self.client.post("/api/auth/register", json={
+            "email": email,
+            "password": "old_pass_123",
+            "full_name": "Tiêu Viêm",
+            "soul_lamp": soul_lamp
+        })
+        self.assertEqual(reg.status_code, 200)
+
+        # Forgot password -> token
+        forgot = self.client.post("/api/auth/forgot-password", json={"email": email, "soul_lamp": soul_lamp})
+        self.assertEqual(forgot.status_code, 200)
+        token = forgot.json()["reset_token"]
+
+        # Reset password
+        reset = self.client.post("/api/auth/reset-password", json={
+            "email": email,
+            "token": token,
+            "new_password": new_pass
+        })
+        self.assertEqual(reset.status_code, 200)
+
+        # Login with new password
+        login_new = self.client.post("/api/auth/login", json={"email": email, "password": new_pass})
+        self.assertEqual(login_new.status_code, 200)
+        self.assertIn("token", login_new.json())
 
     # ──────────────────────────────────────────────
     # 2. WALLETS TESTS
