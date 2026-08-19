@@ -755,7 +755,24 @@
           <div class="form-grid">
             <div class="input-group-xianxia">
               <label>Tên Ví</label>
-              <input v-model="walletForm.wallet_name" type="text" placeholder="VD: Linh Mạch BIDV" />
+              <input v-model="walletForm.wallet_name" type="text" list="bankList" placeholder="VD: Linh Mạch BIDV" />
+              <datalist id="bankList">
+                <option value="Linh Mạch Vietcombank"></option>
+                <option value="Linh Mạch Techcombank"></option>
+                <option value="Linh Mạch BIDV"></option>
+                <option value="Linh Mạch VietinBank"></option>
+                <option value="Linh Mạch Agribank"></option>
+                <option value="Linh Mạch MB Bank"></option>
+                <option value="Linh Mạch ACB"></option>
+                <option value="Linh Mạch VPBank"></option>
+                <option value="Linh Mạch Sacombank"></option>
+                <option value="Linh Mạch TPBank"></option>
+                <option value="Linh Mạch HDBank"></option>
+                <option value="Linh Mạch MoMo"></option>
+                <option value="Linh Mạch ZaloPay"></option>
+                <option value="Linh Mạch ViettelPay"></option>
+                <option value="Linh Mạch Tiền Mặt"></option>
+              </datalist>
             </div>
             <div class="input-group-xianxia">
               <label>Số Dư Ban Đầu (VNĐ)</label>
@@ -960,7 +977,12 @@
 
       <!-- ═══════ TAB 6: BUDGETS ═══════ -->
       <section v-if="activeTab === 'budgets'" class="tab-panel">
-        <h2 class="section-title">🎯 Hạn Mức Tu Luyện — Ngân Sách</h2>
+        <div class="tab-header" style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <h2 class="section-title" style="margin:0;">🎯 Hạn Mức Tu Luyện — Ngân Sách</h2>
+          <div class="input-group-xianxia" style="width: auto; margin-bottom: 0;">
+            <input type="month" v-model="budgetMonth" @input="loadBudgets" @change="loadBudgets" style="padding: 6px 12px;" />
+          </div>
+        </div>
 
         <div class="form-card">
           <h3 class="sub-title">➕ Thiết Lập Hạn Mức</h3>
@@ -989,8 +1011,12 @@
           <div v-for="b in budgets" :key="b.id" class="budget-card">
             <div class="budget-header">
               <span>{{ b.category_icon }} {{ b.category_name }}</span>
-              <button class="btn-sm-danger" @click="deleteBudget(b.id)">✕</button>
+              <div class="card-action-btns">
+                <button class="btn-sm-edit" @click="openEditBudget(b)" title="Sửa hạn mức">✏️</button>
+                <button class="btn-sm-danger" @click="deleteBudget(b.id)" title="Xóa hạn mức">✕</button>
+              </div>
             </div>
+            <div style="font-size: 0.85rem; color: #a3a3a3; margin-bottom: 8px;">Áp dụng: Tháng {{ b.month_year }}</div>
             <div class="budget-amounts">
               <span>Đã chi: <strong>{{ formatVND(b.spent) }}</strong></span>
               <span>Hạn mức: <strong>{{ formatVND(b.limit_amount) }}</strong></span>
@@ -1144,7 +1170,32 @@
 
       <!-- ═══════ TAB 7: STATISTICS ═══════ -->
       <section v-if="activeTab === 'stats'" class="tab-panel">
-        <h2 class="section-title">📈 Thiên Cơ Thống Kê — Phân Tích Nâng Cao</h2>
+        <div class="tab-header" style="display:flex; justify-content: space-between; align-items:center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+          <h2 class="section-title" style="margin:0;">📈 Thiên Cơ Thống Kê — Phân Tích Nâng Cao</h2>
+          <div class="export-actions" style="display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
+            <div class="stats-datepicker-wrapper" style="width: 280px; max-width: 100%;">
+              <VueDatePicker
+                v-model="statsDateRange"
+                range
+                :preset-ranges="presetRanges"
+                format="dd/MM/yyyy"
+                :enable-time-picker="false"
+                :auto-apply="true"
+                :locale="viLocale"
+                :format-locale="viLocale"
+                :select-text="'Áp dụng'"
+                :cancel-text="'Hủy'"
+                :now-button-label="'Hôm nay'"
+                :action-row="{ selectBtnLabel: 'Áp dụng', cancelBtnLabel: 'Hủy', nowBtnLabel: 'Hôm nay' }"
+                placeholder="Chọn khoảng thời gian"
+                @update:model-value="onStatsDateChange"
+                :dark="currentTheme === 'xianxia'"
+              />
+            </div>
+            <button class="btn-jade-sm" @click="doExport('csv')">CSV</button>
+            <button class="btn-jade-sm" @click="doExport('excel')">Excel</button>
+          </div>
+        </div>
 
         <!-- Trend Chart -->
         <div class="stats-chart-card" v-if="trendData.trend && trendData.trend.length">
@@ -1461,7 +1512,7 @@
         <div class="modal-body">
           <div class="input-group-xianxia">
             <label>Tên Ví</label>
-            <input v-model="editWalletForm.wallet_name" type="text" placeholder="Tên ví..." />
+            <input v-model="editWalletForm.wallet_name" type="text" list="bankList" placeholder="Tên ví..." />
           </div>
           <div class="input-group-xianxia">
             <label>Loại Ví</label>
@@ -1728,13 +1779,16 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, nextTick, onErrorCaptured } from 'vue'
+import { ref, computed, onMounted, nextTick, onErrorCaptured, watch } from 'vue'
 import axios from 'axios'
 import ChartComponent from './components/ChartComponents.vue'
+import { VueDatePicker } from '@vuepic/vue-datepicker'
+import '@vuepic/vue-datepicker/dist/main.css'
+import { vi } from 'date-fns/locale'
 
 export default {
   name: 'CankKhonApp',
-  components: { ChartComponent },
+  components: { ChartComponent, VueDatePicker },
   setup() {
     // ─── STATE ────────────────────
     const isLoggedIn = ref(false)
@@ -1766,6 +1820,9 @@ export default {
 
     const showEditCatModal = ref(false)
     const editCatForm = ref({ id: null, category_name: '', icon: '📦' })
+
+    const showEditBudgetModal = ref(false)
+    const editBudgetForm = ref({ id: null, limit_amount: 0 })
 
     const showEditRecurringModal = ref(false)
     const editRecurringForm = ref({
@@ -1907,6 +1964,58 @@ export default {
     const compareMonth2 = ref(now.toISOString().slice(0, 7))
     const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const compareMonth1 = ref(prevMonth.toISOString().slice(0, 7))
+
+    const budgetMonth = ref(now.toISOString().slice(0, 7))
+
+    watch(budgetMonth, async (newVal) => {
+      if (newVal) {
+        await loadBudgets()
+      }
+    })
+
+    const viLocale = vi
+
+    const endNow = new Date()
+    const start30Days = new Date(endNow)
+    start30Days.setDate(endNow.getDate() - 30)
+    const statsDateRange = ref([start30Days, endNow])
+    
+    const presetRanges = ref([
+      { label: '7 ngày qua', value: () => { const e = new Date(); const s = new Date(e); s.setDate(e.getDate() - 7); return [s, e] } },
+      { label: '30 ngày qua', value: () => { const e = new Date(); const s = new Date(e); s.setDate(e.getDate() - 30); return [s, e] } },
+      { label: 'Tháng này', value: () => { const e = new Date(); const s = new Date(e.getFullYear(), e.getMonth(), 1); return [s, e] } },
+      { label: 'Tháng trước', value: () => { const e = new Date(); const s = new Date(e.getFullYear(), e.getMonth() - 1, 1); const e2 = new Date(e.getFullYear(), e.getMonth(), 0); return [s, e2] } },
+      { label: '3 tháng gần đây', value: () => { const e = new Date(); const s = new Date(e); s.setMonth(e.getMonth() - 3); return [s, e] } },
+      { label: '6 tháng gần đây', value: () => { const e = new Date(); const s = new Date(e); s.setMonth(e.getMonth() - 6); return [s, e] } }
+    ])
+
+    function onStatsDateChange() {
+      if (!statsDateRange.value || !statsDateRange.value[0] || !statsDateRange.value[1]) return
+      
+      let start = new Date(statsDateRange.value[0])
+      let end = new Date(statsDateRange.value[1])
+      
+      if (end < start) {
+        const tmp = start
+        start = end
+        end = tmp
+        statsDateRange.value = [start, end]
+      }
+      
+      let m = (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth() + 1
+      if (m < 1) m = 1; if (m > 12) m = 12
+      
+      let w = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7))
+      if (w < 1) w = 1; if (w > 12) w = 12
+      
+      const yyyy = end.getFullYear()
+      const mm = String(end.getMonth() + 1).padStart(2, '0')
+      const my = `${yyyy}-${mm}`
+      
+      loadTrend(m)
+      loadWeekly(w)
+      loadSummary(my)
+    }
 
     // Forms
     const txnForm = ref({
@@ -2635,6 +2744,47 @@ export default {
       loading.value = false
     }
 
+    function openEditBudget(b) {
+      editBudgetForm.value = { id: b.id, limit_amount: b.limit_amount }
+      showEditBudgetModal.value = true
+    }
+
+    async function updateBudget() {
+      if (!editBudgetForm.value.limit_amount) return showToast('Vui lòng nhập số tiền!', 'error')
+      loading.value = true
+      try {
+        await api.put(`/api/budgets/${editBudgetForm.value.id}`, { limit_amount: editBudgetForm.value.limit_amount })
+        showToast('Đã cập nhật hạn mức!')
+        showEditBudgetModal.value = false
+        await loadBudgets()
+        await checkBudgetAlerts()
+      } catch (err) {
+        showToast('Lỗi cập nhật!', 'error')
+      }
+      loading.value = false
+    }
+
+    async function doExport(format) {
+      try {
+        let url = `/api/reports/export?format=${format}`
+        if (statsDateRange.value && statsDateRange.value[0] && statsDateRange.value[1]) {
+          const s = statsDateRange.value[0].toISOString().split('T')[0]
+          const e = statsDateRange.value[1].toISOString().split('T')[0]
+          url += `&start_date=${s}&end_date=${e}`
+        }
+        
+        const response = await api.get(url, { responseType: 'blob' })
+        const blob = new Blob([response.data])
+        const link = document.createElement('a')
+        link.href = window.URL.createObjectURL(blob)
+        link.download = `bao_cao_${format}_${new Date().getTime()}.${format === 'csv' ? 'csv' : 'xlsx'}`
+        link.click()
+        showToast('Đã xuất báo cáo thành công!')
+      } catch (err) {
+        showToast('Lỗi xuất báo cáo!', 'error')
+      }
+    }
+
     // Change 3: Edit Wallet & Category
     function openEditWallet(w) {
       editWalletForm.value = { id: w.id, wallet_name: w.wallet_name, wallet_type: w.wallet_type }
@@ -2813,20 +2963,22 @@ export default {
       }
     }
 
-    async function loadSummary() {
-      try { summary.value = (await api.get('/api/reports/summary')).data } catch {}
+    async function loadSummary(monthYear = null) {
+      let url = '/api/reports/summary'
+      if (monthYear) url += `?month_year=${monthYear}`
+      try { summary.value = (await api.get(url)).data } catch {}
     }
     async function loadBudgets() {
-      try { budgets.value = (await api.get('/api/budgets')).data } catch {}
+      try { budgets.value = (await api.get(`/api/budgets?month_year=${budgetMonth.value}`)).data } catch {}
     }
     async function checkBudgetAlerts() {
       try { budgetAlerts.value = (await api.post('/api/ai/check-budget')).data.alerts } catch {}
     }
-    async function loadTrend() {
-      try { trendData.value = (await api.get('/api/reports/trend?months=6')).data } catch {}
+    async function loadTrend(months = 6) {
+      try { trendData.value = (await api.get(`/api/reports/trend?months=${months}`)).data } catch {}
     }
-    async function loadWeekly() {
-      try { weeklyData.value = (await api.get('/api/reports/weekly?weeks=4')).data } catch {}
+    async function loadWeekly(weeks = 4) {
+      try { weeklyData.value = (await api.get(`/api/reports/weekly?weeks=${weeks}`)).data } catch {}
     }
     async function loadCompare() {
       if (!compareMonth1.value || !compareMonth2.value) return
@@ -3110,9 +3262,10 @@ export default {
     function switchTab(tabId) {
       activeTab.value = tabId
       if (tabId === 'stats') {
-        loadTrend()
-        loadWeekly()
+        onStatsDateChange()
         loadCompare()
+      } else if (tabId === 'budgets') {
+        loadBudgets()
       }
       nextTick(() => {
         const activeBtn = tabNavEl.value?.querySelector('.tab-btn.active')
@@ -3194,6 +3347,8 @@ export default {
       loadRecurring, createRecurring, toggleRecurring, deleteRecurring,
       switchTab, switchTheme, loadAllData, loadCompare, loadSavingTips,
       createTransaction, deleteTransaction,
+      budgetMonth, statsDateRange, presetRanges, onStatsDateChange, viLocale, doExport,
+      showEditBudgetModal, editBudgetForm, openEditBudget, updateBudget,
       createWallet, deleteWallet, doTransfer,
       createCategory, deleteCategory,
       createBudget, deleteBudget,
@@ -5459,5 +5614,88 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
   color: white;
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(14, 165, 233, 0.3);
+}
+
+/* VueDatePicker Customization */
+.dp--theme-dark,
+.dp__theme_dark {
+  --dp-background-color: var(--card-bg, #1a3a5c);
+  --dp-text-color: var(--text-color, #eef4f8);
+  --dp-hover-color: rgba(232, 200, 116, 0.2);
+  --dp-hover-text-color: #ffffff;
+  --dp-hover-icon-color: var(--gold, #b38217);
+  --dp-primary-color: var(--jade, #2b8a82);
+  --dp-primary-disabled-color: rgba(43, 138, 130, 0.5);
+  --dp-primary-text-color: #ffffff;
+  --dp-secondary-color: var(--bg-card, rgba(255, 255, 255, 0.78));
+  --dp-border-color: rgba(232, 200, 116, 0.4);
+  --dp-menu-border-color: rgba(232, 200, 116, 0.4);
+  --dp-border-color-hover: var(--gold, #b38217);
+  --dp-border-color-focus: var(--gold, #b38217);
+  --dp-disabled-color: rgba(255, 255, 255, 0.2);
+  --dp-disabled-color-text: rgba(255, 255, 255, 0.4);
+  --dp-scroll-bar-background: var(--bg-primary, #1a3a5c);
+  --dp-scroll-bar-color: var(--gold, #b38217);
+  --dp-success-color: var(--jade, #2b8a82);
+  --dp-icon-color: var(--gold, #b38217);
+  --dp-danger-color: #e53935;
+  --dp-range-between-dates-background-color: rgba(43, 138, 130, 0.25);
+  --dp-range-between-dates-text-color: #ffffff;
+  --dp-range-between-border-color: rgba(43, 138, 130, 0.35);
+}
+
+body[data-theme='modern'] .dp--theme-light,
+body[data-theme='modern'] .dp__theme_light,
+.dp--theme-light,
+.dp__theme_light {
+  --dp-background-color: #ffffff;
+  --dp-text-color: #0F172A;
+  --dp-hover-color: #F1F5F9;
+  --dp-hover-text-color: #0F172A;
+  --dp-hover-icon-color: #2563EB;
+  --dp-primary-color: #2563EB;
+  --dp-primary-disabled-color: #93C5FD;
+  --dp-primary-text-color: #ffffff;
+  --dp-secondary-color: #F8FAFC;
+  --dp-border-color: #CBD5E1;
+  --dp-menu-border-color: #E2E8F0;
+  --dp-border-color-hover: #3B82F6;
+  --dp-border-color-focus: #2563EB;
+  --dp-disabled-color: #F1F5F9;
+  --dp-disabled-color-text: #94A3B8;
+  --dp-scroll-bar-background: #F8FAFC;
+  --dp-scroll-bar-color: #CBD5E1;
+  --dp-success-color: #10B981;
+  --dp-icon-color: #64748B;
+  --dp-danger-color: #EF4444;
+  --dp-range-between-dates-background-color: #EFF6FF;
+  --dp-range-between-dates-text-color: #1E40AF;
+  --dp-range-between-border-color: #BFDBFE;
+}
+
+.dp__menu {
+  border-radius: 12px !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35) !important;
+  backdrop-filter: blur(12px) !important;
+  overflow: hidden;
+}
+body[data-theme='modern'] .dp__menu {
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.15) !important;
+}
+.dp__input {
+  border-radius: 8px !important;
+  font-size: 13.5px !important;
+}
+
+/* Ensure dropdown is above everything */
+.dp__outer_menu_wrap {
+  z-index: 9999 !important;
+}
+
+/* Mobile responsive fix for datepicker */
+@media (max-width: 768px) {
+  .stats-datepicker-wrapper {
+    width: 100% !important;
+  }
 }
 </style>

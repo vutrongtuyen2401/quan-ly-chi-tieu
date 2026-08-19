@@ -432,6 +432,9 @@ class BudgetBody(BaseModel):
     limit_amount: float
     month_year: str
 
+class BudgetUpdateBody(BaseModel):
+    limit_amount: float
+
 class RecurringBody(BaseModel):
     wallet_id: int
     category_id: int
@@ -1037,6 +1040,19 @@ def create_budget(body: BudgetBody, user: dict = Depends(get_current_user)):
         )
         new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {"id": new_id, "message": "Hạn mức tu luyện đã thiết lập!"}
+
+
+@app.put("/api/budgets/{budget_id}")
+def update_budget(budget_id: int, body: BudgetUpdateBody, user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM budgets WHERE id = ? AND user_id = ?",
+            (budget_id, user["user_id"])
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Hạn mức không tồn tại hoặc không có quyền!")
+        conn.execute("UPDATE budgets SET limit_amount = ? WHERE id = ?", (body.limit_amount, budget_id))
+        return {"message": "Cập nhật thành công!"}
 
 
 @app.delete("/api/budgets/{budget_id}")
