@@ -28,3 +28,4 @@ scratch/
 .gemini/
 .codex/
 xianxia.db
+*.bak
