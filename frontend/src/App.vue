@@ -1279,38 +1279,21 @@
 
       <!-- ═══════ TAB 8: AI CHAT ═══════ -->
       <section v-if="activeTab === 'chat'" class="tab-panel">
-        <h2 class="section-title">💬 Khấu Bái Khí Linh — Trợ Lý AI Gemini</h2>
+        <h2 class="section-title">💬 Khấu Bái Khí Linh — Trợ Lý AI Tiên Trí</h2>
 
-        <div class="chat-container">
-          <div class="chat-messages" ref="chatMessagesEl">
-            <div class="chat-welcome">
-              <div class="chat-ai-avatar">🔮</div>
-              <p>Kính chào Ký Chủ! Ta là <strong>Khí Linh Tiên Trí</strong>, trợ lý tài chính AI phong cách tu tiên. Hãy hỏi ta bất cứ điều gì về tài chính của đạo hữu!</p>
-            </div>
-            <div v-for="(msg, idx) in chatMessages" :key="idx"
-                 :class="['chat-bubble', msg.role === 'user' ? 'user-bubble' : 'ai-bubble']">
-              <div class="bubble-avatar">{{ msg.role === 'user' ? '🧙' : '🔮' }}</div>
-              <div class="bubble-content" v-html="formatChatText(msg.text)"></div>
-            </div>
-            <div v-if="chatLoading && activeTab === 'chat'" class="chat-bubble ai-bubble">
-              <div class="bubble-avatar">🔮</div>
-              <div class="bubble-content typing-indicator">
-                <span></span><span></span><span></span>
-              </div>
-            </div>
-          </div>
-          <div v-if="suggestedQuestions.length > 0" class="suggested-questions-container">
-            <span class="suggested-chip" v-for="q in suggestedQuestions" :key="q" @click="chatInput = q">
-              {{ q }}
-            </span>
-          </div>
-          <div class="chat-input-area">
-            <input v-model="chatInput" type="text"
-                   placeholder="Hỏi Tiên Trí về tài chính..."
-                   @keyup.enter="sendChat" />
-            <button class="btn-jade-sm" @click="sendChat" :disabled="chatLoading || !chatInput.trim()">
-              ⚡ Gửi
+        <div class="khilinh-tab-portal-card">
+          <div class="portal-spirit-icon">🔮</div>
+          <h3 class="portal-title">Đạo Quán Khí Linh Tiên Trí — Trợ Lý AI Trung Tâm</h3>
+          <p class="portal-desc">
+            Khí Linh Tiên Trí hiện diện khắp mọi nơi trong Đạo Đường Càn Khôn. Đạo hữu có thể trò chuyện bằng giọng nói (STT tiếng Việt), nhập văn bản, tra cứu số dư ngân lượng, hoặc ghi nhận giao dịch chi tiêu/thu nhập với cơ chế xác nhận an toàn tuyệt đối.
+          </p>
+          <div class="portal-actions">
+            <button id="btn-open-khilinh-tab" class="btn-jade" @click="isKhiLinhOpen = true">
+              ✨ Khấu Bái & Mở Giao Diện Khí Linh
             </button>
+          </div>
+          <div class="portal-hints">
+            <span>💡 <strong>Mẹo:</strong> Biểu tượng linh khí Khí Linh luôn hiện diện ở góc dưới bên phải màn hình trên mọi trang. Đạo hữu có thể bấm vào bất kỳ lúc nào để ra lệnh.</span>
           </div>
         </div>
       </section>
@@ -1326,31 +1309,23 @@
             <div class="metric-info">
               <span class="metric-label">Tổng Đạo Hữu</span>
               <span class="metric-value">{{ adminStats.total_users || 0 }}</span>
-              <span class="metric-sub">🟢 {{ adminStats.active_users || 0 }} hoạt động | 🔴 {{ adminStats.locked_users || 0 }} khóa</span>
+              <span class="metric-sub">Tổng số tài khoản hệ thống</span>
             </div>
           </div>
           <div class="metric-card gold">
-            <div class="metric-icon">💳</div>
+            <div class="metric-icon">🟢</div>
             <div class="metric-info">
-              <span class="metric-label">Túi Càn Khôn</span>
-              <span class="metric-value">{{ adminStats.total_wallets || 0 }}</span>
-              <span class="metric-sub">Số dư: {{ formatVND(adminStats.total_balance || 0) }}</span>
-            </div>
-          </div>
-          <div class="metric-card purple">
-            <div class="metric-icon">💸</div>
-            <div class="metric-info">
-              <span class="metric-label">Tổng Giao Dịch</span>
-              <span class="metric-value">{{ adminStats.total_transactions || 0 }}</span>
-              <span class="metric-sub">Dòng tiền: {{ formatVND(adminStats.total_system_cashflow || 0) }}</span>
+              <span class="metric-label">Đang Hoạt Động</span>
+              <span class="metric-value">{{ adminStats.active_users || 0 }}</span>
+              <span class="metric-sub">Tài khoản bình thường</span>
             </div>
           </div>
           <div class="metric-card crimson">
-            <div class="metric-icon">📜</div>
+            <div class="metric-icon">🔴</div>
             <div class="metric-info">
-              <span class="metric-label">Sổ Nợ & Mục Tiêu</span>
-              <span class="metric-value">{{ adminStats.total_debts || 0 }} / {{ adminStats.total_goals || 0 }}</span>
-              <span class="metric-sub">Nợ / Mục tiêu</span>
+              <span class="metric-label">Bị Phong Ấn</span>
+              <span class="metric-value">{{ adminStats.locked_users || 0 }}</span>
+              <span class="metric-sub">Tài khoản bị khóa</span>
             </div>
           </div>
         </div>
@@ -1399,9 +1374,6 @@
                 <th>Đạo Hiệu / Họ Tên</th>
                 <th>Email</th>
                 <th>Vai Trò</th>
-                <th>Túi Càn Khôn</th>
-                <th>Tổng Số Dư</th>
-                <th>Số Giao Dịch</th>
                 <th>Trạng Thái</th>
                 <th>Ngày Gia Nhập</th>
                 <th>Thao Tác</th>
@@ -1417,9 +1389,6 @@
                     {{ u.role === 'admin' ? '🛡️ Chưởng Môn' : '🧙 Đệ Tử' }}
                   </span>
                 </td>
-                <td>{{ u.wallet_count }} ví</td>
-                <td>{{ formatVND(u.total_balance) }}</td>
-                <td>{{ u.txn_count }} GD</td>
                 <td>
                   <span :class="['status-badge', u.is_active === 1 ? 'active' : 'locked']">
                     {{ u.is_active === 1 ? '🟢 Bình Thường' : '🔴 Bị Phong Ấn' }}
@@ -1445,7 +1414,7 @@
                 </td>
               </tr>
               <tr v-if="!filteredAdminUsers.length">
-                <td colspan="10" class="empty-row">Không tìm thấy đệ tử nào...</td>
+                <td colspan="7" class="empty-row">Không tìm thấy đệ tử nào...</td>
               </tr>
             </tbody>
           </table>
@@ -1774,6 +1743,16 @@
     <div v-if="toast" class="toast-notification" :class="toast.type">
       {{ toast.message }}
     </div>
+
+    <!-- PERSISTENT KHÍ LINH ASSISTANT COMPANION (Available across all pages) -->
+    <KhiLinhAssistant
+      v-if="isLoggedIn"
+      :api="api"
+      :is-open="isKhiLinhOpen"
+      @update:is-open="isKhiLinhOpen = $event"
+      @transaction-completed="onKhiLinhTransactionCompleted"
+      @switch-tab="switchTab"
+    />
   </div>
   </div>
 </template>
@@ -1782,13 +1761,14 @@
 import { ref, computed, onMounted, nextTick, onErrorCaptured, watch } from 'vue'
 import axios from 'axios'
 import ChartComponent from './components/ChartComponents.vue'
+import KhiLinhAssistant from './components/KhiLinhAssistant.vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
 
 export default {
   name: 'CankKhonApp',
-  components: { ChartComponent, VueDatePicker },
+  components: { ChartComponent, VueDatePicker, KhiLinhAssistant },
   setup() {
     // ─── STATE ────────────────────
     const isLoggedIn = ref(false)
@@ -1808,6 +1788,7 @@ export default {
     const errorMsg = ref('')
     const toast = ref(null)
     const activeTab = ref('dashboard')
+    const isKhiLinhOpen = ref(false)
 
     // Profile modal state
     const showProfileModal = ref(false)
@@ -2269,9 +2250,9 @@ export default {
           email: forgotForm.value.email,
           soul_lamp: forgotForm.value.soul_lamp.trim()
         })
-        devResetToken.value = data.reset_token
+        devResetToken.value = data.reset_token || ''
         resetForm.value.email = forgotForm.value.email
-        resetForm.value.token = data.reset_token
+        resetForm.value.token = data.reset_token || ''
         resetForm.value.new_password = ''
         authMode.value = 'reset'
         showToast('🔑 Đã tạo mã xác thực khôi phục!')
@@ -3228,6 +3209,22 @@ export default {
       }
     }
 
+    // ─── KHÍ LINH EVENT HANDLER ───
+    async function onKhiLinhTransactionCompleted(payload) {
+      await Promise.all([
+        loadWallets(),
+        loadTransactions(true),
+        loadSummary(),
+        loadBudgets(),
+        checkBudgetAlerts(),
+        loadDebts(),
+        loadSavingGoals(),
+        loadTrend(),
+        loadWeekly()
+      ])
+      showToast('✨ Khí Linh đã đồng bộ thành công vào sổ sách!', 'success')
+    }
+
     function scrollChat() {
       const el = chatMessagesEl.value
       if (el) el.scrollTop = el.scrollHeight
@@ -3266,6 +3263,8 @@ export default {
         loadCompare()
       } else if (tabId === 'budgets') {
         loadBudgets()
+      } else if (tabId === 'chat') {
+        isKhiLinhOpen.value = true
       }
       nextTick(() => {
         const activeBtn = tabNavEl.value?.querySelector('.tab-btn.active')
@@ -3354,6 +3353,7 @@ export default {
       createBudget, deleteBudget,
       handleOCRUpload, handleOCRDrop, scanInvoice, confirmOCRTransaction,
       sendChat,
+      isKhiLinhOpen, onKhiLinhTransactionCompleted,
     }
   }
 }
@@ -5697,5 +5697,60 @@ body[data-theme='modern'] .dp__menu {
   .stats-datepicker-wrapper {
     width: 100% !important;
   }
+}
+
+/* Khí Linh Tab Portal Card */
+.khilinh-tab-portal-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(224, 247, 245, 0.85) 100%);
+  border: 1px solid rgba(232, 200, 116, 0.6);
+  border-radius: 20px;
+  padding: 36px 28px;
+  text-align: center;
+  box-shadow: 0 12px 32px rgba(26, 58, 92, 0.08);
+  max-width: 680px;
+  margin: 20px auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.portal-spirit-icon {
+  font-size: 48px;
+  animation: floatBob 3s ease-in-out infinite;
+}
+
+.portal-title {
+  font-family: 'Lora', serif;
+  font-size: 20px;
+  color: #1a3a5c;
+  font-weight: 700;
+}
+
+.portal-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #476582;
+  max-width: 540px;
+}
+
+.portal-actions {
+  margin-top: 8px;
+}
+
+.portal-actions .btn-jade {
+  padding: 12px 28px;
+  font-size: 15px;
+  box-shadow: 0 4px 16px rgba(43, 138, 130, 0.35);
+}
+
+.portal-hints {
+  font-size: 12px;
+  color: #78530b;
+  background: rgba(254, 249, 195, 0.8);
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(232, 200, 116, 0.5);
+  margin-top: 8px;
 }
 </style>

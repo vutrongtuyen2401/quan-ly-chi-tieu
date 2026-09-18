@@ -17,6 +17,7 @@ import secrets
 import time
 import csv
 import io
+import math
 from contextlib import contextmanager
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
@@ -29,7 +30,7 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Que
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Any
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 
@@ -41,7 +42,8 @@ load_dotenv()
 # ──────────────────────────────────────────────
 # CONFIG
 # ──────────────────────────────────────────────
-DATABASE = "app.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE = os.path.join(BASE_DIR, "app.db")
 
 # Change 2: JWT_SECRET bắt buộc — dừng server nếu thiếu
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -67,6 +69,12 @@ login_attempts = {}
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 15 * 60  # 15 phút
 
+# Finding 2.3: Rate limiting quên mật khẩu — in-memory tracker
+# {email: {"count": int, "first_attempt": float}}
+forgot_password_attempts = {}
+FORGOT_PASSWORD_MAX_ATTEMPTS = 5
+FORGOT_PASSWORD_LOCKOUT_SECONDS = 15 * 60  # 15 phút
+
 app = FastAPI(title="Càn Khôn Linh Thạch Các API", version="2.1")
 security = HTTPBearer()
 
@@ -90,6 +98,9 @@ def get_db():
     try:
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -106,6 +117,7 @@ def init_db():
                 soul_lamp_hash TEXT,
                 role TEXT DEFAULT 'user',
                 is_active INTEGER DEFAULT 1,
+                token_version INTEGER DEFAULT 1,
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
@@ -139,6 +151,7 @@ def init_db():
                 transaction_date TEXT NOT NULL,
                 note TEXT DEFAULT '',
                 image_url TEXT DEFAULT '',
+                operation_id TEXT DEFAULT NULL,
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 FOREIGN KEY (wallet_id) REFERENCES wallets(id),
@@ -233,7 +246,7 @@ def init_db():
             );
         """)
 
-        # Migration: Ensure role, is_active, and soul_lamp_hash columns exist on users table
+        # Migration: Ensure role, is_active, soul_lamp_hash, and token_version columns exist on users table
         user_cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "role" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
@@ -241,6 +254,14 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
         if "soul_lamp_hash" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN soul_lamp_hash TEXT")
+        if "token_version" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 1")
+        conn.execute("UPDATE users SET token_version = 1 WHERE token_version IS NULL")
+
+        # Migration: Ensure operation_id column exists on transactions table
+        txn_cols = [c[1] for c in conn.execute("PRAGMA table_info(transactions)").fetchall()]
+        if "operation_id" not in txn_cols:
+            conn.execute("ALTER TABLE transactions ADD COLUMN operation_id TEXT DEFAULT NULL")
         
         # Ensure default admin has role = 'admin', valid hash, and default soul_lamp_hash if NULL
         admin_row = conn.execute("SELECT id, password_hash, soul_lamp_hash FROM users WHERE email = 'admin@gmail.com'").fetchone()
@@ -384,6 +405,10 @@ class SoulLampUpdateBody(BaseModel):
     current_password: str
     new_soul_lamp: str
 
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
 class UserProfileUpdateBody(BaseModel):
     full_name: str
 
@@ -401,6 +426,7 @@ class TransferBody(BaseModel):
     to_wallet_id: int
     amount: float
     note: Optional[str] = None
+    operation_id: Optional[str] = None
 
 class CategoryBody(BaseModel):
     category_name: str
@@ -494,16 +520,18 @@ class SavingGoalUpdateBody(BaseModel):
 class SavingGoalDepositBody(BaseModel):
     amount: float
     wallet_id: Optional[int] = None
+    operation_id: Optional[str] = None
 
 
 # ──────────────────────────────────────────────
 # AUTH HELPERS
 # ──────────────────────────────────────────────
-def create_token(user_id: int, email: str, role: str = "user") -> str:
+def create_token(user_id: int, email: str, role: str = "user", token_version: int = 1) -> str:
     payload = {
         "user_id": user_id,
         "email": email,
         "role": (role or "user").lower(),
+        "token_version": token_version or 1,
         "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=JWT_EXPIRATION_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -512,15 +540,36 @@ def create_token(user_id: int, email: str, role: str = "user") -> str:
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return {
-            "user_id": payload["user_id"],
-            "email": payload["email"],
-            "role": str(payload.get("role", "user")).lower()
-        }
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token không hợp lệ.")
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token đã hết hạn. Hãy đăng nhập lại.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token không hợp lệ.")
+
+    with get_db() as conn:
+        user_row = conn.execute("SELECT id, email, role, is_active, token_version FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user_row:
+            raise HTTPException(status_code=401, detail="Tài khoản không tồn tại.")
+        if "is_active" in user_row.keys() and user_row["is_active"] == 0:
+            raise HTTPException(status_code=403, detail="Tài khoản này đã bị phong ấn (khóa). Vui lòng liên hệ Chưởng Môn (Admin).")
+        
+        # Finding 3.1: JWT invalidation sau khi đổi hoặc reset mật khẩu
+        token_version = payload.get("token_version")
+        db_version = user_row["token_version"] if ("token_version" in user_row.keys() and user_row["token_version"] is not None) else 1
+        if token_version is None or token_version != db_version:
+            raise HTTPException(
+                status_code=401,
+                detail="Phiên đăng nhập đã hết hiệu lực do mật khẩu đã thay đổi. Vui lòng đăng nhập lại."
+            )
+
+        return {
+            "user_id": user_row["id"],
+            "email": user_row["email"],
+            "role": str(user_row["role"] or "user").lower(),
+            "token_version": db_version
+        }
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
@@ -574,7 +623,7 @@ def register(body: RegisterBody):
             categories_data
         )
 
-        token = create_token(user_id, body.email, role="user")
+        token = create_token(user_id, body.email, role="user", token_version=1)
         return {"token": token, "user_id": user_id, "full_name": body.full_name, "email": body.email, "role": "user"}
 
 
@@ -638,7 +687,8 @@ def login(body: LoginBody):
             del login_attempts[email_lower]
 
         user_role = user["role"] if "role" in user.keys() and user["role"] else "user"
-        token = create_token(user["id"], user["email"], role=user_role)
+        user_token_version = user["token_version"] if ("token_version" in user.keys() and user["token_version"] is not None) else 1
+        token = create_token(user["id"], user["email"], role=user_role, token_version=user_token_version)
         return {
             "token": token,
             "user_id": user["id"],
@@ -654,6 +704,30 @@ def login(body: LoginBody):
 @app.post("/api/auth/forgot-password")
 def forgot_password(body: ForgotPasswordBody):
     """Tạo mã reset mật khẩu — Yêu cầu xác thực Email + Bản Mệnh Hồn Đăng"""
+    email_lower = (body.email or "").lower().strip()
+    now_ts = time.time()
+
+    # Rate limiting: tối đa 5 yêu cầu trong 15 phút cho mỗi email
+    if email_lower in forgot_password_attempts:
+        attempt = forgot_password_attempts[email_lower]
+        elapsed = now_ts - attempt["first_attempt"]
+        if elapsed > FORGOT_PASSWORD_LOCKOUT_SECONDS:
+            del forgot_password_attempts[email_lower]
+        elif attempt["count"] >= FORGOT_PASSWORD_MAX_ATTEMPTS:
+            remaining = int(FORGOT_PASSWORD_LOCKOUT_SECONDS - elapsed)
+            remaining_mins = max(1, (remaining + 59) // 60)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Yêu cầu khôi phục mật khẩu quá nhiều lần. Vui lòng thử lại sau {remaining_mins} phút."
+            )
+
+    # Ghi nhận lượt thử (cho cả email tồn tại và không tồn tại để chống account enumeration)
+    if email_lower:
+        if email_lower not in forgot_password_attempts:
+            forgot_password_attempts[email_lower] = {"count": 1, "first_attempt": now_ts}
+        else:
+            forgot_password_attempts[email_lower]["count"] += 1
+
     if not body.email or not body.soul_lamp:
         raise HTTPException(status_code=400, detail="Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
 
@@ -683,18 +757,19 @@ def forgot_password(body: ForgotPasswordBody):
             (body.email, reset_token, expires_at)
         )
 
-    # TODO: Gửi email thật khi lên production. Hiện tại trả trực tiếp cho dev/đồ án.
+    # In ra server log để phục vụ debug / test nội bộ
+    print(f"[AUTH] Mã xác thực đặt lại mật khẩu cho {body.email}: {reset_token}")
+
+    # Finding 2.3: KHÔNG trả reset_token trực tiếp qua HTTP response
     return {
-        "message": "Mã reset đã được tạo. (Chế độ phát triển: mã hiển thị trực tiếp)",
-        "reset_token": reset_token,
-        "expires_in_minutes": 30,
-        "note": "⚠️ DEV MODE: Trong production, mã này sẽ được gửi qua email thay vì hiển thị trực tiếp."
+        "message": "Mã xác thực khôi phục mật khẩu đã được tạo và gửi tới linh bưu của bạn.",
+        "expires_in_minutes": 30
     }
 
 
 @app.post("/api/auth/reset-password")
 def reset_password(body: ResetPasswordBody):
-    """Đặt lại mật khẩu bằng mã reset"""
+    """Đặt lại mật khẩu bằng mã reset — Finding 3.1: Hủy bỏ toàn bộ JWT cũ"""
     with get_db() as conn:
         token_row = conn.execute(
             "SELECT * FROM password_reset_tokens WHERE email = ? AND token = ? AND used = 0 ORDER BY id DESC LIMIT 1",
@@ -712,12 +787,18 @@ def reset_password(body: ResetPasswordBody):
         if len(body.new_password) < 4:
             raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 4 ký tự.")
 
-        # Cập nhật mật khẩu mới
+        # Cập nhật mật khẩu mới và tăng token_version để vô hiệu hóa JWT cũ
         pw_hash = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
-        conn.execute("UPDATE users SET password_hash = ? WHERE email = ?", (pw_hash, body.email))
+        conn.execute(
+            "UPDATE users SET password_hash = ?, token_version = COALESCE(token_version, 1) + 1 WHERE email = ?",
+            (pw_hash, body.email)
+        )
 
         # Đánh dấu token đã sử dụng
         conn.execute("UPDATE password_reset_tokens SET used = 1 WHERE id = ?", (token_row["id"],))
+
+    # Reset bộ đếm rate limiting quên mật khẩu cho email này
+    forgot_password_attempts.pop(body.email.lower().strip(), None)
 
     return {"message": "Mật khẩu đã được đặt lại thành công! Hãy đăng nhập bằng mật khẩu mới."}
 
@@ -761,7 +842,31 @@ def update_wallet(wallet_id: int, body: WalletUpdateBody, user: dict = Depends(g
 @app.delete("/api/wallets/{wallet_id}")
 def delete_wallet(wallet_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
-        conn.execute("DELETE FROM wallets WHERE id = ? AND user_id = ?", (wallet_id, user["user_id"]))
+        wallet = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?", (wallet_id, user["user_id"])).fetchone()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
+
+        # Kiểm tra các bản ghi phụ thuộc trước khi xóa để tránh lỗi khóa ngoại IntegrityError
+        txn_count = conn.execute("SELECT COUNT(*) FROM transactions WHERE wallet_id = ? AND user_id = ?", (wallet_id, user["user_id"])).fetchone()[0]
+        rec_count = conn.execute("SELECT COUNT(*) FROM recurring_transactions WHERE wallet_id = ? AND user_id = ?", (wallet_id, user["user_id"])).fetchone()[0]
+        debt_count = conn.execute("SELECT COUNT(*) FROM debts WHERE wallet_id = ? AND user_id = ?", (wallet_id, user["user_id"])).fetchone()[0]
+
+        if txn_count > 0 or rec_count > 0 or debt_count > 0:
+            reasons = []
+            if txn_count > 0:
+                reasons.append(f"{txn_count} giao dịch")
+            if rec_count > 0:
+                reasons.append(f"{rec_count} giao dịch định kỳ")
+            if debt_count > 0:
+                reasons.append(f"{debt_count} khoản nợ")
+            detail_msg = f"Không thể hủy Túi Càn Khôn vì vẫn còn dữ liệu liên kết ({', '.join(reasons)}). Vui lòng chuyển hoặc xóa các dữ liệu này trước."
+            raise HTTPException(status_code=400, detail=detail_msg)
+
+        try:
+            conn.execute("DELETE FROM wallets WHERE id = ? AND user_id = ?", (wallet_id, user["user_id"]))
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=400, detail="Không thể hủy Túi Càn Khôn do ràng buộc toàn vẹn dữ liệu.")
+
         return {"message": "Túi Càn Khôn đã bị hủy!"}
 
 
@@ -804,15 +909,62 @@ def update_category(cat_id: int, body: CategoryUpdateBody, user: dict = Depends(
 @app.delete("/api/categories/{cat_id}")
 def delete_category(cat_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
-        conn.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, user["user_id"]))
+        cat = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?", (cat_id, user["user_id"])).fetchone()
+        if not cat:
+            raise HTTPException(status_code=404, detail="Danh mục không tồn tại hoặc không thuộc quyền sở hữu.")
+
+        # Kiểm tra các bản ghi phụ thuộc trước khi xóa để tránh lỗi khóa ngoại IntegrityError
+        txn_count = conn.execute("SELECT COUNT(*) FROM transactions WHERE category_id = ? AND user_id = ?", (cat_id, user["user_id"])).fetchone()[0]
+        budget_count = conn.execute("SELECT COUNT(*) FROM budgets WHERE category_id = ? AND user_id = ?", (cat_id, user["user_id"])).fetchone()[0]
+        rec_count = conn.execute("SELECT COUNT(*) FROM recurring_transactions WHERE category_id = ? AND user_id = ?", (cat_id, user["user_id"])).fetchone()[0]
+
+        if txn_count > 0 or budget_count > 0 or rec_count > 0:
+            reasons = []
+            if txn_count > 0:
+                reasons.append(f"{txn_count} giao dịch")
+            if budget_count > 0:
+                reasons.append(f"{budget_count} hạn mức tu luyện")
+            if rec_count > 0:
+                reasons.append(f"{rec_count} giao dịch định kỳ")
+            detail_msg = f"Không thể hủy Danh mục vì vẫn còn dữ liệu liên kết ({', '.join(reasons)}). Vui lòng chuyển hoặc xóa các dữ liệu này trước."
+            raise HTTPException(status_code=400, detail=detail_msg)
+
+        try:
+            conn.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, user["user_id"]))
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=400, detail="Không thể hủy Danh mục do ràng buộc toàn vẹn dữ liệu.")
+
         return {"message": "Danh mục đã bị hủy!"}
+
+
+def get_or_create_system_category(conn, user_id: int, category_name: str, category_type: str, icon: str = "📦") -> int:
+    """Tìm hoặc tự động tạo danh mục chuẩn cho các giao dịch hệ thống (Chuyển khoản, Tiết kiệm...)
+    đảm bảo thỏa mãn ràng buộc khóa ngoại (FOREIGN KEY categories(id)) và quyền sở hữu user_id.
+    """
+    cat = conn.execute(
+        "SELECT id FROM categories WHERE user_id = ? AND category_name = ? AND category_type = ?",
+        (user_id, category_name, category_type)
+    ).fetchone()
+    if cat:
+        return cat["id"]
+    conn.execute(
+        "INSERT INTO categories (user_id, category_name, category_type, icon) VALUES (?, ?, ?, ?)",
+        (user_id, category_name, category_type, icon)
+    )
+    return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
 # ──────────────────────────────────────────────
 # Change 8: RECURRING TRANSACTIONS HELPER
 # ──────────────────────────────────────────────
 def process_recurring_transactions(conn, user_id: int):
-    """Xử lý các giao dịch định kỳ đã đến hạn và tự động sinh giao dịch thực tế"""
+    """Xử lý các giao dịch định kỳ đã đến hạn và tự động sinh giao dịch thực tế.
+    Finding 2.2:
+    1. Xử lý toàn bộ các chu kỳ đã đến hạn (tối đa 12 chu kỳ / lần gọi).
+    2. Chống sinh giao dịch trùng lặp cho cùng một ngày chu kỳ đã sinh.
+    3. Xử lý an toàn lỗi ràng buộc khóa ngoại (ví hoặc danh mục không tồn tại / stale FK) mà không làm sập tiến trình hoặc báo cáo (HTTP 500).
+    4. Cập nhật ngày thực thi tiếp theo chính xác sau mỗi chu kỳ thành công.
+    """
     today = datetime.date.today()
     today_str = today.strftime("%Y-%m-%d")
 
@@ -831,33 +983,76 @@ def process_recurring_transactions(conn, user_id: int):
         txn_type = item["transaction_type"]
         note = item["note"] or f"Định kỳ ({'Hàng tuần' if freq == 'weekly' else 'Hàng tháng'})"
 
-        # Tạo giao dịch thực tế
-        conn.execute("""
-            INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, wallet_id, cat_id, amount, txn_type, run_date_str, note))
+        # Kiểm tra trước khóa ngoại: ví và danh mục phải tồn tại và thuộc user
+        wallet = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?", (wallet_id, user_id)).fetchone()
+        cat = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?", (cat_id, user_id)).fetchone()
+        if not wallet or not cat:
+            # Tham chiếu khóa ngoại không hợp lệ hoặc không thuộc quyền sở hữu của user
+            print(f"[RECURRING] Bỏ qua bản ghi ID {r_id}: ví ({wallet_id}) hoặc danh mục ({cat_id}) không hợp lệ.")
+            continue
 
-        # Cập nhật số dư ví
-        if txn_type == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (amount, wallet_id))
-        else:
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (amount, wallet_id))
+        cycles_processed = 0
+        max_cycles = 12
 
-        # Tính ngày tiếp theo
-        try:
-            cur_dt = datetime.datetime.strptime(run_date_str, "%Y-%m-%d").date()
-        except Exception:
-            cur_dt = today
+        while run_date_str <= today_str and cycles_processed < max_cycles:
+            try:
+                cur_dt = datetime.datetime.strptime(run_date_str, "%Y-%m-%d").date()
+            except Exception:
+                break
 
-        if freq == "weekly":
-            next_dt = cur_dt + datetime.timedelta(days=7)
-        else:  # monthly
-            year = cur_dt.year + ((cur_dt.month) // 12)
-            month = (cur_dt.month % 12) + 1
-            day = min(cur_dt.day, 28)
-            next_dt = datetime.date(year, month, day)
+            # Tính ngày chu kỳ tiếp theo
+            if freq == "weekly":
+                next_dt = cur_dt + datetime.timedelta(days=7)
+            else:  # monthly
+                year = cur_dt.year + ((cur_dt.month) // 12)
+                month = (cur_dt.month % 12) + 1
+                day = min(cur_dt.day, 28)
+                next_dt = datetime.date(year, month, day)
 
-        conn.execute("UPDATE recurring_transactions SET next_run_date = ? WHERE id = ?", (next_dt.strftime("%Y-%m-%d"), r_id))
+            next_run_date_str = next_dt.strftime("%Y-%m-%d")
+
+            # Sử dụng savepoint để đảm bảo tính nguyên tử từng chu kỳ
+            savepoint_name = f"rec_{r_id}_{cycles_processed}"
+            conn.execute(f"SAVEPOINT {savepoint_name}")
+            try:
+                # Kiểm tra chống sinh trùng lặp cho cùng một ngày chu kỳ
+                existing_txn = conn.execute("""
+                    SELECT id FROM transactions
+                    WHERE user_id = ? AND wallet_id = ? AND category_id = ?
+                      AND amount = ? AND transaction_type = ? AND transaction_date = ?
+                      AND note = ?
+                    LIMIT 1
+                """, (user_id, wallet_id, cat_id, amount, txn_type, run_date_str, note)).fetchone()
+
+                if not existing_txn:
+                    # Tạo giao dịch thực tế
+                    conn.execute("""
+                        INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (user_id, wallet_id, cat_id, amount, txn_type, run_date_str, note))
+
+                    # Cập nhật số dư ví
+                    if txn_type == "INCOME":
+                        conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?", (amount, wallet_id, user_id))
+                    else:
+                        conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?", (amount, wallet_id, user_id))
+
+                # Cập nhật next_run_date
+                conn.execute("UPDATE recurring_transactions SET next_run_date = ? WHERE id = ?", (next_run_date_str, r_id))
+                conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+
+                run_date_str = next_run_date_str
+                cycles_processed += 1
+            except sqlite3.IntegrityError as ie:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                print(f"[RECURRING] Lỗi toàn vẹn dữ liệu cho bản ghi ID {r_id}: {ie}")
+                break
+            except Exception as e:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                print(f"[RECURRING] Lỗi khi xử lý bản ghi ID {r_id}: {e}")
+                break
 
 
 # ──────────────────────────────────────────────
@@ -877,6 +1072,7 @@ def get_transactions(
     user: dict = Depends(get_current_user)
 ):
     with get_db() as conn:
+        process_recurring_transactions(conn, user["user_id"])
         where_clauses = ["t.user_id = ?"]
         params = [user["user_id"]]
 
@@ -927,7 +1123,22 @@ def get_transactions(
 
 @app.post("/api/transactions")
 def create_transaction(body: TransactionBody, user: dict = Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số lượng Linh Thạch phải lớn hơn 0.")
+    if body.transaction_type not in ("INCOME", "EXPENSE"):
+        raise HTTPException(status_code=400, detail="Loại giao dịch phải là INCOME hoặc EXPENSE.")
+
     with get_db() as conn:
+        wallet = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?",
+                              (body.wallet_id, user["user_id"])).fetchone()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
+
+        category = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?",
+                                (body.category_id, user["user_id"])).fetchone()
+        if not category:
+            raise HTTPException(status_code=404, detail="Danh mục không tồn tại hoặc không thuộc quyền sở hữu.")
+
         conn.execute(
             """INSERT INTO transactions
                (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note)
@@ -948,19 +1159,36 @@ def create_transaction(body: TransactionBody, user: dict = Depends(get_current_u
 
 @app.put("/api/transactions/{txn_id}")
 def update_transaction(txn_id: int, body: TransactionUpdateBody, user: dict = Depends(get_current_user)):
+    if body.amount is not None and body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số lượng Linh Thạch phải lớn hơn 0.")
+    if body.transaction_type is not None and body.transaction_type not in ("INCOME", "EXPENSE"):
+        raise HTTPException(status_code=400, detail="Loại giao dịch phải là INCOME hoặc EXPENSE.")
+
     with get_db() as conn:
         old_txn = conn.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?",
                                (txn_id, user["user_id"])).fetchone()
         if not old_txn:
-            raise HTTPException(status_code=404, detail="Giao dịch không tồn tại.")
+            raise HTTPException(status_code=404, detail="Giao dịch không tồn tại hoặc không thuộc quyền sở hữu.")
+
+        if body.wallet_id is not None:
+            w = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?",
+                             (body.wallet_id, user["user_id"])).fetchone()
+            if not w:
+                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
+
+        if body.category_id is not None:
+            c = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?",
+                             (body.category_id, user["user_id"])).fetchone()
+            if not c:
+                raise HTTPException(status_code=404, detail="Danh mục không tồn tại hoặc không thuộc quyền sở hữu.")
 
         # Rollback old balance
         if old_txn["transaction_type"] == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?",
-                         (old_txn["amount"], old_txn["wallet_id"]))
+            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?",
+                         (old_txn["amount"], old_txn["wallet_id"], user["user_id"]))
         else:
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?",
-                         (old_txn["amount"], old_txn["wallet_id"]))
+            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
+                         (old_txn["amount"], old_txn["wallet_id"], user["user_id"]))
 
         # Apply update
         new_wallet = body.wallet_id or old_txn["wallet_id"]
@@ -977,9 +1205,11 @@ def update_transaction(txn_id: int, body: TransactionUpdateBody, user: dict = De
 
         # Apply new balance
         if new_type == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (new_amount, new_wallet))
+            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
+                         (new_amount, new_wallet, user["user_id"]))
         else:
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (new_amount, new_wallet))
+            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?",
+                         (new_amount, new_wallet, user["user_id"]))
 
         return {"message": "Giao dịch đã cập nhật!"}
 
@@ -990,13 +1220,15 @@ def delete_transaction(txn_id: int, user: dict = Depends(get_current_user)):
         txn = conn.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?",
                            (txn_id, user["user_id"])).fetchone()
         if not txn:
-            raise HTTPException(status_code=404, detail="Giao dịch không tồn tại.")
+            raise HTTPException(status_code=404, detail="Giao dịch không tồn tại hoặc không thuộc quyền sở hữu.")
         # Rollback balance
         if txn["transaction_type"] == "INCOME":
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (txn["amount"], txn["wallet_id"]))
+            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?",
+                         (txn["amount"], txn["wallet_id"], user["user_id"]))
         else:
-            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?", (txn["amount"], txn["wallet_id"]))
-        conn.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
+            conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
+                         (txn["amount"], txn["wallet_id"], user["user_id"]))
+        conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (txn_id, user["user_id"]))
         return {"message": "Giao dịch đã xóa!"}
 
 
@@ -1025,14 +1257,22 @@ def get_budgets(month_year: str = Query(None), user: dict = Depends(get_current_
 
 @app.post("/api/budgets")
 def create_budget(body: BudgetBody, user: dict = Depends(get_current_user)):
+    if body.limit_amount <= 0:
+        raise HTTPException(status_code=400, detail="Hạn mức tu luyện phải lớn hơn 0.")
+
     with get_db() as conn:
+        cat = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?",
+                           (body.category_id, user["user_id"])).fetchone()
+        if not cat:
+            raise HTTPException(status_code=404, detail="Danh mục không tồn tại hoặc không thuộc quyền sở hữu.")
+
         existing = conn.execute(
             "SELECT id FROM budgets WHERE user_id = ? AND category_id = ? AND month_year = ?",
             (user["user_id"], body.category_id, body.month_year)
         ).fetchone()
         if existing:
-            conn.execute("UPDATE budgets SET limit_amount = ? WHERE id = ?",
-                         (body.limit_amount, existing["id"]))
+            conn.execute("UPDATE budgets SET limit_amount = ? WHERE id = ? AND user_id = ?",
+                         (body.limit_amount, existing["id"], user["user_id"]))
             return {"id": existing["id"], "message": "Hạn mức đã cập nhật!"}
         conn.execute(
             "INSERT INTO budgets (user_id, category_id, limit_amount, month_year) VALUES (?, ?, ?, ?)",
@@ -1044,6 +1284,9 @@ def create_budget(body: BudgetBody, user: dict = Depends(get_current_user)):
 
 @app.put("/api/budgets/{budget_id}")
 def update_budget(budget_id: int, body: BudgetUpdateBody, user: dict = Depends(get_current_user)):
+    if body.limit_amount <= 0:
+        raise HTTPException(status_code=400, detail="Hạn mức tu luyện phải lớn hơn 0.")
+
     with get_db() as conn:
         existing = conn.execute(
             "SELECT id FROM budgets WHERE id = ? AND user_id = ?",
@@ -1051,13 +1294,16 @@ def update_budget(budget_id: int, body: BudgetUpdateBody, user: dict = Depends(g
         ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Hạn mức không tồn tại hoặc không có quyền!")
-        conn.execute("UPDATE budgets SET limit_amount = ? WHERE id = ?", (body.limit_amount, budget_id))
+        conn.execute("UPDATE budgets SET limit_amount = ? WHERE id = ? AND user_id = ?", (body.limit_amount, budget_id, user["user_id"]))
         return {"message": "Cập nhật thành công!"}
 
 
 @app.delete("/api/budgets/{budget_id}")
 def delete_budget(budget_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
+        existing = conn.execute("SELECT id FROM budgets WHERE id = ? AND user_id = ?", (budget_id, user["user_id"])).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Hạn mức không tồn tại hoặc không có quyền!")
         conn.execute("DELETE FROM budgets WHERE id = ? AND user_id = ?", (budget_id, user["user_id"]))
         return {"message": "Hạn mức đã xóa!"}
 
@@ -1237,7 +1483,22 @@ def get_recurring_transactions(user: dict = Depends(get_current_user)):
 
 @app.post("/api/recurring-transactions")
 def create_recurring_transaction(body: RecurringTransactionBody, user: dict = Depends(get_current_user)):
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số lượng Linh Thạch phải lớn hơn 0.")
+    if body.transaction_type not in ("INCOME", "EXPENSE"):
+        raise HTTPException(status_code=400, detail="Loại giao dịch phải là INCOME hoặc EXPENSE.")
+
     with get_db() as conn:
+        wallet = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?",
+                              (body.wallet_id, user["user_id"])).fetchone()
+        if not wallet:
+            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
+
+        category = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?",
+                                (body.category_id, user["user_id"])).fetchone()
+        if not category:
+            raise HTTPException(status_code=404, detail="Danh mục không tồn tại hoặc không thuộc quyền sở hữu.")
+
         conn.execute("""
             INSERT INTO recurring_transactions (user_id, wallet_id, category_id, amount, transaction_type, frequency, next_run_date, note)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1249,10 +1510,27 @@ def create_recurring_transaction(body: RecurringTransactionBody, user: dict = De
 
 @app.put("/api/recurring-transactions/{rec_id}")
 def update_recurring_transaction(rec_id: int, body: RecurringTransactionUpdateBody, user: dict = Depends(get_current_user)):
+    if body.amount is not None and body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Số lượng Linh Thạch phải lớn hơn 0.")
+    if body.transaction_type is not None and body.transaction_type not in ("INCOME", "EXPENSE"):
+        raise HTTPException(status_code=400, detail="Loại giao dịch phải là INCOME hoặc EXPENSE.")
+
     with get_db() as conn:
         rec = conn.execute("SELECT * FROM recurring_transactions WHERE id = ? AND user_id = ?", (rec_id, user["user_id"])).fetchone()
         if not rec:
             raise HTTPException(status_code=404, detail="Giao dịch định kỳ không tồn tại.")
+
+        if body.wallet_id is not None:
+            w = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?",
+                             (body.wallet_id, user["user_id"])).fetchone()
+            if not w:
+                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
+
+        if body.category_id is not None:
+            c = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?",
+                             (body.category_id, user["user_id"])).fetchone()
+            if not c:
+                raise HTTPException(status_code=404, detail="Danh mục không tồn tại hoặc không thuộc quyền sở hữu.")
 
         w_id = body.wallet_id if body.wallet_id is not None else rec["wallet_id"]
         c_id = body.category_id if body.category_id is not None else rec["category_id"]
@@ -1276,6 +1554,9 @@ def update_recurring_transaction(rec_id: int, body: RecurringTransactionUpdateBo
 @app.delete("/api/recurring-transactions/{rec_id}")
 def delete_recurring_transaction(rec_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
+        rec = conn.execute("SELECT id FROM recurring_transactions WHERE id = ? AND user_id = ?", (rec_id, user["user_id"])).fetchone()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Giao dịch định kỳ không tồn tại.")
         conn.execute("DELETE FROM recurring_transactions WHERE id = ? AND user_id = ?", (rec_id, user["user_id"]))
         return {"message": "Giao dịch định kỳ đã được xóa!"}
 
@@ -1338,6 +1619,12 @@ def create_debt(body: DebtCreateBody, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Số tiền nợ phải lớn hơn 0.")
 
     with get_db() as conn:
+        if body.wallet_id:
+            w = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?",
+                             (body.wallet_id, user["user_id"])).fetchone()
+            if not w:
+                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
+
         conn.execute("""
             INSERT INTO debts (user_id, wallet_id, debt_type, person_name, amount, due_date, note)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1352,6 +1639,15 @@ def update_debt(debt_id: int, body: DebtUpdateBody, user: dict = Depends(get_cur
         debt = conn.execute("SELECT * FROM debts WHERE id = ? AND user_id = ?", (debt_id, user["user_id"])).fetchone()
         if not debt:
             raise HTTPException(status_code=404, detail="Khoản nợ không tồn tại.")
+
+        if body.amount is not None and body.amount <= 0:
+            raise HTTPException(status_code=400, detail="Số tiền nợ phải lớn hơn 0.")
+
+        if body.wallet_id is not None:
+            w = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?",
+                             (body.wallet_id, user["user_id"])).fetchone()
+            if not w:
+                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
 
         w_id = body.wallet_id if body.wallet_id is not None else debt["wallet_id"]
         d_type = body.debt_type if body.debt_type in ("BORROW", "LEND") else debt["debt_type"]
@@ -1385,6 +1681,9 @@ def toggle_settle_debt(debt_id: int, user: dict = Depends(get_current_user)):
 @app.delete("/api/debts/{debt_id}")
 def delete_debt(debt_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
+        debt = conn.execute("SELECT id FROM debts WHERE id = ? AND user_id = ?", (debt_id, user["user_id"])).fetchone()
+        if not debt:
+            raise HTTPException(status_code=404, detail="Khoản nợ không tồn tại.")
         conn.execute("DELETE FROM debts WHERE id = ? AND user_id = ?", (debt_id, user["user_id"]))
         return {"message": "Đã xóa khoản nợ khỏi sổ!"}
 
@@ -1481,27 +1780,72 @@ def update_saving_goal(goal_id: int, body: SavingGoalUpdateBody, user: dict = De
 
 @app.post("/api/saving-goals/{goal_id}/deposit")
 def deposit_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict = Depends(get_current_user)):
+    """Tích lũy vào mục tiêu tiết kiệm — Finding 2.1: Ghi nhận lịch sử giao dịch rõ ràng và đảm bảo tính nguyên tử"""
     if body.amount <= 0:
         raise HTTPException(status_code=400, detail="Số tiền tích lũy phải lớn hơn 0.")
 
+    user_id = user["user_id"]
+    op_id = body.operation_id.strip() if body.operation_id and body.operation_id.strip() else None
+
     with get_db() as conn:
-        goal = conn.execute("SELECT * FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
+        goal = conn.execute("SELECT * FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user_id)).fetchone()
         if not goal:
-            raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại.")
+            raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại hoặc không thuộc quyền sở hữu.")
 
         if body.wallet_id:
-            w = conn.execute("SELECT * FROM wallets WHERE id = ? AND user_id = ?", (body.wallet_id, user["user_id"])).fetchone()
+            w = conn.execute("SELECT * FROM wallets WHERE id = ? AND user_id = ?", (body.wallet_id, user_id)).fetchone()
             if not w:
-                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại.")
+                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
             if w["balance"] < body.amount:
                 raise HTTPException(status_code=400, detail=f"Số dư ví không đủ (Còn {w['balance']:,.0f} VNĐ).")
-            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?", (body.amount, body.wallet_id))
+
+            dep_note = f"Tích lũy mục tiêu: {goal['target_name']}"
+
+            # Chống sinh trùng lặp (Idempotency):
+            if op_id:
+                existing_deposit = conn.execute(
+                    "SELECT id FROM transactions WHERE user_id = ? AND operation_id = ?",
+                    (user_id, op_id)
+                ).fetchone()
+                if existing_deposit:
+                    return {
+                        "current_amount": goal["current_amount"],
+                        "is_completed": goal["is_completed"],
+                        "message": "Đã tích lũy thêm thành công!",
+                        "already_processed": True
+                    }
+
+            if not op_id:
+                recent_deposit = conn.execute("""
+                    SELECT id FROM transactions
+                    WHERE user_id = ? AND wallet_id = ? AND amount = ? AND transaction_type = 'EXPENSE'
+                      AND note = ? AND datetime(created_at) >= datetime('now', '-5 seconds')
+                """, (user_id, body.wallet_id, body.amount, dep_note)).fetchone()
+                if recent_deposit:
+                    return {
+                        "current_amount": goal["current_amount"],
+                        "is_completed": goal["is_completed"],
+                        "message": "Đã tích lũy thêm thành công!",
+                        "already_processed": True
+                    }
+
+            # Trừ số dư ví
+            conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?",
+                         (body.amount, body.wallet_id, user_id))
+
+            # Ghi nhận giao dịch xuất tiền (EXPENSE) cho ví nạp
+            today_str = datetime.date.today().strftime("%Y-%m-%d")
+            goal_cat_id = get_or_create_system_category(conn, user_id, "Mục Tiêu Tiết Kiệm", "EXPENSE", "🎯")
+            conn.execute("""
+                INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note, operation_id)
+                VALUES (?, ?, ?, ?, 'EXPENSE', ?, ?, ?)
+            """, (user_id, body.wallet_id, goal_cat_id, body.amount, today_str, dep_note, op_id))
 
         new_amt = goal["current_amount"] + body.amount
         is_comp = 1 if new_amt >= goal["target_amount"] else goal["is_completed"]
 
         conn.execute("UPDATE saving_goals SET current_amount = ?, is_completed = ? WHERE id = ? AND user_id = ?",
-                     (new_amt, is_comp, goal_id, user["user_id"]))
+                     (new_amt, is_comp, goal_id, user_id))
 
         msg = "🎉 Chúc mừng đạo hữu đã hoàn thành mục tiêu tiết kiệm!" if is_comp and not goal["is_completed"] else "Đã tích lũy thêm thành công!"
         return {"current_amount": new_amt, "is_completed": is_comp, "message": msg}
@@ -1520,6 +1864,9 @@ def withdraw_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict =
             raise HTTPException(status_code=400, detail=f"Số dư mục tiêu không đủ (Hiện có {goal['current_amount']:,.0f} VNĐ).")
 
         if body.wallet_id:
+            w = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?", (body.wallet_id, user["user_id"])).fetchone()
+            if not w:
+                raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
             conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
                          (body.amount, body.wallet_id, user["user_id"]))
 
@@ -1535,49 +1882,16 @@ def withdraw_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict =
 @app.delete("/api/saving-goals/{goal_id}")
 def delete_saving_goal(goal_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
+        goal = conn.execute("SELECT id FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
+        if not goal:
+            raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại.")
         conn.execute("DELETE FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"]))
         return {"message": "Đã xóa mục tiêu tiết kiệm!"}
-
-
-class ProfileUpdateBody(BaseModel):
-    full_name: str
-
-
-@app.get("/api/user/profile")
-def get_profile(user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        u = conn.execute("SELECT id, email, full_name, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
-        if not u:
-            raise HTTPException(status_code=404, detail="Đạo Tâm không tồn tại.")
-        return dict(u)
-
-
-@app.put("/api/user/profile")
-def update_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_user)):
-    name = body.full_name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Đạo hiệu không được để trống.")
-    with get_db() as conn:
-        conn.execute("UPDATE users SET full_name = ? WHERE id = ?", (name, user["user_id"]))
-        return {"message": "Đạo hiệu đã được cập nhật thành công!", "full_name": name}
 
 
 # ──────────────────────────────────────────────
 # AI ROUTES (Google Gemini)
 # ──────────────────────────────────────────────
-def get_gemini_models_list(vision=False):
-    """Lấy danh sách các model Gemini khả dụng"""
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để đàm đạo cùng Khí Linh!"
-        )
-    
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-    candidate_models = []
-    
 def get_gemini_models_list(vision=False):
     """Trả về danh sách mô hình Gemini Flash ổn định, tốc độ phản hồi nhanh nhất"""
     return [
@@ -1619,9 +1933,10 @@ def _call_gemini_sync(contents, vision=False):
             last_error = e
             continue
             
+    print(f"[Gemini API Error] {repr(last_error)}", flush=True)
     raise HTTPException(
         status_code=504,
-        detail=f"Tiên Trí phản hồi quá lâu hoặc gặp trở ngại: {str(last_error) if last_error else 'Không thể kết nối Gemini API'}"
+        detail="Tiên Trí phản hồi quá lâu hoặc gặp trở ngại khi kết nối dịch vụ AI. Đạo hữu vui lòng thử lại sau."
     )
 
 
@@ -1637,10 +1952,150 @@ def generate_gemini_content(contents, vision=False):
 
 
 
+def get_max_ocr_file_size() -> int:
+    """Lấy giới hạn dung lượng tải lên OCR (bytes) từ biến môi trường, mặc định 5MB."""
+    try:
+        return int(os.getenv("MAX_OCR_FILE_SIZE", 5 * 1024 * 1024))
+    except (ValueError, TypeError):
+        return 5 * 1024 * 1024
+
+
+MAX_OCR_FILE_SIZE = get_max_ocr_file_size()
+ALLOWED_OCR_MIME_TYPES = {
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+}
+ALLOWED_OCR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+
+
+def validate_ocr_response(data: Any) -> dict:
+    """Xác thực nghiêm ngặt cấu trúc ngữ nghĩa (semantic schema) của kết quả OCR từ Gemini.
+    Finding 3.2:
+    - Loại bỏ các trường hợp status không phải hóa đơn (ví dụ: {"status": "not a receipt"}).
+    - Yêu cầu bắt buộc các trường: store_name (str), total_amount (number >= 0), date (str), items (list).
+    - Từ chối dữ liệu thiếu, sai kiểu hoặc không hợp lệ.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("Dữ liệu OCR không phải là đối tượng JSON hợp lệ.")
+
+    # 1. Kiểm tra các trạng thái từ chối ngữ nghĩa từ AI
+    raw_status = data.get("status")
+    if raw_status is not None:
+        status = str(raw_status).lower().strip()
+        invalid_statuses = (
+            "not a receipt", "not_receipt", "not_a_receipt", "no_receipt",
+            "not a bill", "invalid", "error", "failed", "unrecognized",
+            "rejected", "cannot parse", "no receipt", "unknown"
+        )
+        if status in invalid_statuses or status not in ("", "success", "ok", "valid", "completed"):
+            raise ValueError(f"Ảnh không phải là hóa đơn hợp lệ (AI status: {status}).")
+
+    if data.get("is_receipt") is False or data.get("is_invoice") is False:
+        raise ValueError("Ảnh không được nhận diện là hóa đơn.")
+
+    if data.get("error"):
+        raise ValueError(f"AI phản hồi lỗi phân tích: {data.get('error')}")
+
+    # 2. Kiểm tra store_name
+    store_name = data.get("store_name")
+    if not store_name or not isinstance(store_name, str) or not store_name.strip():
+        raise ValueError("Thiếu hoặc sai kiểu tên cửa hàng (store_name).")
+
+    # 3. Kiểm tra total_amount
+    total_amount = data.get("total_amount")
+    if total_amount is None or isinstance(total_amount, bool) or not isinstance(total_amount, (int, float)):
+        raise ValueError("Thiếu hoặc sai kiểu tổng số tiền (total_amount).")
+    if math.isnan(total_amount) or math.isinf(total_amount) or total_amount < 0:
+        raise ValueError("Tổng số tiền không được là số âm hoặc vô hạn.")
+
+    # 4. Kiểm tra date
+    date_val = data.get("date")
+    if not date_val or not isinstance(date_val, str):
+        raise ValueError("Thiếu hoặc sai kiểu ngày hóa đơn (date).")
+    try:
+        datetime.date.fromisoformat(date_val.strip()[:10])
+    except Exception:
+        raise ValueError("Định dạng ngày hóa đơn không hợp lệ (cần YYYY-MM-DD).")
+
+    # 5. Kiểm tra items
+    items = data.get("items")
+    if not isinstance(items, list):
+        raise ValueError("Danh sách sản phẩm (items) phải là một mảng.")
+
+    validated_items = []
+    for idx, it in enumerate(items):
+        if not isinstance(it, dict):
+            raise ValueError(f"Sản phẩm thứ {idx + 1} không hợp lệ.")
+        it_name = it.get("name")
+        if not it_name or not isinstance(it_name, str) or not it_name.strip():
+            raise ValueError(f"Sản phẩm thứ {idx + 1} thiếu tên hợp lệ.")
+        it_price = it.get("price", 0)
+        if it_price is None or isinstance(it_price, bool) or not isinstance(it_price, (int, float)) or it_price < 0 or math.isnan(it_price) or math.isinf(it_price):
+            raise ValueError(f"Sản phẩm thứ {idx + 1} có giá không hợp lệ.")
+        it_qty = it.get("quantity", 1)
+        if it_qty is None or isinstance(it_qty, bool) or not isinstance(it_qty, (int, float)) or it_qty <= 0 or math.isnan(it_qty) or math.isinf(it_qty):
+            it_qty = 1
+        validated_items.append({
+            "name": it_name.strip(),
+            "price": float(it_price),
+            "quantity": int(it_qty)
+        })
+
+    currency = str(data.get("currency", "VND")).strip() or "VND"
+
+    return {
+        "store_name": store_name.strip(),
+        "total_amount": float(total_amount),
+        "items": validated_items,
+        "date": date_val.strip()[:10],
+        "currency": currency
+    }
+
+
 @app.post("/api/ai/scan-invoice")
 async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    """Linh Nhãn AI OCR — quét hóa đơn từ ảnh"""
-    contents = await file.read()
+    """Linh Nhãn AI OCR — quét hóa đơn từ ảnh (Finding 3.2: Giới hạn kích thước và kiểm thực schema nghiêm ngặt)"""
+    # 1. Kiểm tra định dạng tệp (MIME type và extension)
+    content_type = (file.content_type or "").lower().strip()
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if content_type not in ALLOWED_OCR_MIME_TYPES or ext not in ALLOWED_OCR_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail="Định dạng tệp không được hỗ trợ. Vui lòng tải lên ảnh hóa đơn (JPEG, PNG, WEBP, HEIC)."
+        )
+
+    # 2. Kiểm tra dung lượng tải lên sớm (chống cạn kiệt bộ nhớ)
+    max_file_size = get_max_ocr_file_size()
+    max_mb = max_file_size / (1024 * 1024)
+    if file.size is not None and file.size > max_file_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Dung lượng tệp vượt quá giới hạn cho phép ({max_mb:.1f}MB)."
+        )
+
+    chunk_size = 64 * 1024
+    total_bytes = 0
+    chunks = []
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > max_file_size:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Dung lượng tệp vượt quá giới hạn cho phép ({max_mb:.1f}MB)."
+            )
+        chunks.append(chunk)
+
+    if total_bytes == 0:
+        raise HTTPException(status_code=400, detail="Tệp tải lên không được rỗng.")
+
+    contents = b"".join(chunks)
     b64_data = base64.b64encode(contents).decode()
 
     prompt = """Bạn là trợ lý AI tài chính. Hãy phân tích hóa đơn/receipt trong ảnh này.
@@ -1657,42 +2112,46 @@ async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_cu
     try:
         gemini_input = [
             prompt,
-            {"mime_type": file.content_type or "image/jpeg", "data": b64_data}
+            {"mime_type": content_type or "image/jpeg", "data": b64_data}
         ]
-        response_text = (await generate_gemini_content_async(gemini_input, vision=True)).strip()
+        response_raw = await generate_gemini_content_async(gemini_input, vision=True)
+        response_text = (response_raw or "").strip()
         
         # Try to parse JSON from response
         if response_text.startswith("```"):
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
+            parts = response_text.split("```")
+            if len(parts) > 1:
+                response_text = parts[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
             response_text = response_text.strip()
 
-        extracted = json.loads(response_text)
+        if not response_text:
+            raise ValueError("Phản hồi từ AI rỗng.")
 
-        # Log OCR result
+        try:
+            extracted = json.loads(response_text)
+        except Exception as json_err:
+            raise ValueError(f"Không thể giải mã JSON từ kết quả OCR: {json_err}")
+
+        # Kiểm thực ngữ nghĩa nghiêm ngặt trước khi ghi nhận
+        validated_data = validate_ocr_response(extracted)
+
+        # Log OCR result CHỈ KHI dữ liệu đã được kiểm thực hợp lệ
         with get_db() as conn:
             conn.execute(
                 "INSERT INTO invoice_ocr_logs (user_id, image_path, extracted_json) VALUES (?, ?, ?)",
-                (user["user_id"], file.filename, json.dumps(extracted, ensure_ascii=False))
+                (user["user_id"], file.filename or "invoice.jpg", json.dumps(validated_data, ensure_ascii=False))
             )
 
-        return {"success": True, "data": extracted}
+        return {"success": True, "data": validated_data}
     except Exception as e:
-        print(f"[OCR Handling Fallback Due To]: {e}")
-        fallback_data = {
-            "store_name": "Cửa Hàng Linh Đan (Trích xuất mẫu)",
-            "total_amount": 150000,
-            "items": [{"name": "Chi tiêu từ hóa đơn", "price": 150000, "quantity": 1}],
-            "date": datetime.date.today().strftime("%Y-%m-%d"),
-            "currency": "VND"
-        }
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO invoice_ocr_logs (user_id, image_path, extracted_json) VALUES (?, ?, ?)",
-                (user["user_id"], file.filename, json.dumps(fallback_data, ensure_ascii=False))
-            )
-        return {"success": True, "data": fallback_data}
+        print(f"[OCR Handling Error]: {repr(e)}")
+        # Tuyệt đối không tự sinh dữ liệu tài chính giả tạo khi OCR thất bại
+        raise HTTPException(
+            status_code=422,
+            detail="Linh Nhãn không thể nhận diện hóa đơn hợp lệ từ ảnh này. Đạo hữu vui lòng kiểm tra lại ảnh hoặc nhập tay."
+        )
 
 
 @app.post("/api/ai/check-budget")
@@ -1740,31 +2199,47 @@ def check_budget(user: dict = Depends(get_current_user)):
         return {"month_year": month_year, "alerts": alerts, "total_budgets": len(budgets)}
 
 
+# ──────────────────────────────────────────────
+# AI AGENT CORE & FINANCIAL TOOLS (KHÍ LINH TIÊN TRÍ)
+# ──────────────────────────────────────────────
+from ai_agent import (
+    AIProvider,
+    GeminiProvider,
+    MockAIProvider,
+    ToolRegistry,
+    build_default_tool_registry,
+    AgentCore,
+    AgentState,
+    AgentResponse,
+)
+
+_ai_registry = build_default_tool_registry()
+_ai_provider = GeminiProvider()
+ai_agent_core = AgentCore(provider=_ai_provider, registry=_ai_registry)
+
+
+def get_agent_core() -> AgentCore:
+    return ai_agent_core
+
+
+def set_agent_core(core: AgentCore):
+    global ai_agent_core
+    ai_agent_core = core
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
-    """Khí Linh Tiên Trí — trợ lý AI Gemini tư vấn tài chính (bản async không block event loop)"""
+    """Khí Linh Tiên Trí — trợ lý AI Agent kết nối hệ thống tài chính Càn Khôn Linh Thạch Các"""
     t_start = time.time()
-    month_year = datetime.date.today().strftime("%Y-%m")
-    
+    user_id = user["user_id"]
+
     with get_db() as conn:
         t_db_0 = time.time()
-        summary = conn.execute("""
-            SELECT
-                COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
-                COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense
-            FROM transactions WHERE user_id = ? AND strftime('%Y-%m', transaction_date) = ?
-        """, (user["user_id"], month_year)).fetchone()
-
-        total_balance = conn.execute(
-            "SELECT COALESCE(SUM(balance), 0) as total FROM wallets WHERE user_id = ?",
-            (user["user_id"],)
-        ).fetchone()["total"]
-
         # Lấy 3 lượt hội thoại gần nhất (6 tin nhắn) để giữ ngữ cảnh câu hỏi tiếp theo
         history_rows = conn.execute("""
             SELECT prompt_question, ai_response FROM chat_sessions
             WHERE user_id = ? ORDER BY id DESC LIMIT 3
-        """, (user["user_id"],)).fetchall()
+        """, (user_id,)).fetchall()
         t_db_1 = time.time()
 
     recent_history = ""
@@ -1776,32 +2251,33 @@ async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
             lines.append(f"Tiên Trí: {r['ai_response'][:150]}...")
         recent_history = "Hội thoại gần đây:\n" + "\n".join(lines) + "\n\n"
 
-    context = f"""Bạn là "Khí Linh Tiên Trí" — trợ lý AI tài chính phong cách tu tiên.
-Hãy trả lời câu hỏi bằng giọng văn tu tiên huyền huyễn nhưng ngắn gọn, súc tích và chính xác về tài chính.
-
-Thông tin tài chính tháng {month_year} của đạo hữu:
-- Tổng thu nhập (Khai Thác Linh Mạch): {summary['income']:,.0f} VNĐ
-- Tổng chi tiêu (Tiêu Hao Linh Thạch): {summary['expense']:,.0f} VNĐ
-- Tiết kiệm thuần: {summary['income'] - summary['expense']:,.0f} VNĐ
-- Tổng số dư tất cả ví (Túi Càn Khôn): {total_balance:,.0f} VNĐ
-
-{recent_history}Câu hỏi mới của đạo hữu: {body.message}"""
-
     try:
         t_ai_0 = time.time()
-        ai_answer = await generate_gemini_content_async(context, vision=False)
+        core = get_agent_core()
+        agent_resp: AgentResponse = await core.process_request(
+            user_id=user_id,
+            user_message=body.message,
+            recent_history=recent_history
+        )
         t_ai_1 = time.time()
 
         # Lưu lịch sử chat
         with get_db() as conn:
             conn.execute(
                 "INSERT INTO chat_sessions (user_id, prompt_question, ai_response) VALUES (?, ?, ?)",
-                (user["user_id"], body.message, ai_answer)
+                (user_id, body.message, agent_resp.text)
             )
 
         t_end = time.time()
-        print(f"[AI Chat Metric] DB: {t_db_1 - t_db_0:.3f}s | Gemini API: {t_ai_1 - t_ai_0:.3f}s | Total: {t_end - t_start:.3f}s")
-        return {"response": ai_answer}
+        print(f"[AI Chat Metric] DB: {t_db_1 - t_db_0:.3f}s | Agent: {t_ai_1 - t_ai_0:.3f}s | Total: {t_end - t_start:.3f}s")
+
+        return {
+            "response": agent_resp.text,
+            "state": agent_resp.state.value,
+            "tool_executed": agent_resp.tool_executed,
+            "tool_result": agent_resp.tool_result,
+            "pending_confirmation": agent_resp.pending_confirmation
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -1838,40 +2314,90 @@ def get_suggested_questions(user: dict = Depends(get_current_user)):
 # ──────────────────────────────────────────────
 # WALLET TRANSFER
 # ──────────────────────────────────────────────
-class TransferBody(BaseModel):
-    from_wallet_id: int
-    to_wallet_id: int
-    amount: float
-    note: str = ""
-
-
 @app.post("/api/wallets/transfer")
 def transfer_between_wallets(body: TransferBody, user: dict = Depends(get_current_user)):
-    """Chuyển Linh Thạch giữa các Túi Càn Khôn"""
+    """Chuyển Linh Thạch giữa các Túi Càn Khôn — Finding 2.1: Ghi nhận lịch sử giao dịch 2 chiều đầy đủ và nguyên tử"""
     if body.amount <= 0:
         raise HTTPException(status_code=400, detail="Số lượng Linh Thạch phải lớn hơn 0.")
     if body.from_wallet_id == body.to_wallet_id:
         raise HTTPException(status_code=400, detail="Không thể chuyển cho chính mình!")
 
+    user_id = user["user_id"]
+    op_id = body.operation_id.strip() if body.operation_id and body.operation_id.strip() else None
+
     with get_db() as conn:
         from_wallet = conn.execute(
             "SELECT * FROM wallets WHERE id = ? AND user_id = ?",
-            (body.from_wallet_id, user["user_id"])
+            (body.from_wallet_id, user_id)
         ).fetchone()
         to_wallet = conn.execute(
             "SELECT * FROM wallets WHERE id = ? AND user_id = ?",
-            (body.to_wallet_id, user["user_id"])
+            (body.to_wallet_id, user_id)
         ).fetchone()
 
         if not from_wallet or not to_wallet:
-            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại.")
+            raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại hoặc không thuộc quyền sở hữu.")
         if from_wallet["balance"] < body.amount:
             raise HTTPException(status_code=400, detail="Linh Thạch không đủ để chuyển!")
 
-        conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ?",
-                     (body.amount, body.from_wallet_id))
-        conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ?",
-                     (body.amount, body.to_wallet_id))
+        user_note = (body.note or "").strip()
+        from_note = f"Chuyển Linh Thạch đến '{to_wallet['wallet_name']}'" + (f": {user_note}" if user_note else "")
+        to_note = f"Nhận Linh Thạch từ '{from_wallet['wallet_name']}'" + (f": {user_note}" if user_note else "")
+
+        # Chống sinh trùng lặp (Idempotency):
+        if op_id:
+            existing_xfer = conn.execute(
+                "SELECT id FROM transactions WHERE user_id = ? AND operation_id = ?",
+                (user_id, op_id)
+            ).fetchall()
+            if existing_xfer:
+                return {
+                    "message": f"Đã chuyển {body.amount:,.0f} Linh Thạch từ '{from_wallet['wallet_name']}' sang '{to_wallet['wallet_name']}'!",
+                    "from_wallet": from_wallet["wallet_name"],
+                    "to_wallet": to_wallet["wallet_name"],
+                    "amount": body.amount,
+                    "already_processed": True
+                }
+
+        if not op_id:
+            recent_duplicate = conn.execute("""
+                SELECT id FROM transactions
+                WHERE user_id = ? AND wallet_id = ? AND amount = ? AND transaction_type = 'EXPENSE'
+                  AND note = ? AND datetime(created_at) >= datetime('now', '-5 seconds')
+            """, (user_id, body.from_wallet_id, body.amount, from_note)).fetchone()
+            if recent_duplicate:
+                return {
+                    "message": f"Đã chuyển {body.amount:,.0f} Linh Thạch từ '{from_wallet['wallet_name']}' sang '{to_wallet['wallet_name']}'!",
+                    "from_wallet": from_wallet["wallet_name"],
+                    "to_wallet": to_wallet["wallet_name"],
+                    "amount": body.amount,
+                    "already_processed": True
+                }
+
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+
+        # Lấy hoặc tạo danh mục Chuyển Khoản cho 2 chiều giao dịch
+        from_cat_id = get_or_create_system_category(conn, user_id, "Chuyển Khoản", "EXPENSE", "🔄")
+        to_cat_id = get_or_create_system_category(conn, user_id, "Chuyển Khoản", "INCOME", "🔄")
+
+        # Cập nhật số dư 2 ví trong cùng transaction nguyên tử
+        conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?",
+                     (body.amount, body.from_wallet_id, user_id))
+        conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
+                     (body.amount, body.to_wallet_id, user_id))
+
+        # Ghi nhận lịch sử 2 chiều:
+        # 1. Chiều xuất tiền (EXPENSE) từ ví nguồn
+        conn.execute("""
+            INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note, operation_id)
+            VALUES (?, ?, ?, ?, 'EXPENSE', ?, ?, ?)
+        """, (user_id, body.from_wallet_id, from_cat_id, body.amount, today_str, from_note, op_id))
+
+        # 2. Chiều nhập tiền (INCOME) vào ví đích
+        conn.execute("""
+            INSERT INTO transactions (user_id, wallet_id, category_id, amount, transaction_type, transaction_date, note, operation_id)
+            VALUES (?, ?, ?, ?, 'INCOME', ?, ?, ?)
+        """, (user_id, body.to_wallet_id, to_cat_id, body.amount, today_str, to_note, op_id))
 
         return {
             "message": f"Đã chuyển {body.amount:,.0f} Linh Thạch từ '{from_wallet['wallet_name']}' sang '{to_wallet['wallet_name']}'!",
@@ -2106,6 +2632,43 @@ def update_soul_lamp(body: SoulLampUpdateBody, user: dict = Depends(get_current_
         return {"message": "Đã cập nhật Bản Mệnh Hồn Đăng thành công!"}
 
 
+@app.put("/api/user/password")
+@app.post("/api/user/password")
+@app.post("/api/auth/change-password")
+def change_password(body: ChangePasswordBody, user: dict = Depends(get_current_user)):
+    """Đổi khẩu quyết (mật khẩu) cho tài khoản đang đăng nhập — Finding 3.1: Hủy toàn bộ JWT cũ"""
+    if not body.new_password or len(body.new_password) < 4:
+        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 4 ký tự.")
+
+    with get_db() as conn:
+        u = conn.execute("SELECT id, password_hash FROM users WHERE id = ?", (user["user_id"],)).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+
+        stored_hash = u["password_hash"] or ""
+        is_pw_valid = False
+        try:
+            if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$") or stored_hash.startswith("$2y$"):
+                is_pw_valid = bcrypt.checkpw(body.current_password.encode("utf-8"), stored_hash.encode("utf-8"))
+            else:
+                sha256_hash = hashlib.sha256(body.current_password.encode("utf-8")).hexdigest()
+                if stored_hash == sha256_hash or stored_hash == body.current_password:
+                    is_pw_valid = True
+        except Exception:
+            is_pw_valid = False
+
+        if not is_pw_valid:
+            raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác.")
+
+        new_hash = bcrypt.hashpw(body.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        conn.execute(
+            "UPDATE users SET password_hash = ?, token_version = COALESCE(token_version, 1) + 1 WHERE id = ?",
+            (new_hash, user["user_id"])
+        )
+
+    return {"message": "Đổi mật khẩu thành công! Các phiên đăng nhập cũ đã hết hiệu lực. Vui lòng đăng nhập lại."}
+
+
 # ──────────────────────────────────────────────
 # ADMIN ROUTES (QUẢN TRỊ TÔNG MÔN)
 # ──────────────────────────────────────────────
@@ -2115,26 +2678,11 @@ def get_admin_stats(admin: dict = Depends(require_admin)):
         total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         active_users = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 1").fetchone()[0]
         locked_users = conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 0").fetchone()[0]
-        total_wallets = conn.execute("SELECT COUNT(*) FROM wallets").fetchone()[0]
-        total_txns = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
-        total_income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE transaction_type = 'INCOME'").fetchone()[0]
-        total_expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE transaction_type = 'EXPENSE'").fetchone()[0]
-        total_balance = conn.execute("SELECT COALESCE(SUM(balance), 0) FROM wallets").fetchone()[0]
-        total_debts = conn.execute("SELECT COUNT(*) FROM debts").fetchone()[0]
-        total_goals = conn.execute("SELECT COUNT(*) FROM saving_goals").fetchone()[0]
 
         return {
             "total_users": total_users,
             "active_users": active_users,
             "locked_users": locked_users,
-            "total_wallets": total_wallets,
-            "total_transactions": total_txns,
-            "total_income": total_income,
-            "total_expense": total_expense,
-            "total_system_cashflow": total_income + total_expense,
-            "total_balance": total_balance,
-            "total_debts": total_debts,
-            "total_goals": total_goals,
         }
 
 
@@ -2142,15 +2690,9 @@ def get_admin_stats(admin: dict = Depends(require_admin)):
 def get_admin_users(admin: dict = Depends(require_admin)):
     with get_db() as conn:
         users = conn.execute("""
-            SELECT 
-                u.id, u.email, u.full_name, u.role, u.is_active, u.created_at,
-                COUNT(DISTINCT w.id) as wallet_count,
-                COALESCE(SUM(w.balance), 0) as total_balance,
-                (SELECT COUNT(*) FROM transactions t WHERE t.user_id = u.id) as txn_count
-            FROM users u
-            LEFT JOIN wallets w ON w.user_id = u.id
-            GROUP BY u.id
-            ORDER BY u.id ASC
+            SELECT id, email, full_name, role, is_active, created_at
+            FROM users
+            ORDER BY id ASC
         """).fetchall()
         return [dict(u) for u in users]
 
