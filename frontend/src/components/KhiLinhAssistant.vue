@@ -1,40 +1,38 @@
 <template>
-  <div class="khi-linh-wrapper" :class="{ 'is-open': isOpen, 'is-minimized': isMinimized }">
+  <div class="khi-linh-root">
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- P1: PERSISTENT FLOATING SPIRIT COMPANION ENTRY POINT       -->
+    <!-- B. KHÍ LINH NHỎ: FLOATING ACTIVATION SWITCH ONLY            -->
+    <!-- Biến mất khi Live System Mode active                        -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div
-      v-if="!isOpen || isMinimized"
-      class="khi-linh-floating-companion"
-      :class="['state-' + agentState.toLowerCase(), { 'is-listening': isListening }]"
-      @click="openAssistant"
-      :title="'Khí Linh Tiên Trí — Trạng thái: ' + getStateLabel(agentState)"
+      v-if="!isLiveActive"
+      id="btn-khilinh-switch"
+      class="khi-linh-floating-switch"
+      :class="['state-' + agentState.toLowerCase()]"
+      @click="activateLiveMode"
       role="button"
       tabindex="0"
-      @keydown.enter="openAssistant"
-      @keydown.space.prevent="openAssistant"
-      aria-label="Mở trợ lý Khí Linh AI"
+      @keydown.enter="activateLiveMode"
+      @keydown.space.prevent="activateLiveMode"
+      title="Khí Linh Tiên Trí — Bấm để kích hoạt Live System Mode"
+      aria-label="Kích hoạt Live System Mode"
     >
-      <!-- Ethereal Spirit Glow Rings -->
       <div class="spirit-halo"></div>
-      <div v-if="isListening" class="sound-wave-ring wave-1"></div>
-      <div v-if="isListening" class="sound-wave-ring wave-2"></div>
 
       <!-- Chibi Celestial Spirit SVG -->
       <div class="spirit-chibi-body">
         <svg viewBox="0 0 100 100" class="spirit-svg" aria-hidden="true">
           <defs>
-            <!-- Spirit Gradients -->
             <radialGradient id="spiritGrad" cx="45%" cy="40%" r="55%">
               <stop offset="0%" stop-color="#ffffff" />
               <stop offset="40%" stop-color="#e0f7f5" />
-              <stop offset="85%" stop-color="#76dcd1" />
-              <stop offset="100%" stop-color="#2b8a82" />
+              <stop offset="85%" stop-color="#a78bfa" />
+              <stop offset="100%" stop-color="#6d28d9" />
             </radialGradient>
             <radialGradient id="spiritHaloGrad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stop-color="rgba(232, 200, 116, 0.7)" />
-              <stop offset="70%" stop-color="rgba(79, 168, 160, 0.4)" />
-              <stop offset="100%" stop-color="rgba(79, 168, 160, 0)" />
+              <stop offset="0%" stop-color="rgba(167, 139, 250, 0.7)" />
+              <stop offset="70%" stop-color="rgba(124, 58, 237, 0.4)" />
+              <stop offset="100%" stop-color="rgba(124, 58, 237, 0)" />
             </radialGradient>
             <filter id="spiritGlow">
               <feGaussianBlur stdDeviation="3" result="blur" />
@@ -45,7 +43,7 @@
           <!-- Halo Aura -->
           <circle cx="50" cy="50" r="46" fill="url(#spiritHaloGrad)" class="halo-circle" />
 
-          <!-- Tiny Celestial Floating Clouds / Wings -->
+          <!-- Tiny Celestial Floating Wings -->
           <path d="M16,56 C8,50 10,38 20,42 C20,32 32,32 34,44 Z" fill="rgba(255,255,255,0.85)" class="cloud-wing wing-left" />
           <path d="M84,56 C92,50 90,38 80,42 C80,32 68,32 66,44 Z" fill="rgba(255,255,255,0.85)" class="cloud-wing wing-right" />
 
@@ -54,365 +52,262 @@
 
           <!-- Yin-Yang Forehead Sigil -->
           <circle cx="50" cy="33" r="4.5" fill="#e8c874" opacity="0.9" />
-          <circle cx="50" cy="33" r="2" fill="#2b8a82" />
+          <circle cx="50" cy="33" r="2" fill="#7c3aed" />
 
-          <!-- Cute Chibi Eyes (React to Agent State) -->
-          <!-- SUCCESS: Joyful curved eyes -->
-          <g v-if="agentState === 'SUCCESS'" class="eyes-success">
-            <path d="M38,48 Q42,43 46,48" stroke="#1a3a5c" stroke-width="3" stroke-linecap="round" fill="none" />
-            <path d="M54,48 Q58,43 62,48" stroke="#1a3a5c" stroke-width="3" stroke-linecap="round" fill="none" />
-          </g>
-          <!-- THINKING: Looking up in thought -->
-          <g v-else-if="agentState === 'THINKING' || agentState === 'PLANNING'" class="eyes-thinking">
-            <ellipse cx="43" cy="47" rx="3.5" ry="4.5" fill="#1a3a5c" />
-            <circle cx="44" cy="45" r="1.5" fill="#ffffff" />
-            <ellipse cx="59" cy="47" rx="3.5" ry="4.5" fill="#1a3a5c" />
-            <circle cx="60" cy="45" r="1.5" fill="#ffffff" />
-          </g>
-          <!-- CONFIRMING: Wide alert eyes -->
-          <g v-else-if="agentState === 'CONFIRMING'" class="eyes-confirming">
-            <ellipse cx="42" cy="50" rx="4.5" ry="5.5" fill="#1a3a5c" />
-            <circle cx="44" cy="48" r="2" fill="#ffffff" />
-            <ellipse cx="58" cy="50" rx="4.5" ry="5.5" fill="#1a3a5c" />
-            <circle cx="60" cy="48" r="2" fill="#ffffff" />
-          </g>
-          <!-- ERROR: Worried eyes -->
-          <g v-else-if="agentState === 'ERROR'" class="eyes-error">
-            <path d="M38,50 Q42,53 46,50" stroke="#c0392b" stroke-width="3" stroke-linecap="round" fill="none" />
-            <path d="M54,50 Q58,53 62,50" stroke="#c0392b" stroke-width="3" stroke-linecap="round" fill="none" />
-          </g>
-          <!-- DEFAULT / IDLE / LISTENING: Cute blinking eyes -->
-          <g v-else class="eyes-normal">
-            <ellipse cx="42" cy="50" rx="3.5" ry="4.5" fill="#1a3a5c" class="eye-left" />
-            <circle cx="43.5" cy="48.5" r="1.5" fill="#ffffff" />
-            <ellipse cx="58" cy="50" rx="3.5" ry="4.5" fill="#1a3a5c" class="eye-right" />
-            <circle cx="59.5" cy="48.5" r="1.5" fill="#ffffff" />
-          </g>
+          <!-- Eyes -->
+          <ellipse cx="42" cy="50" rx="3.5" ry="4.5" fill="#1a103c" class="eye-left" />
+          <circle cx="43.5" cy="48.5" r="1.5" fill="#ffffff" />
+          <ellipse cx="58" cy="50" rx="3.5" ry="4.5" fill="#1a103c" class="eye-right" />
+          <circle cx="59.5" cy="48.5" r="1.5" fill="#ffffff" />
 
-          <!-- Rosy Blush -->
-          <ellipse cx="34" cy="55" rx="3.5" ry="2" fill="rgba(255, 130, 150, 0.45)" />
-          <ellipse cx="66" cy="55" rx="3.5" ry="2" fill="rgba(255, 130, 150, 0.45)" />
+          <!-- Blush -->
+          <ellipse cx="34" cy="55" rx="3.5" ry="2" fill="rgba(255, 130, 180, 0.45)" />
+          <ellipse cx="66" cy="55" rx="3.5" ry="2" fill="rgba(255, 130, 180, 0.45)" />
 
-          <!-- Cute Smile Mouth -->
-          <path v-if="agentState !== 'ERROR'" d="M47,56 Q50,60 53,56" stroke="#1a3a5c" stroke-width="2" stroke-linecap="round" fill="none" />
-          <path v-else d="M47,58 Q50,55 53,58" stroke="#c0392b" stroke-width="2" stroke-linecap="round" fill="none" />
+          <!-- Cute Smile -->
+          <path d="M47,56 Q50,60 53,56" stroke="#1a103c" stroke-width="2" stroke-linecap="round" fill="none" />
 
           <!-- Bottom Floating Clouds -->
           <path d="M30,76 Q40,70 50,75 Q60,70 70,76 Q60,84 50,81 Q40,84 30,76 Z" fill="rgba(255, 255, 255, 0.9)" />
         </svg>
       </div>
 
-      <!-- State Status Badge on Companion -->
-      <div class="companion-state-badge" :class="'badge-' + agentState.toLowerCase()">
-        <span class="badge-icon">{{ getStateIcon(agentState) }}</span>
+      <!-- State Badge -->
+      <div class="switch-badge">
+        <span class="badge-icon">🔮</span>
       </div>
 
-      <!-- Floating Tooltip Prompt -->
-      <div class="companion-tooltip" v-if="!isHoverMuted">
-        <span class="tooltip-text">{{ getCompanionTooltip(agentState) }}</span>
+      <!-- Tooltip prompt -->
+      <div class="switch-tooltip">
+        <span>Bấm hoặc nói "Hệ thống"</span>
       </div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- P0 & P1: KHÍ LINH INTERACTIVE SANCTUARY (DRAWER / PANEL)   -->
+    <!-- PHẦN 3 & 4: LIVE SYSTEM MODE (DARK OVERLAY & SYSTEM FRAME)  -->
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <div v-show="isOpen && !isMinimized" class="khi-linh-sanctuary">
-      <!-- Sanctuary Header -->
-      <div class="sanctuary-header">
-        <div class="header-companion-avatar">
-          <div class="mini-spirit-orb" :class="'state-' + agentState.toLowerCase()">
-            <span>🔮</span>
-          </div>
-          <div class="header-titles">
-            <div class="name-row">
-              <h3 class="sanctuary-title">Khí Linh Tiên Trí</h3>
-              <span class="dao-badge">AI Agent</span>
-            </div>
-            <!-- REAL AGENT STATE UI VISUAL BADGE -->
-            <div class="real-agent-state-chip" :class="'state-' + agentState.toLowerCase()">
-              <span class="pulse-dot"></span>
-              <span class="state-text">{{ getStateLabel(agentState) }}</span>
-            </div>
-          </div>
-        </div>
+    <Teleport to="body">
+      <div v-if="isLiveActive" class="system-mode-overlay" @click.self="deactivateLiveMode">
+        <div class="system-frame" role="dialog" aria-modal="true" aria-labelledby="sys-title">
+          <!-- Ambient Corner Runes -->
+          <div class="frame-corner top-left"></div>
+          <div class="frame-corner top-right"></div>
+          <div class="frame-corner bottom-left"></div>
+          <div class="frame-corner bottom-right"></div>
 
-        <div class="header-actions">
-          <!-- P2: Audio TTS Toggle -->
-          <button
-            class="header-action-btn tts-btn"
-            :class="{ active: ttsEnabled }"
-            @click="toggleTTS"
-            :title="ttsEnabled ? 'Tắt giọng nói Khí Linh' : 'Bật giọng nói Khí Linh'"
-            aria-label="Bật/Tắt giọng đọc"
-          >
-            {{ ttsEnabled ? '🔊' : '🔇' }}
-          </button>
+          <!-- ─── HEADER: KHÍ LINH GÓC TRÊN TRÁI & NÚT X GÓC TRÊN PHẢI ─── -->
+          <div class="system-frame-header">
+            <div class="spirit-header-left">
+              <!-- Khí Linh Chibi xuất hiện ở góc trên bên trái của System Frame -->
+              <div class="frame-spirit-orb" :class="'state-' + agentState.toLowerCase()">
+                <div class="chibi-avatar-wrap">
+                  <svg viewBox="0 0 100 100" class="chibi-small-svg">
+                    <circle cx="50" cy="50" r="44" fill="url(#spiritGrad)" />
+                    <circle cx="50" cy="33" r="3.5" fill="#e8c874" />
+                    <ellipse cx="42" cy="50" rx="3.5" ry="4.5" fill="#1a103c" />
+                    <ellipse cx="58" cy="50" rx="3.5" ry="4.5" fill="#1a103c" />
+                    <circle cx="43.5" cy="48.5" r="1.5" fill="#ffffff" />
+                    <circle cx="59.5" cy="48.5" r="1.5" fill="#ffffff" />
+                    <path d="M47,56 Q50,60 53,56" stroke="#1a103c" stroke-width="2" stroke-linecap="round" fill="none" />
+                  </svg>
+                </div>
+                <div class="spirit-pulse-ring" v-if="agentState === 'LISTENING' || agentState === 'SPEAKING'"></div>
+              </div>
 
-          <!-- Clear History -->
-          <button
-            class="header-action-btn"
-            @click="clearChat"
-            title="Làm mới đàm đạo"
-            aria-label="Làm mới trò chuyện"
-          >
-            🧹
-          </button>
-
-          <!-- Minimize Sanctuary -->
-          <button
-            class="header-action-btn"
-            @click="isMinimized = true"
-            title="Thu nhỏ Khí Linh"
-            aria-label="Thu nhỏ"
-          >
-            🗕
-          </button>
-
-          <!-- Close Sanctuary -->
-          <button
-            class="header-action-btn close-btn"
-            @click="closeAssistant"
-            title="Đóng giao diện"
-            aria-label="Đóng giao diện"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <!-- Listening Wave Banner (Active strictly when isListening is true) -->
-      <div v-if="isListening" class="listening-banner">
-        <div class="listening-anim-waves">
-          <span></span><span></span><span></span><span></span><span></span>
-        </div>
-        <div class="listening-text">
-          <strong>Khí Linh đang lắng nghe...</strong>
-          <span class="listening-sub">Nói lệnh tài chính của đạo hữu (tiếng Việt)</span>
-        </div>
-        <button class="btn-stop-listening" @click="stopListening" title="Dừng thu âm">
-          ⏹ Dừng
-        </button>
-      </div>
-
-      <!-- Chat History Area -->
-      <div class="sanctuary-body" ref="chatScrollEl">
-        <!-- Welcome Card -->
-        <div class="khi-linh-welcome-card">
-          <div class="welcome-top">
-            <span class="welcome-symbol">☯</span>
-            <h4>Kính chào Ký Chủ!</h4>
-          </div>
-          <p class="welcome-desc">
-            Ta là <strong>Khí Linh Tiên Trí</strong>, trợ lý đắc lực kết nối trực tiếp với Đạo Đường Càn Khôn.
-            Đạo hữu có thể tra cứu tài chính hoặc ra lệnh ghi nhận bằng văn bản hoặc giọng nói.
-          </p>
-          <div class="welcome-shortcuts">
-            <button
-              v-for="tip in quickPromptList"
-              :key="tip"
-              class="quick-tip-chip"
-              @click="selectPrompt(tip)"
-            >
-              {{ tip }}
-            </button>
-          </div>
-        </div>
-
-        <!-- Chat Bubble Stream -->
-        <div
-          v-for="(msg, idx) in messages"
-          :key="'msg-' + idx"
-          :class="['chat-bubble-row', msg.role === 'user' ? 'row-user' : 'row-ai']"
-        >
-          <div class="bubble-avatar-wrapper">
-            <span class="bubble-avatar">{{ msg.role === 'user' ? '🧙' : '🔮' }}</span>
-          </div>
-
-          <div class="bubble-content-box">
-            <div class="bubble-header-info">
-              <span class="sender-name">{{ msg.role === 'user' ? 'Ký Chủ' : 'Khí Linh' }}</span>
-              <span class="msg-time">{{ msg.time }}</span>
+              <div class="system-title-group">
+                <span id="sys-title" class="system-codename">[ HỆ THỐNG THẦN THỨC CÀN KHÔN ]</span>
+                <div class="system-state-indicator" :class="'state-' + agentState.toLowerCase()">
+                  <span class="pulse-beacon"></span>
+                  <span class="state-label">{{ getStateDescription(agentState) }}</span>
+                </div>
+              </div>
             </div>
 
-            <!-- Message Text -->
-            <div class="bubble-text" v-html="formatMessage(msg.text)"></div>
-
-            <!-- ═══════════════════════════════════════════════════════════ -->
-            <!-- P0: FINANCIAL CONFIRMATION UX (MANDATORY CONFIRMATION CARD)-->
-            <!-- ═══════════════════════════════════════════════════════════ -->
-            <div
-              v-if="msg.confirmation && msg.confirmation.isPending"
-              class="financial-confirmation-card"
-            >
-              <div class="confirmation-card-header">
-                <span class="confirm-icon">✨</span>
-                <span class="confirm-spirit-title">Khí Linh Xác Nhận</span>
+            <div class="spirit-header-right">
+              <!-- Sound wave visualizer when listening/speaking -->
+              <div v-if="agentState === 'LISTENING' || agentState === 'SPEAKING'" class="audio-wave-bars">
+                <span class="bar bar-1"></span>
+                <span class="bar bar-2"></span>
+                <span class="bar bar-3"></span>
+                <span class="bar bar-4"></span>
+                <span class="bar bar-5"></span>
               </div>
 
-              <div class="confirmation-action-title">
-                {{ getToolActionTitle(msg.confirmation.tool_name) }}
+              <!-- TTS Toggle -->
+              <button
+                class="sys-icon-btn"
+                :class="{ active: ttsEnabled }"
+                @click="toggleTTS"
+                :title="ttsEnabled ? 'Tắt giọng nói Khí Linh' : 'Bật giọng nói Khí Linh'"
+                aria-label="Bật/Tắt giọng đọc"
+              >
+                {{ ttsEnabled ? '🔊' : '🔇' }}
+              </button>
+
+              <!-- Close Button X: PHẦN 14 -->
+              <button
+                id="btn-close-live-system"
+                class="sys-close-btn"
+                @click="deactivateLiveMode"
+                title="Đóng Live System Mode (Esc)"
+                aria-label="Đóng giao diện Hệ Thống"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- ─── BODY: PHẦN 4 & 5 — SYSTEM FRAME DISPLAY ─── -->
+          <!-- KHÔNG hiển thị conversation history. KHÔNG hiển thị câu user nói -->
+          <!-- Ban đầu hoàn toàn trống. Chỉ hiện response/processing/confirmation/result -->
+          <div class="system-frame-body">
+            <!-- 1. Trạng thái PROCESSING / ĐANG TRA CỨU: PHẦN 10 -->
+            <div v-if="agentState === 'PROCESSING' || agentState === 'EXECUTING'" class="system-processing-state">
+              <div class="celestial-spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-rune">☯</div>
+              </div>
+              <div class="processing-text-group">
+                <h4 class="processing-title">Đang tra cứu linh tịch...</h4>
+                <p class="processing-sub">Khí Linh đang tính toán sổ sách và đạo pháp</p>
+              </div>
+            </div>
+
+            <!-- 2. Hộp thoại XÁC NHẬN THAO TÁC: PHẦN 11 -->
+            <div v-else-if="currentConfirmation" class="system-confirmation-box">
+              <div class="conf-badge-header">
+                <span class="conf-warn-icon">⚠️</span>
+                <span class="conf-warn-title">XÁC NHẬN THAO TÁC HỆ THỐNG</span>
               </div>
 
-              <div class="confirmation-amount-highlight">
-                {{ formatCurrency(msg.confirmation.args?.amount) }}
+              <div class="conf-action-name">
+                {{ currentConfirmation.title }}
               </div>
 
-              <div class="confirmation-details-list">
-                <div v-if="msg.confirmation.args?.note" class="detail-item">
-                  <span class="detail-label">Nội dung:</span>
-                  <strong class="detail-value">{{ msg.confirmation.args.note }}</strong>
-                </div>
+              <div v-if="currentConfirmation.amount" class="conf-amount-highlight">
+                {{ formatCurrency(currentConfirmation.amount) }}
+              </div>
 
-                <div v-if="msg.confirmation.args?.category_name" class="detail-item">
-                  <span class="detail-label">Danh mục:</span>
-                  <span class="detail-badge">{{ msg.confirmation.args.category_name }}</span>
+              <div class="conf-details-grid">
+                <div v-if="currentConfirmation.note" class="conf-detail-row">
+                  <span class="label">Nội dung:</span>
+                  <span class="val">{{ currentConfirmation.note }}</span>
                 </div>
-
-                <div v-if="msg.confirmation.args?.wallet_name" class="detail-item">
-                  <span class="detail-label">Túi tiền:</span>
-                  <span class="detail-badge wallet">{{ msg.confirmation.args.wallet_name }}</span>
+                <div v-if="currentConfirmation.category" class="conf-detail-row">
+                  <span class="label">Danh mục:</span>
+                  <span class="val badge">{{ currentConfirmation.category }}</span>
                 </div>
-
-                <div v-if="msg.confirmation.args?.from_wallet_name" class="detail-item">
-                  <span class="detail-label">Ví nguồn:</span>
-                  <span class="detail-badge wallet">{{ msg.confirmation.args.from_wallet_name }}</span>
+                <div v-if="currentConfirmation.wallet" class="conf-detail-row">
+                  <span class="label">Túi tiền:</span>
+                  <span class="val badge wallet">{{ currentConfirmation.wallet }}</span>
                 </div>
-
-                <div v-if="msg.confirmation.args?.to_wallet_name" class="detail-item">
-                  <span class="detail-label">Ví đích:</span>
-                  <span class="detail-badge wallet">{{ msg.confirmation.args.to_wallet_name }}</span>
+                <div v-if="currentConfirmation.fromWallet" class="conf-detail-row">
+                  <span class="label">Ví nguồn:</span>
+                  <span class="val badge">{{ currentConfirmation.fromWallet }}</span>
                 </div>
-
-                <div v-if="msg.confirmation.args?.goal_name" class="detail-item">
-                  <span class="detail-label">Mục tiêu:</span>
-                  <span class="detail-badge">{{ msg.confirmation.args.goal_name }}</span>
+                <div v-if="currentConfirmation.toWallet" class="conf-detail-row">
+                  <span class="label">Ví đích:</span>
+                  <span class="val badge">{{ currentConfirmation.toWallet }}</span>
+                </div>
+                <div v-if="currentConfirmation.goal" class="conf-detail-row">
+                  <span class="label">Mục tiêu:</span>
+                  <span class="val badge">{{ currentConfirmation.goal }}</span>
                 </div>
               </div>
 
-              <!-- P0: Real Confirmation / Cancellation Action Buttons -->
-              <div class="confirmation-button-group">
+              <div class="conf-prompt-question">
+                Ký chủ có muốn xác nhận thực thi thao tác này không?
+              </div>
+
+              <!-- Buttons (User can also speak "Xác nhận" or "Hủy") -->
+              <div class="conf-action-buttons">
                 <button
-                  id="btn-khilinh-confirm"
-                  class="btn-confirm-action"
-                  :disabled="agentState === 'EXECUTING'"
-                  @click="handleConfirmCard(msg)"
+                  id="btn-system-confirm"
+                  class="btn-system-confirm"
+                  @click="handleVoiceAction('Xác nhận')"
                 >
-                  <span v-if="agentState === 'EXECUTING'">⏳ Đang thực hiện...</span>
-                  <span v-else>✅ Xác nhận</span>
+                  ⚡ Xác Nhận (Nói "Xác nhận")
                 </button>
-
                 <button
-                  id="btn-khilinh-cancel"
-                  class="btn-cancel-action"
-                  :disabled="agentState === 'EXECUTING'"
-                  @click="handleCancelCard(msg)"
+                  id="btn-system-cancel"
+                  class="btn-system-cancel"
+                  @click="handleVoiceAction('Hủy')"
                 >
-                  ❌ Hủy
+                  Hủy Bỏ (Nói "Hủy")
                 </button>
               </div>
             </div>
 
-            <!-- SUCCESS EXECUTION BADGE (If transaction was completed) -->
-            <div v-if="msg.toolExecuted" class="tool-executed-card">
-              <span class="executed-icon">📜</span>
-              <span class="executed-text">Đã ghi nhận thành công vào sổ sách Càn Khôn!</span>
+            <!-- 3. KẾT QUẢ / PHẢN HỒI HIỆN TẠI: PHẦN 10 -->
+            <div v-else-if="currentDisplayContent" class="system-response-display">
+              <div class="response-seal">
+                <span class="seal-icon">📜</span>
+                <span class="seal-tag">PHẢN HỒI THẦN THỨC</span>
+                <span v-if="displaySecondsRemaining > 0" class="countdown-badge">
+                  ⏱ Tự dọn sau {{ displaySecondsRemaining }}s
+                </span>
+              </div>
+
+              <div class="response-main-text" v-html="formatResponseText(currentDisplayContent)"></div>
+
+              <div v-if="currentExecutionResult" class="execution-result-card">
+                <span class="exec-icon">✨</span>
+                <span class="exec-text">{{ currentExecutionResult }}</span>
+              </div>
+            </div>
+
+            <!-- 4. KHUNG TRỐNG KHI MỚI MỞ HOẶC SAU 10S: PHẦN 5 & PHẦN 13 -->
+            <div v-else class="system-empty-standby">
+              <div class="standby-sigil">
+                <div class="sigil-outer-ring"></div>
+                <div class="sigil-inner-rune">✨</div>
+              </div>
+              <p class="standby-hint">
+                <span class="pulse-dot-cyan"></span>
+                Khí Linh đang thường trực lắng nghe. Ký chủ chỉ cần trực tiếp truyền khẩu lệnh.
+              </p>
+              <div class="standby-examples">
+                <span class="ex-chip">"Tháng này ta đã chi bao nhiêu?"</span>
+                <span class="ex-chip">"Ăn sáng hết 50 nghìn"</span>
+                <span class="ex-chip">"Ví tiền mặt còn bao nhiêu?"</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ─── FOOTER BAR: STATUS AND MIC ─── -->
+          <div class="system-frame-footer">
+            <div class="footer-status-left">
+              <span class="status-dot" :class="'dot-' + agentState.toLowerCase()"></span>
+              <span class="status-summary">{{ getFooterStatusText() }}</span>
+            </div>
+
+            <!-- Manual mic toggle for convenience / testing -->
+            <div class="footer-controls-right">
+              <button
+                class="btn-live-mic-toggle"
+                :class="{ active: isListening }"
+                @click="toggleManualListening"
+                :title="isListening ? 'Đang lắng nghe liên tục' : 'Bật lắng nghe'"
+              >
+                <span v-if="isListening">🔴 Đang Nghe...</span>
+                <span v-else>🎙️ Tiếp Tục Nghe</span>
+              </button>
             </div>
           </div>
         </div>
-
-        <!-- Dynamic Agent State Indicators (THINKING / PLANNING / EXECUTING) -->
-        <div v-if="agentState === 'THINKING' || agentState === 'PLANNING'" class="agent-working-indicator">
-          <div class="working-spirit-icon">🔮</div>
-          <div class="working-content">
-            <span class="working-label">
-              {{ agentState === 'PLANNING' ? 'Khí Linh đang lập kế hoạch thao tác...' : 'Khí Linh đang suy nghĩ...' }}
-            </span>
-            <div class="typing-dots">
-              <span></span><span></span><span></span>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="agentState === 'EXECUTING'" class="agent-working-indicator executing">
-          <div class="working-spirit-icon spin-runes">⚡</div>
-          <div class="working-content">
-            <span class="working-label">Đang truyền chân khí thực hiện biến động...</span>
-            <div class="progress-bar-xianxia"><div class="progress-fill"></div></div>
-          </div>
-        </div>
       </div>
-
-      <!-- Live Voice Transcript Preview (While speaking) -->
-      <div v-if="liveTranscript" class="live-transcript-box">
-        <span class="mic-glyph">🎙️</span>
-        <span class="transcript-text">{{ liveTranscript }}</span>
-      </div>
-
-      <!-- Quick Suggestion Bar -->
-      <div v-if="activeSuggestions.length" class="quick-suggestions-bar">
-        <button
-          v-for="sug in activeSuggestions"
-          :key="sug"
-          class="suggestion-chip"
-          @click="selectPrompt(sug)"
-        >
-          {{ sug }}
-        </button>
-      </div>
-
-      <!-- Sanctuary Footer & Input Area -->
-      <div class="sanctuary-footer">
-        <div class="chat-input-row">
-          <!-- Text Input Field -->
-          <input
-            ref="inputFieldEl"
-            v-model="inputQuery"
-            type="text"
-            class="khi-linh-input"
-            placeholder="Hỏi số dư, ghi nhận chi tiêu (vd: Ăn trưa 45k)..."
-            :disabled="agentState === 'THINKING' || agentState === 'PLANNING' || agentState === 'EXECUTING'"
-            @keyup.enter="handleSend"
-          />
-
-          <!-- P2: Microphone Button for Vietnamese STT -->
-          <button
-            id="btn-khilinh-mic"
-            class="mic-action-btn"
-            :class="{ 'recording': isListening }"
-            :disabled="!speechSupported || agentState === 'EXECUTING'"
-            @click="toggleListening"
-            :title="isListening ? 'Dừng lắng nghe' : 'Nói lệnh bằng giọng nói (Tiếng Việt)'"
-            aria-label="Nói lệnh bằng giọng nói"
-          >
-            <span v-if="isListening" class="mic-wave-icon">🔴</span>
-            <span v-else class="mic-idle-icon">🎙️</span>
-          </button>
-
-          <!-- Send Text Button -->
-          <button
-            id="btn-khilinh-send"
-            class="send-action-btn"
-            :disabled="!inputQuery.trim() || agentState === 'THINKING' || agentState === 'PLANNING' || agentState === 'EXECUTING'"
-            @click="handleSend"
-            title="Gửi lệnh"
-            aria-label="Gửi lệnh"
-          >
-            ⚡
-          </button>
-        </div>
-      </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 
 export default {
   name: 'KhiLinhAssistant',
   props: {
     api: {
-      type: Function,
+      type: [Function, Object],
       required: true
     },
     isOpen: {
@@ -420,296 +315,295 @@ export default {
       default: false
     }
   },
-  emits: ['update:isOpen', 'transactionCompleted', 'switchTab'],
+  emits: ['transactionCompleted', 'switchTab', 'update:isOpen'],
   setup(props, { emit }) {
-    // ─── AGENT STATE ─────────────────────────────
-    // IDLE | THINKING | PLANNING | CONFIRMING | EXECUTING | SUCCESS | ERROR
-    const agentState = ref('IDLE')
-    const isMinimized = ref(false)
-    const isHoverMuted = ref(false)
+    // ─── LIVE SYSTEM MODE STATE ───────────────────
+    const isLiveActive = ref(props.isOpen || false)
+    // States: SLEEPING | AWAKENING | LISTENING | PROCESSING | CONFIRMING | EXECUTING | SPEAKING | TIMEOUT | CLOSED | ERROR
+    const agentState = ref(props.isOpen ? 'LISTENING' : 'SLEEPING')
 
-    // ─── CHAT & MESSAGES ──────────────────────────
-    const messages = ref([])
-    const inputQuery = ref('')
-    const inputFieldEl = ref(null)
-    const chatScrollEl = ref(null)
-    const activeSuggestions = ref([
-      'Ví tiền mặt còn bao nhiêu?',
-      'Tháng này tôi tiêu bao nhiêu?',
-      'Tôi vừa ăn sáng hết 50 nghìn.',
-      'Chuyển 500 nghìn từ ví A sang ví B.'
-    ])
+    // ─── DISPLAY RESPONSE STATE (PHẦN 4, 5, 10, 13) ───
+    const currentDisplayContent = ref('')
+    const currentConfirmation = ref(null)
+    const currentExecutionResult = ref('')
+    const isProcessing = ref(false)
+    const displaySecondsRemaining = ref(0)
+    let displayTimer = null
+    let countdownInterval = null
 
-    const quickPromptList = [
-      '💵 Ví tiền mặt còn bao nhiêu?',
-      '📊 Tháng này tôi tiêu bao nhiêu?',
-      '🍜 Tôi vừa ăn sáng hết 50 nghìn',
-      '🎯 Đưa 200k vào mục tiêu mua laptop',
-      '📈 Tình hình ngân sách các danh mục'
-    ]
-
-    // ─── P2: VOICE / STT STATE ────────────────────
+    // ─── STT (SPEECH RECOGNITION) STATE ───────────
     const isListening = ref(false)
-    const liveTranscript = ref('')
     const speechSupported = ref(false)
     let recognitionInstance = null
+    let wakeRecognitionInstance = null
+    let restartTimer = null
+    let silenceTimer = null
+    let lastProcessedTranscript = ''
+    let lastProcessedTime = 0
 
-    // ─── P2: TTS STATE ────────────────────────────
-    const ttsEnabled = ref(localStorage.getItem('khilinh_tts') === 'true')
+    // ─── TTS (SPEECH SYNTHESIS) STATE ─────────────
+    const ttsEnabled = ref(localStorage.getItem('khilinh_tts') !== 'false') // default ON
+    const isSpeakingTTS = ref(false)
     let synth = null
+    let currentUtterance = null
 
-    // ─── INITIALIZATION ───────────────────────────
+    // Sync with parent prop
+    watch(() => props.isOpen, (newVal) => {
+      if (newVal && !isLiveActive.value) {
+        activateLiveMode()
+      } else if (!newVal && isLiveActive.value) {
+        deactivateLiveMode()
+      }
+    })
+
+    // ─── MOUNT / UNMOUNT LIFECYCLE ────────────────
     onMounted(() => {
-      // Check STT support
+      // 1. Kiểm tra Web Speech API
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
       if (SpeechRec) {
         speechSupported.value = true
-        initSpeechRecognition(SpeechRec)
-      } else {
-        speechSupported.value = false
+        initRecognition(SpeechRec)
+        initWakeRecognition(SpeechRec)
       }
 
-      // Check TTS support
       if ('speechSynthesis' in window) {
         synth = window.speechSynthesis
       }
 
-      // Initial greeting if empty
-      if (messages.value.length === 0) {
-        messages.value.push({
-          role: 'ai',
-          text: 'Kính chào Ký Chủ! Khí Linh Tiên Trí sẵn sàng phục mệnh. Đạo hữu cần tra cứu ngân lượng hay ghi nhận sổ sách hôm nay?',
-          time: getCurrentTimeStr()
-        })
+      // 2. Lắng nghe wake event (từ văn bản hoặc custom trigger)
+      window.addEventListener('khilinh-wake', handleWakeEvent)
+      window.addEventListener('keydown', handleKeydown)
+
+      if (props.isOpen) {
+        activateLiveMode()
+      } else {
+        agentState.value = 'SLEEPING'
+        startWakeRecognition()
       }
     })
 
     onUnmounted(() => {
-      if (recognitionInstance) {
-        try { recognitionInstance.abort() } catch (e) {}
-      }
+      window.removeEventListener('khilinh-wake', handleWakeEvent)
+      window.removeEventListener('keydown', handleKeydown)
+      clearSilenceTimer()
+      stopRecognition()
+      stopWakeRecognition()
       if (synth) {
         try { synth.cancel() } catch (e) {}
       }
+      clearDisplayTimeout()
     })
 
-    // Auto-scroll on new messages
-    watch(
-      () => messages.value.length,
-      () => {
-        nextTick(() => scrollToBottom())
+    function handleKeydown(e) {
+      if (e.key === 'Escape' && isLiveActive.value) {
+        deactivateLiveMode()
       }
-    )
+    }
 
-    // When assistant opens, focus input
-    watch(
-      () => props.isOpen,
-      (open) => {
-        if (open) {
-          isMinimized.value = false
-          nextTick(() => {
-            scrollToBottom()
-            if (inputFieldEl.value) inputFieldEl.value.focus()
-          })
-        }
+    function handleWakeEvent(e) {
+      const phrase = typeof e.detail === 'string' ? e.detail : (e.detail?.message || '')
+      if (!phrase) return
+      const wakeRegex = /(?:hệ thống|he thong)[,\s]*(.*)/i
+      const match = phrase.match(wakeRegex)
+      if (match) {
+        const trailing = (match[1] || '').trim()
+        activateFromWakeWord(trailing)
       }
-    )
+    }
 
-    // ─── OPEN / CLOSE HANDLERS ────────────────────
-    function openAssistant() {
+    // ─── ACTIVATION & DEACTIVATION ────────────────
+    // Clicking small Khí Linh enters Live Conversation directly
+    function activateLiveMode() {
+      if (isLiveActive.value) return
+      isLiveActive.value = true
       emit('update:isOpen', true)
-      isMinimized.value = false
-    }
+      agentState.value = 'LISTENING'
 
-    function closeAssistant() {
-      emit('update:isOpen', false)
-    }
+      clearDisplayContent()
+      stopWakeRecognition()
 
-    function clearChat() {
-      messages.value = [
-        {
-          role: 'ai',
-          text: 'Sổ đàm đạo đã được dọn sạch. Khí Linh đã sẵn sàng cho mệnh lệnh mới của đạo hữu!',
-          time: getCurrentTimeStr()
-        }
-      ]
-      agentState.value = 'IDLE'
-    }
-
-    // ─── P0: SEND CHAT & REAL AGENT CORE FLOW ─────
-    async function handleSend() {
-      const q = inputQuery.value.trim()
-      if (!q || agentState.value === 'THINKING' || agentState.value === 'EXECUTING') return
-
-      inputQuery.value = ''
-      liveTranscript.value = ''
-      await processUserMessage(q)
-    }
-
-    function selectPrompt(prompt) {
-      inputQuery.value = prompt
-      handleSend()
-    }
-
-    async function processUserMessage(text) {
-      // 1. Add user message to UI
-      messages.value.push({
-        role: 'user',
-        text: text,
-        time: getCurrentTimeStr()
+      nextTick(() => {
+        startRecognition()
+        startSilenceTimer()
       })
-      await nextTick()
-      scrollToBottom()
+    }
 
-      // 2. Set Agent State to THINKING
-      agentState.value = 'THINKING'
+    // Wake-word "Hệ thống" activation
+    function activateFromWakeWord(trailingCommand = '') {
+      if (isLiveActive.value) return
+      isLiveActive.value = true
+      emit('update:isOpen', true)
+      agentState.value = 'AWAKENING'
 
-      try {
-        // 3. Connect to REAL /api/ai/chat
-        const { data } = await props.api.post(
-          '/api/ai/chat',
-          { message: text },
-          { timeout: 25000 }
-        )
+      clearDisplayContent()
+      stopWakeRecognition()
 
-        // 4. Update real state from Agent Core response
-        if (data.state) {
-          agentState.value = data.state
+      if (trailingCommand && trailingCommand.length > 1) {
+        // Utterance contained wake word AND command together
+        // Example: "Hệ thống, chuyển cho ta 1 triệu từ MoMo sang tiền mặt"
+        nextTick(() => {
+          handleVoiceAction(trailingCommand)
+        })
+      } else {
+        // Wake word only: short spoken wake response without LLM round-trip
+        const greeting = 'Dạ, Khí Linh nghe lệnh đạo hữu.'
+        currentDisplayContent.value = greeting
+        if (ttsEnabled.value) {
+          speakAndResume(greeting)
         } else {
-          agentState.value = 'IDLE'
+          agentState.value = 'LISTENING'
+          startRecognition()
+          startSilenceTimer()
         }
-
-        // Prepare confirmation object if present
-        let confirmationObj = null
-        if (data.state === 'CONFIRMING' && data.pending_confirmation) {
-          confirmationObj = {
-            isPending: true,
-            tool_name: data.pending_confirmation.tool_name,
-            args: data.pending_confirmation.args || {},
-            summary: data.pending_confirmation.summary || ''
-          }
-        }
-
-        // Add AI message
-        messages.value.push({
-          role: 'ai',
-          text: data.response || 'Đã tiếp nhận mệnh lệnh.',
-          time: getCurrentTimeStr(),
-          confirmation: confirmationObj,
-          toolExecuted: data.tool_executed || null
-        })
-
-        // Speak AI response if TTS is enabled
-        if (ttsEnabled.value && data.response) {
-          speakText(data.response)
-        }
-
-        // If financial mutation was confirmed and executed, emit event to refresh parent data
-        if (data.state === 'SUCCESS' && data.tool_executed) {
-          emit('transactionCompleted', {
-            tool: data.tool_executed,
-            result: data.tool_result
-          })
-        }
-      } catch (err) {
-        agentState.value = 'ERROR'
-        const errMsg = err.code === 'ECONNABORTED'
-          ? 'Tiên Trí phản hồi quá thời gian quy định do nghẽn mạng. Đạo hữu vui lòng gửi lại.'
-          : (err.response?.data?.detail || 'Khí Linh tạm thời gặp trở ngại khi kết nối đạo đường.')
-
-        messages.value.push({
-          role: 'ai',
-          text: '⚠️ ' + errMsg,
-          time: getCurrentTimeStr()
-        })
-      } finally {
-        await nextTick()
-        scrollToBottom()
       }
     }
 
-    // ─── P0: CONFIRMATION UX HANDLERS ─────────────
-    async function handleConfirmCard(msg) {
-      if (msg.confirmation) {
-        msg.confirmation.isPending = false
-      }
-      agentState.value = 'EXECUTING'
-      await processUserMessage('Xác nhận')
+    // Hard close (X button or Esc)
+    async function deactivateLiveMode() {
+      // Cancel pending action on backend
+      try {
+        if (props.api && typeof props.api.post === 'function') {
+          await props.api.post('/api/ai/cancel-pending')
+        }
+      } catch (e) {}
+
+      deactivateLiveModeInternal()
     }
 
-    async function handleCancelCard(msg) {
-      if (msg.confirmation) {
-        msg.confirmation.isPending = false
+    function deactivateLiveModeInternal() {
+      isLiveActive.value = false
+      emit('update:isOpen', false)
+      agentState.value = 'CLOSED'
+
+      clearSilenceTimer()
+      stopRecognition()
+      if (synth) {
+        try { synth.cancel() } catch (e) {}
       }
-      agentState.value = 'IDLE'
-      await processUserMessage('Hủy')
+      isSpeakingTTS.value = false
+      clearDisplayTimeout()
+      clearDisplayContent()
+
+      // Transition to SLEEPING and restart wake listener
+      setTimeout(() => {
+        agentState.value = 'SLEEPING'
+        startWakeRecognition()
+      }, 300)
     }
 
-    // ─── P2: SPEECH-TO-TEXT (STT) ─────────────────
-    function initSpeechRecognition(SpeechRec) {
+    // ─── 10-SECOND SILENCE TIMEOUT ─────────────────
+    function startSilenceTimer() {
+      clearSilenceTimer()
+      if (!isLiveActive.value) return
+
+      silenceTimer = setTimeout(async () => {
+        await handleSilenceTimeout()
+      }, 10000)
+    }
+
+    function clearSilenceTimer() {
+      if (silenceTimer) {
+        clearTimeout(silenceTimer)
+        silenceTimer = null
+      }
+    }
+
+    async function handleSilenceTimeout() {
+      clearSilenceTimer()
+      if (!isLiveActive.value) return
+
+      // Cancel any active pending action on backend
+      try {
+        if (props.api && typeof props.api.post === 'function') {
+          await props.api.post('/api/ai/cancel-pending')
+        }
+      } catch (e) {}
+
+      agentState.value = 'TIMEOUT'
+      stopRecognition()
+      if (synth) {
+        try { synth.cancel() } catch (e) {}
+      }
+      isSpeakingTTS.value = false
+      clearDisplayTimeout()
+      clearDisplayContent()
+
+      // Close Live Mode and return to SLEEPING
+      setTimeout(() => {
+        deactivateLiveModeInternal()
+      }, 600)
+    }
+
+    // ─── CONTINUOUS VOICE LOOP & INTERRUPT PROTECTION ───
+    function initRecognition(SpeechRec) {
       try {
         recognitionInstance = new SpeechRec()
         recognitionInstance.lang = 'vi-VN'
         recognitionInstance.continuous = false
-        recognitionInstance.interimResults = true
+        recognitionInstance.interimResults = false
 
         recognitionInstance.onstart = () => {
-          isListening.value = true
-          agentState.value = 'LISTENING'
-          liveTranscript.value = ''
+          if (agentState.value !== 'SPEAKING' && !isSpeakingTTS.value) {
+            isListening.value = true
+            if (agentState.value !== 'PROCESSING' && agentState.value !== 'CONFIRMING' && agentState.value !== 'EXECUTING') {
+              agentState.value = 'LISTENING'
+            }
+          }
         }
 
         recognitionInstance.onresult = (event) => {
-          let interim = ''
-          let final = ''
+          // TTS GATING: While Khí Linh is speaking TTS, drop speech
+          if (agentState.value === 'SPEAKING' || isSpeakingTTS.value) {
+            return
+          }
 
+          let transcript = ''
           for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const transcript = event.results[i][0].transcript
             if (event.results[i].isFinal) {
-              final += transcript
-            } else {
-              interim += transcript
+              transcript += event.results[i][0].transcript
             }
           }
 
-          liveTranscript.value = final || interim
-          if (final.trim()) {
-            inputQuery.value = final.trim()
+          const cleanMsg = transcript.trim()
+          if (!cleanMsg) return
+
+          // Prevent duplicate submission within 1.5 seconds
+          const now = Date.now()
+          if (cleanMsg.toLowerCase() === lastProcessedTranscript.toLowerCase() && (now - lastProcessedTime) < 1500) {
+            return
           }
+          lastProcessedTranscript = cleanMsg
+          lastProcessedTime = now
+
+          // Strip "hệ thống" prefix if repeated in continuous mode
+          const wakeRegex = /(?:hệ thống|he thong)[,\s]*(.*)/i
+          const wakeMatch = cleanMsg.match(wakeRegex)
+          let cmd = cleanMsg
+          if (wakeMatch) {
+            cmd = (wakeMatch[1] || '').trim()
+            if (!cmd) {
+              // Just "hệ thống" repeated while already in live mode
+              return
+            }
+          }
+
+          // User responded, clear silence countdown
+          clearSilenceTimer()
+
+          handleVoiceAction(cmd)
         }
 
         recognitionInstance.onerror = (event) => {
           isListening.value = false
-          agentState.value = 'IDLE'
-
-          let userNotice = ''
-          if (event.error === 'not-allowed') {
-            userNotice = 'Đạo hữu chưa cấp quyền micro cho trình duyệt.'
-          } else if (event.error === 'no-speech') {
-            userNotice = 'Khí Linh chưa nghe rõ khẩu quyết, xin đạo hữu thử lại.'
-          } else if (event.error === 'network') {
-            userNotice = 'Trở ngại đường truyền khi nhận dạng giọng nói.'
-          }
-
-          if (userNotice) {
-            messages.value.push({
-              role: 'ai',
-              text: '🎙️ ' + userNotice,
-              time: getCurrentTimeStr()
-            })
+          if (isLiveActive.value && agentState.value !== 'SPEAKING' && agentState.value !== 'PROCESSING' && !isSpeakingTTS.value) {
+            scheduleRestartRecognition()
           }
         }
 
         recognitionInstance.onend = () => {
           isListening.value = false
-          if (agentState.value === 'LISTENING') {
-            agentState.value = 'IDLE'
-          }
-
-          // If transcript is available and valid, auto-submit
-          const recognized = inputQuery.value.trim()
-          if (recognized && recognized.length > 1) {
-            handleSend()
+          if (isLiveActive.value && agentState.value !== 'SPEAKING' && agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING' && !isSpeakingTTS.value) {
+            scheduleRestartRecognition()
           }
         }
       } catch (err) {
@@ -717,89 +611,358 @@ export default {
       }
     }
 
-    function toggleListening() {
-      if (!speechSupported.value || !recognitionInstance) return
+    function scheduleRestartRecognition() {
+      clearTimeout(restartTimer)
+      restartTimer = setTimeout(() => {
+        if (isLiveActive.value && agentState.value !== 'SPEAKING' && agentState.value !== 'PROCESSING' && !isSpeakingTTS.value) {
+          startRecognition()
+        }
+      }, 300)
+    }
 
-      if (isListening.value) {
-        stopListening()
-      } else {
-        startListening()
+    function startRecognition() {
+      if (!recognitionInstance || !isLiveActive.value) return
+      if (agentState.value === 'SPEAKING' || isSpeakingTTS.value) return
+
+      try {
+        recognitionInstance.start()
+      } catch (e) {
+        // Recognition might already be running
       }
     }
 
-    function startListening() {
-      if (!recognitionInstance) return
-      try {
-        liveTranscript.value = ''
-        recognitionInstance.start()
-      } catch (err) {
-        // If already started, stop then restart
+    function stopRecognition() {
+      clearTimeout(restartTimer)
+      if (recognitionInstance) {
         try {
           recognitionInstance.abort()
-          recognitionInstance.start()
+        } catch (e) {}
+      }
+      isListening.value = false
+    }
+
+    function toggleManualListening() {
+      if (isListening.value) {
+        stopRecognition()
+      } else {
+        if (agentState.value !== 'SPEAKING' && !isSpeakingTTS.value) {
+          startRecognition()
+          startSilenceTimer()
+        }
+      }
+    }
+
+    // ─── WAKE PHRASE "HỆ THỐNG" (BACKGROUND LISTENER) ───
+    function initWakeRecognition(SpeechRec) {
+      try {
+        wakeRecognitionInstance = new SpeechRec()
+        wakeRecognitionInstance.lang = 'vi-VN'
+        wakeRecognitionInstance.continuous = false
+        wakeRecognitionInstance.interimResults = false
+
+        wakeRecognitionInstance.onresult = (event) => {
+          if (isLiveActive.value) return
+          let text = ''
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              text += event.results[i][0].transcript
+            }
+          }
+          const clean = text.trim()
+          if (!clean) return
+
+          const wakeRegex = /(?:hệ thống|he thong)[,\s]*(.*)/i
+          const match = clean.match(wakeRegex)
+          if (match) {
+            const trailingCommand = (match[1] || '').trim()
+            activateFromWakeWord(trailingCommand)
+          }
+          // Non-wake speech is completely ignored in SLEEPING mode
+        }
+
+        wakeRecognitionInstance.onerror = () => {
+          // Silent fallback for background wake listener
+        }
+
+        wakeRecognitionInstance.onend = () => {
+          // Restart background wake listener if live mode not active
+          if (!isLiveActive.value && speechSupported.value) {
+            setTimeout(() => startWakeRecognition(), 1000)
+          }
+        }
+      } catch (e) {}
+    }
+
+    function startWakeRecognition() {
+      if (!wakeRecognitionInstance || isLiveActive.value) return
+      try {
+        wakeRecognitionInstance.start()
+      } catch (e) {}
+    }
+
+    function stopWakeRecognition() {
+      if (wakeRecognitionInstance) {
+        try {
+          wakeRecognitionInstance.abort()
         } catch (e) {}
       }
     }
 
-    function stopListening() {
-      if (!recognitionInstance) return
+    // ─── AGENTCORE DISPATCH & LIFECYCLE ───
+    async function handleVoiceAction(rawText) {
+      if (!rawText || !rawText.trim()) return
+
+      clearSilenceTimer()
+      clearDisplayTimeout()
+
+      stopRecognition()
+      agentState.value = 'PROCESSING'
+      isProcessing.value = true
+
       try {
-        recognitionInstance.stop()
+        const { data } = await props.api.post(
+          '/api/ai/chat',
+          { message: rawText, mode: 'action' },
+          { timeout: 25000 }
+        )
+
+        isProcessing.value = false
+
+        // Phân loại kết quả trả về từ AgentCore
+        if (data.state === 'CONFIRMING' && data.pending_confirmation) {
+          agentState.value = 'CONFIRMING'
+          const p = data.pending_confirmation
+          currentConfirmation.value = {
+            tool_name: p.tool_name,
+            title: getToolActionTitle(p.tool_name),
+            amount: p.args?.amount,
+            note: p.args?.note || p.args?.target_name || p.args?.wallet_name,
+            category: p.args?.category_name,
+            wallet: p.args?.wallet_name,
+            fromWallet: p.args?.from_wallet_name,
+            toWallet: p.args?.to_wallet_name,
+            goal: p.args?.goal_name
+          }
+          currentDisplayContent.value = ''
+          currentExecutionResult.value = ''
+
+          if (ttsEnabled.value && data.response) {
+            speakAndResume(data.response)
+          } else {
+            resumeListeningDirectly()
+            startSilenceTimer()
+          }
+        } else {
+          currentConfirmation.value = null
+          currentDisplayContent.value = data.response || 'Đã tiếp nhận mệnh lệnh.'
+
+          if (data.state === 'SUCCESS' && data.tool_executed) {
+            currentExecutionResult.value = 'Đồng bộ cơ sở dữ liệu thành công.'
+            emit('transactionCompleted', {
+              tool: data.tool_executed,
+              result: data.tool_result
+            })
+          } else {
+            currentExecutionResult.value = ''
+          }
+
+          if (ttsEnabled.value && currentDisplayContent.value) {
+            speakAndResume(currentDisplayContent.value)
+          } else {
+            resumeListeningDirectly()
+            startSilenceTimer()
+          }
+        }
       } catch (err) {
-        try { recognitionInstance.abort() } catch (e) {}
-      }
-      isListening.value = false
-      if (agentState.value === 'LISTENING') {
-        agentState.value = 'IDLE'
+        isProcessing.value = false
+        agentState.value = 'ERROR'
+        currentConfirmation.value = null
+        const errMsg = err.code === 'ECONNABORTED'
+          ? 'Tiên Trí phản hồi quá thời gian do nghẽn mạng.'
+          : (err.response?.data?.detail || 'Khí Linh gặp trở ngại khi kết nối đạo đường.')
+        currentDisplayContent.value = '⚠️ ' + errMsg
+        currentExecutionResult.value = ''
+
+        if (ttsEnabled.value) {
+          speakAndResume(errMsg)
+        } else {
+          resumeListeningDirectly()
+          startSilenceTimer()
+        }
       }
     }
 
-    // ─── P2: TEXT-TO-SPEECH (TTS) ─────────────────
+    // ─── TTS PLAYBACK & RETURN TO LISTENING ───
+    function speakAndResume(text) {
+      clearSilenceTimer()
+
+      if (!synth || !ttsEnabled.value) {
+        resumeListeningDirectly()
+        startSilenceTimer()
+        return
+      }
+
+      try {
+        synth.cancel()
+
+        const cleanSpeech = text
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/[#*`_~]/g, '')
+          .replace(/[👉✅⚠️❌🔮✨📜⚡🟢🔴💵📊🍜🎯📈🏷️💰📅]/g, '')
+          .replace(/VNĐ/gi, ' đồng')
+          .replace(/đ\b/gi, ' đồng')
+          .replace(/\b(\d+)\s*k\b/gi, '$1 nghìn')
+          .replace(/\b(\d+)\s*tr\b/gi, '$1 triệu')
+          .trim()
+
+        if (!cleanSpeech) {
+          resumeListeningDirectly()
+          startSilenceTimer()
+          return
+        }
+
+        const utter = new SpeechSynthesisUtterance(cleanSpeech)
+        utter.lang = 'vi-VN'
+        utter.rate = 1.05
+        utter.pitch = 1.05
+        currentUtterance = utter
+
+        utter.onstart = () => {
+          agentState.value = 'SPEAKING'
+          isSpeakingTTS.value = true
+          stopRecognition()
+        }
+
+        utter.onend = () => {
+          currentUtterance = null
+          isSpeakingTTS.value = false
+          resumeListeningDirectly()
+          startSilenceTimer()
+        }
+
+        utter.onerror = () => {
+          currentUtterance = null
+          isSpeakingTTS.value = false
+          resumeListeningDirectly()
+          startSilenceTimer()
+        }
+
+        synth.speak(utter)
+      } catch (e) {
+        isSpeakingTTS.value = false
+        resumeListeningDirectly()
+        startSilenceTimer()
+      }
+    }
+
+    function resumeListeningDirectly() {
+      if (agentState.value !== 'CONFIRMING') {
+        agentState.value = 'LISTENING'
+      }
+      if (isLiveActive.value) {
+        startRecognition()
+      }
+    }
+
+    function clearDisplayTimeout() {
+      if (displayTimer) {
+        clearTimeout(displayTimer)
+        displayTimer = null
+      }
+      if (countdownInterval) {
+        clearInterval(countdownInterval)
+        countdownInterval = null
+      }
+      displaySecondsRemaining.value = 0
+    }
+
+    function clearDisplayContent() {
+      currentDisplayContent.value = ''
+      currentConfirmation.value = null
+      currentExecutionResult.value = ''
+    }
+
     function toggleTTS() {
       ttsEnabled.value = !ttsEnabled.value
       localStorage.setItem('khilinh_tts', ttsEnabled.value.toString())
       if (!ttsEnabled.value && synth) {
-        synth.cancel()
+        try { synth.cancel() } catch (e) {}
       }
     }
 
-    function speakText(text) {
-      if (!synth || !ttsEnabled.value) return
+    // ─── FORMATTERS & HELPERS ─────────────────────
+    function getToolActionTitle(toolName) {
+      const titles = {
+        create_expense: 'Ghi Nhận Khoản Chi Mới',
+        create_income: 'Ghi Nhận Khoản Thu Mới',
+        update_transaction: 'Chỉnh Sửa Bản Ghi Giao Dịch',
+        delete_transaction: 'Xóa Bỏ Bản Ghi Giao Dịch',
+        create_wallet: 'Khai Mở Túi Càn Khôn Mới',
+        update_wallet: 'Cập Nhật Túi Càn Khôn',
+        delete_wallet: 'Xóa Bỏ Túi Càn Khôn',
+        transfer_money: 'Chuyển Linh Thạch Liên Ví',
+        create_budget: 'Thiết Lập Ngân Sách Hạn Mức',
+        update_budget: 'Cập Nhật Ngân Sách Hạn Mức',
+        delete_budget: 'Hủy Bỏ Ngân Sách Hạn Mức',
+        create_saving_goal: 'Lập Mục Tiêu Tiết Kiệm Mới',
+        update_saving_goal: 'Cập Nhật Mục Tiêu Tiết Kiệm',
+        delete_saving_goal: 'Xóa Mục Tiêu Tiết Kiệm',
+        saving_goal_deposit: 'Tích Lũy Vào Mục Tiêu',
+        saving_goal_withdraw: 'Rút Linh Thạch Khỏi Mục Tiêu',
+        create_debt: 'Ghi Sổ Công Nợ Mới',
+        settle_debt: 'Quyết Toán Tất Khoản Nợ',
+        delete_debt: 'Xóa Khoản Nợ Khỏi Sổ',
+        create_recurring_transaction: 'Thiết Lập Giao Dịch Định Kỳ',
+        delete_recurring_transaction: 'Hủy Giao Dịch Định Kỳ'
+      }
+      return titles[toolName] || 'Thao Tác Hệ Thống'
+    }
 
-      try {
-        synth.cancel()
-        // Clean markdown & symbols for natural Vietnamese speech
-        const cleanText = text
-          .replace(/\*\*(.*?)\*\*/g, '$1')
-          .replace(/[#*`_~]/g, '')
-          .replace(/[👉✅⚠️❌🔮✨]/g, '')
-          .replace(/VNĐ/g, 'đồng')
-          .replace(/k\b/gi, ' nghìn')
-          .trim()
-
-        if (!cleanText) return
-
-        const utter = new SpeechSynthesisUtterance(cleanText)
-        utter.lang = 'vi-VN'
-        utter.rate = 1.05
-        utter.pitch = 1.1
-
-        synth.speak(utter)
-      } catch (err) {
-        // Fallback: silent failure on TTS
+    function getStateDescription(state) {
+      switch (state) {
+        case 'SLEEPING': return 'Đang Trực Đợi Khẩu Lệnh "Hệ Thống"...'
+        case 'AWAKENING': return 'Đang Khởi Động Thần Thức...'
+        case 'LISTENING': return 'Đang Lắng Nghe Khẩu Quyết...'
+        case 'PROCESSING': return 'Đang Tra Cứu Linh Tịch...'
+        case 'SPEAKING': return 'Đang Truyền Âm Trả Lời...'
+        case 'CONFIRMING': return 'Chờ Ký Chủ Xác Nhận...'
+        case 'EXECUTING': return 'Đang Thực Thi Pháp Quyết...'
+        case 'TIMEOUT': return 'Hết Thời Gian Chờ (Đã Dọn Lệnh)...'
+        case 'CLOSED': return 'Đã Đóng Thần Thức'
+        case 'SUCCESS': return 'Thao Tác Hoàn Tất'
+        case 'ERROR': return 'Trở Ngại Hệ Thống'
+        default: return 'Khí Linh Thường Trực'
       }
     }
 
-    // ─── HELPERS & FORMATTERS ─────────────────────
-    function scrollToBottom() {
-      if (chatScrollEl.value) {
-        chatScrollEl.value.scrollTop = chatScrollEl.value.scrollHeight
+    function getFooterStatusText() {
+      if (agentState.value === 'SPEAKING') {
+        return 'Khí Linh đang truyền âm phản hồi (User nói chen sẽ không nhận).'
       }
+      if (agentState.value === 'LISTENING') {
+        return 'Hội thoại liên tục: Đang lắng nghe, không cần gọi "Hệ thống" lại.'
+      }
+      if (agentState.value === 'PROCESSING') {
+        return 'Đang đối chiếu dữ liệu tài chính với AgentCore...'
+      }
+      if (agentState.value === 'CONFIRMING') {
+        return 'Đang chờ lệnh "Xác nhận", "Hủy", hoặc sửa đổi từ Ký Chủ.'
+      }
+      if (agentState.value === 'AWAKENING') {
+        return 'Thần thức thức tỉnh, sẵn sàng tiếp nhận mệnh lệnh.'
+      }
+      if (agentState.value === 'TIMEOUT') {
+        return 'Hết 10 giây im lặng. Đã hủy lệnh chờ và chuyển về chế độ ngủ.'
+      }
+      return 'Hệ thống Khí Linh sẵn sàng phục mệnh.'
     }
 
-    function getCurrentTimeStr() {
-      const now = new Date()
-      return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+    function formatResponseText(text) {
+      if (!text) return ''
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br/>')
     }
 
     function formatCurrency(amount) {
@@ -809,104 +972,26 @@ export default {
       return num.toLocaleString('vi-VN') + ' VNĐ'
     }
 
-    function formatMessage(txt) {
-      if (!txt) return ''
-      // Escape HTML
-      let sanitized = txt
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-
-      // Bold **...**
-      sanitized = sanitized.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      // Bullet points
-      sanitized = sanitized.replace(/\n- (.*?)(?=\n|$)/g, '<br>• $1')
-      // Newlines
-      sanitized = sanitized.replace(/\n/g, '<br>')
-
-      return sanitized
-    }
-
-    function getStateLabel(st) {
-      switch (st) {
-        case 'IDLE': return 'Đang chờ'
-        case 'LISTENING': return 'Đang lắng nghe'
-        case 'THINKING': return 'Đang suy nghĩ'
-        case 'PLANNING': return 'Lập kế hoạch'
-        case 'CONFIRMING': return 'Chờ xác nhận'
-        case 'EXECUTING': return 'Đang thực hiện'
-        case 'SUCCESS': return 'Đã hoàn tất'
-        case 'ERROR': return 'Gặp trở ngại'
-        default: return st
-      }
-    }
-
-    function getStateIcon(st) {
-      switch (st) {
-        case 'IDLE': return '🟢'
-        case 'LISTENING': return '🎙️'
-        case 'THINKING': return '🔮'
-        case 'PLANNING': return '📜'
-        case 'CONFIRMING': return '⚠️'
-        case 'EXECUTING': return '⚡'
-        case 'SUCCESS': return '✅'
-        case 'ERROR': return '❌'
-        default: return '🟢'
-      }
-    }
-
-    function getCompanionTooltip(st) {
-      switch (st) {
-        case 'LISTENING': return 'Khí Linh đang lắng nghe...'
-        case 'THINKING': return 'Khí Linh đang suy nghĩ...'
-        case 'CONFIRMING': return 'Cần đạo hữu xác nhận!'
-        case 'EXECUTING': return 'Đang thực hiện...'
-        case 'SUCCESS': return 'Đã hoàn tất thao tác!'
-        case 'ERROR': return 'Có điều gì đó chưa ổn.'
-        default: return 'Bấm để trò chuyện cùng Khí Linh!'
-      }
-    }
-
-    function getToolActionTitle(toolName) {
-      switch (toolName) {
-        case 'create_expense': return 'Ghi nhận khoản chi'
-        case 'create_income': return 'Ghi nhận khoản thu'
-        case 'transfer_money': return 'Chuyển tiền liên ví'
-        case 'saving_goal_deposit': return 'Nạp tiền mục tiêu tích lũy'
-        default: return 'Xác nhận biến động tài chính'
-      }
-    }
-
     return {
+      isLiveActive,
       agentState,
-      isMinimized,
-      isHoverMuted,
-      messages,
-      inputQuery,
-      inputFieldEl,
-      chatScrollEl,
-      activeSuggestions,
-      quickPromptList,
+      currentDisplayContent,
+      currentConfirmation,
+      currentExecutionResult,
+      isProcessing,
+      displaySecondsRemaining,
       isListening,
-      liveTranscript,
       speechSupported,
       ttsEnabled,
-      openAssistant,
-      closeAssistant,
-      clearChat,
-      handleSend,
-      selectPrompt,
-      handleConfirmCard,
-      handleCancelCard,
-      toggleListening,
-      stopListening,
+      activateLiveMode,
+      deactivateLiveMode,
+      toggleManualListening,
       toggleTTS,
-      getStateLabel,
-      getStateIcon,
-      getCompanionTooltip,
-      getToolActionTitle,
-      formatCurrency,
-      formatMessage
+      handleVoiceAction,
+      getStateDescription,
+      getFooterStatusText,
+      formatResponseText,
+      formatCurrency
     }
   }
 }
@@ -914,891 +999,706 @@ export default {
 
 <style scoped>
 /* ═══════════════════════════════════════════════════════════════
-   KHÍ LINH COMPONENT STYLES — CELESTIAL XIANXIA IDENTITY
+   B. FLOATING ACTIVATION SWITCH (GÓC DƯỚI BÊN PHẢI)
+   Tuyệt đối không phải chatbox, không mở ô nhập hay lịch sử
    ═══════════════════════════════════════════════════════════════ */
+.khi-linh-root {
+  position: relative;
+}
 
-/* ─── P1: PERSISTENT FLOATING COMPANION ─────────────────────── */
-.khi-linh-floating-companion {
+.khi-linh-floating-switch {
   position: fixed;
-  bottom: 26px;
-  right: 26px;
+  bottom: 28px;
+  right: 28px;
   width: 68px;
   height: 68px;
   border-radius: 50%;
   cursor: pointer;
-  z-index: 999;
+  z-index: 9990;
   display: flex;
   align-items: center;
   justify-content: center;
   user-select: none;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
-  animation: floatBob 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 8px 24px rgba(124, 58, 237, 0.45));
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
 }
 
-.khi-linh-floating-companion:hover {
+.khi-linh-floating-switch:hover {
   transform: translateY(-4px) scale(1.08);
+  filter: drop-shadow(0 12px 32px rgba(139, 92, 246, 0.65));
 }
 
-.khi-linh-floating-companion:focus-visible {
-  outline: 3px solid #e8c874;
-  outline-offset: 4px;
-}
-
-/* Spirit Halo Glow */
 .spirit-halo {
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(79, 168, 160, 0.5) 0%, rgba(232, 200, 116, 0.25) 60%, transparent 80%);
-  filter: blur(4px);
-  animation: haloPulse 3s ease-in-out infinite;
-  z-index: 1;
+  background: conic-gradient(from 0deg, rgba(124, 58, 237, 0.6), rgba(232, 200, 116, 0.6), rgba(124, 58, 237, 0.6));
+  animation: rotateHalo 6s linear infinite;
+  opacity: 0.85;
+}
+
+@keyframes rotateHalo {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .spirit-chibi-body {
   position: relative;
-  width: 100%;
-  height: 100%;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: floatBob 3s ease-in-out infinite;
+}
+
+@keyframes floatBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
 .spirit-svg {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 6px 14px rgba(26, 58, 92, 0.35));
 }
 
-/* State Badge on Companion */
-.companion-state-badge {
+.switch-badge {
   position: absolute;
   top: -2px;
   right: -2px;
   width: 22px;
   height: 22px;
+  background: linear-gradient(135deg, #7c3aed, #4c1d95);
+  border: 1.5px solid #e8c874;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  z-index: 4;
+  z-index: 3;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-.badge-confirming {
-  background: #fef08a;
-  border: 1px solid #eab308;
-  animation: badgeAttention 1s ease-in-out infinite;
-}
-
-.badge-executing {
-  background: #bbf7d0;
-  border: 1px solid #22c55e;
-}
-
-.badge-error {
-  background: #fecaca;
-  border: 1px solid #ef4444;
-}
-
-/* Floating Tooltip */
-.companion-tooltip {
+.switch-tooltip {
   position: absolute;
-  right: 80px;
-  bottom: 14px;
-  background: rgba(26, 58, 92, 0.92);
-  backdrop-filter: blur(8px);
-  color: #f5f5f0;
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-family: 'Inter', sans-serif;
+  right: 76px;
   white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(232, 200, 116, 0.4);
+  background: rgba(26, 16, 60, 0.95);
+  color: #e9d5ff;
+  border: 1px solid rgba(167, 139, 250, 0.5);
+  border-radius: 12px;
+  padding: 6px 12px;
+  font-size: 12px;
   pointer-events: none;
   opacity: 0;
   transform: translateX(8px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  z-index: 10;
+  transition: all 0.25s ease;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.3);
 }
 
-.khi-linh-floating-companion:hover .companion-tooltip {
+.khi-linh-floating-switch:hover .switch-tooltip {
   opacity: 1;
   transform: translateX(0);
 }
 
-/* Listening Audio Wave Pulse */
-.sound-wave-ring {
-  position: absolute;
-  inset: -12px;
-  border-radius: 50%;
-  border: 2px solid #38bdf8;
-  opacity: 0;
-  animation: soundRipple 1.8s cubic-bezier(0.1, 0.6, 0.3, 1) infinite;
-  z-index: 0;
-}
-
-.sound-wave-ring.wave-2 {
-  animation-delay: 0.6s;
-}
-
-/* ─── P0: SANCTUARY DRAWER / MODAL ──────────────────────────── */
-.khi-linh-sanctuary {
+/* ═══════════════════════════════════════════════════════════════
+   PHẦN 3 & 4: LIVE SYSTEM MODE (DARK OVERLAY & SYSTEM FRAME)
+   Màu chủ đạo: Tím (#7c3aed, #4c1d95). Chiếm ~65% viewport
+   ═══════════════════════════════════════════════════════════════ */
+.system-mode-overlay {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 420px;
-  max-width: calc(100vw - 32px);
-  height: 640px;
-  max-height: calc(100vh - 48px);
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border-radius: 20px;
-  border: 1px solid rgba(232, 200, 116, 0.55);
-  box-shadow: 0 16px 40px rgba(26, 58, 92, 0.25), 0 0 24px rgba(79, 168, 160, 0.15);
+  inset: 0;
+  background: rgba(10, 5, 25, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeInOverlay 0.35s ease-out;
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.system-frame {
+  width: 65vw;
+  height: 65vh;
+  min-width: 360px;
+  min-height: 420px;
+  max-width: 960px;
+  max-height: 700px;
+  background: linear-gradient(145deg, rgba(26, 12, 56, 0.96) 0%, rgba(18, 8, 38, 0.98) 100%);
+  border: 1.5px solid rgba(167, 139, 250, 0.45);
+  border-radius: 24px;
+  box-shadow:
+    0 0 50px rgba(124, 58, 237, 0.35),
+    inset 0 0 35px rgba(139, 92, 246, 0.12),
+    0 24px 64px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
-  z-index: 1000;
+  position: relative;
   overflow: hidden;
-  animation: sanctuarySlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: scaleInFrame 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Sanctuary Header */
-.sanctuary-header {
+@keyframes scaleInFrame {
+  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Corner Rune Accents */
+.frame-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #e8c874;
+  pointer-events: none;
+  z-index: 10;
+}
+.frame-corner.top-left { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+.frame-corner.top-right { top: 8px; right: 8px; border-left: none; border-bottom: none; }
+.frame-corner.bottom-left { bottom: 8px; left: 8px; border-right: none; border-top: none; }
+.frame-corner.bottom-right { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+
+/* ─── SYSTEM FRAME HEADER ─── */
+.system-frame-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, rgba(43, 138, 130, 0.12) 0%, rgba(232, 200, 116, 0.15) 100%);
-  border-bottom: 1px solid rgba(232, 200, 116, 0.35);
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(167, 139, 250, 0.25);
+  background: rgba(30, 14, 66, 0.6);
 }
 
-.header-companion-avatar {
+.spirit-header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
 }
 
-.mini-spirit-orb {
-  width: 36px;
-  height: 36px;
+/* Khí Linh Chibi ở góc trên bên trái frame */
+.frame-spirit-orb {
+  position: relative;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: radial-gradient(circle, #e0f7f5 0%, #76dcd1 80%, #2b8a82 100%);
+  background: radial-gradient(circle, #7c3aed 0%, #4c1d95 100%);
+  border: 1.5px solid #e8c874;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  box-shadow: 0 2px 8px rgba(43, 138, 130, 0.35);
+  box-shadow: 0 0 16px rgba(167, 139, 250, 0.5);
 }
 
-.header-titles {
+.chibi-avatar-wrap {
+  width: 40px;
+  height: 40px;
+}
+.chibi-small-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.spirit-pulse-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(167, 139, 250, 0.8);
+  animation: pulseAura 1.8s ease-out infinite;
+}
+
+@keyframes pulseAura {
+  0% { transform: scale(0.95); opacity: 1; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+.system-title-group {
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
-.name-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.sanctuary-title {
-  font-family: 'Lora', serif;
-  font-size: 15px;
+.system-codename {
+  font-family: 'Cinzel', 'Lora', serif;
+  font-size: 14px;
   font-weight: 700;
-  color: #1a3a5c;
-  margin: 0;
+  letter-spacing: 1.5px;
+  color: #e8c874;
+  text-shadow: 0 0 10px rgba(232, 200, 116, 0.4);
 }
 
-.dao-badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: rgba(232, 200, 116, 0.3);
-  color: #78530b;
-  font-weight: 600;
-}
-
-/* REAL AGENT STATE UI BADGE */
-.real-agent-state-chip {
+.system-state-indicator {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #2b8a82;
-  margin-top: 2px;
+  gap: 8px;
+  font-size: 12px;
+  color: #c4b5fd;
 }
 
-.pulse-dot {
-  width: 7px;
-  height: 7px;
+.pulse-beacon {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #2b8a82;
-  display: inline-block;
-  animation: pulseDot 1.5s ease-in-out infinite;
+  background: #a78bfa;
+  box-shadow: 0 0 8px #a78bfa;
+}
+.state-sleeping .pulse-beacon { background: #8b5cf6; box-shadow: 0 0 6px #8b5cf6; opacity: 0.6; }
+.state-awakening .pulse-beacon { background: #c084fc; box-shadow: 0 0 12px #c084fc; animation: blink 0.5s infinite; }
+.state-listening .pulse-beacon { background: #34d399; box-shadow: 0 0 10px #34d399; animation: blink 1.2s infinite; }
+.state-processing .pulse-beacon { background: #fbbf24; box-shadow: 0 0 10px #fbbf24; animation: blink 0.8s infinite; }
+.state-speaking .pulse-beacon { background: #60a5fa; box-shadow: 0 0 10px #60a5fa; animation: blink 1s infinite; }
+.state-confirming .pulse-beacon { background: #f87171; box-shadow: 0 0 10px #f87171; }
+.state-timeout .pulse-beacon { background: #9ca3af; box-shadow: 0 0 6px #9ca3af; }
+.state-closed .pulse-beacon { background: #6b7280; box-shadow: none; }
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
-.real-agent-state-chip.state-listening .pulse-dot {
-  background: #0284c7;
-}
-.real-agent-state-chip.state-listening {
-  color: #0284c7;
-}
-
-.real-agent-state-chip.state-confirming .pulse-dot {
-  background: #d97706;
-}
-.real-agent-state-chip.state-confirming {
-  color: #d97706;
-}
-
-.real-agent-state-chip.state-executing .pulse-dot {
-  background: #059669;
-}
-.real-agent-state-chip.state-executing {
-  color: #059669;
-}
-
-.real-agent-state-chip.state-error .pulse-dot {
-  background: #dc2626;
-}
-.real-agent-state-chip.state-error {
-  color: #dc2626;
-}
-
-.header-actions {
+.spirit-header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
 }
 
-.header-action-btn {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(232, 200, 116, 0.4);
-  border-radius: 8px;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 13px;
-  color: #1a3a5c;
-  transition: all 0.2s ease;
-}
-
-.header-action-btn:hover {
-  background: #ffffff;
-  border-color: #2b8a82;
-  transform: translateY(-1px);
-}
-
-.header-action-btn.tts-btn.active {
-  background: rgba(79, 168, 160, 0.2);
-  border-color: #2b8a82;
-}
-
-.header-action-btn.close-btn:hover {
-  background: #fee2e2;
-  color: #ef4444;
-  border-color: #ef4444;
-}
-
-/* ─── P2: LISTENING WAVE BANNER ──────────────────────────────── */
-.listening-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  background: linear-gradient(90deg, #e0f2fe 0%, #bae6fd 100%);
-  border-bottom: 1px solid #7dd3fc;
-  animation: bannerFade 0.25s ease;
-}
-
-.listening-anim-waves {
+/* Sound wave audio visualizer */
+.audio-wave-bars {
   display: flex;
   align-items: center;
   gap: 3px;
   height: 18px;
+  padding: 0 8px;
 }
-
-.listening-anim-waves span {
+.audio-wave-bars .bar {
   width: 3px;
   height: 100%;
-  background: #0284c7;
+  background: #a78bfa;
   border-radius: 2px;
-  animation: soundBar 0.9s ease-in-out infinite alternate;
+  animation: waveDance 1.2s ease-in-out infinite;
+}
+.bar-1 { animation-delay: 0.1s; }
+.bar-2 { animation-delay: 0.3s; }
+.bar-3 { animation-delay: 0.5s; }
+.bar-4 { animation-delay: 0.2s; }
+.bar-5 { animation-delay: 0.4s; }
+
+@keyframes waveDance {
+  0%, 100% { height: 4px; }
+  50% { height: 18px; }
 }
 
-.listening-anim-waves span:nth-child(2) { animation-delay: 0.15s; }
-.listening-anim-waves span:nth-child(3) { animation-delay: 0.3s; }
-.listening-anim-waves span:nth-child(4) { animation-delay: 0.45s; }
-.listening-anim-waves span:nth-child(5) { animation-delay: 0.6s; }
-
-.listening-text {
-  display: flex;
-  flex-direction: column;
-  font-size: 12px;
-  color: #0369a1;
-  flex: 1;
-  margin-left: 10px;
-}
-
-.listening-sub {
-  font-size: 10px;
-  color: #0284c7;
-}
-
-.btn-stop-listening {
-  background: #0284c7;
-  color: #ffffff;
-  border: none;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 11px;
+.sys-icon-btn {
+  background: rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  color: #ddd6fe;
+  border-radius: 8px;
+  padding: 6px 10px;
   cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.sys-icon-btn:hover {
+  background: rgba(124, 58, 237, 0.4);
+  color: #ffffff;
 }
 
-/* ─── SANCTUARY BODY & CHAT ─────────────────────────────────── */
-.sanctuary-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  scroll-behavior: smooth;
-}
-
-/* Welcome Card */
-.khi-linh-welcome-card {
-  background: linear-gradient(135deg, rgba(238, 244, 248, 0.8) 0%, rgba(255, 255, 255, 0.9) 100%);
-  border: 1px dashed rgba(79, 168, 160, 0.5);
-  border-radius: 14px;
-  padding: 14px;
-  text-align: left;
-}
-
-.welcome-top {
+.sys-close-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
+  transition: all 0.2s;
+}
+.sys-close-btn:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #ffffff;
+  transform: scale(1.05);
 }
 
-.welcome-symbol {
-  color: #2b8a82;
-  font-size: 14px;
+/* ─── SYSTEM FRAME BODY: PHẦN 4, 5, 10, 11 ─── */
+.system-frame-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  position: relative;
 }
 
-.khi-linh-welcome-card h4 {
+/* 1. Trạng thái PROCESSING */
+.system-processing-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.celestial-spinner {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner-ring {
+  position: absolute;
+  inset: 0;
+  border: 3px solid transparent;
+  border-top-color: #a78bfa;
+  border-right-color: #e8c874;
+  border-radius: 50%;
+  animation: spinRune 1.5s linear infinite;
+}
+
+@keyframes spinRune {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner-rune {
+  font-size: 26px;
+  color: #e8c874;
+  text-shadow: 0 0 12px rgba(232, 200, 116, 0.6);
+}
+
+.processing-title {
   font-family: 'Lora', serif;
+  font-size: 20px;
+  color: #f3e8ff;
+  font-weight: 600;
+}
+.processing-sub {
   font-size: 14px;
-  color: #1a3a5c;
-  margin: 0;
+  color: #a78bfa;
 }
 
-.welcome-desc {
-  font-size: 12px;
-  line-height: 1.5;
-  color: #476582;
+/* 2. Hộp thoại CONFIRMATION: PHẦN 11 */
+.system-confirmation-box {
+  background: rgba(30, 12, 68, 0.85);
+  border: 1.5px solid rgba(232, 200, 116, 0.7);
+  border-radius: 18px;
+  padding: 24px 28px;
+  width: 100%;
+  max-width: 580px;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5), 0 0 25px rgba(124, 58, 237, 0.3);
+  animation: fadeInScale 0.3s ease;
+  text-align: center;
+}
+
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.conf-badge-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.conf-warn-icon { font-size: 20px; }
+.conf-warn-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #e8c874;
+}
+
+.conf-action-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
   margin-bottom: 10px;
 }
 
-.welcome-shortcuts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.quick-tip-chip {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(232, 200, 116, 0.5);
-  border-radius: 12px;
-  padding: 4px 9px;
-  font-size: 11px;
-  color: #1a3a5c;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.quick-tip-chip:hover {
-  background: #e0f7f5;
-  border-color: #2b8a82;
-  transform: translateY(-1px);
-}
-
-/* Chat Rows */
-.chat-bubble-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  width: 100%;
-}
-
-.chat-bubble-row.row-user {
-  flex-direction: row-reverse;
-}
-
-.bubble-avatar-wrapper {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(232, 200, 116, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.bubble-content-box {
-  max-width: 82%;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-bubble-row.row-user .bubble-content-box {
-  align-items: flex-end;
-}
-
-.bubble-header-info {
-  display: flex;
-  gap: 8px;
-  font-size: 10px;
-  color: #6b88a5;
-  margin-bottom: 2px;
-  padding: 0 4px;
-}
-
-.bubble-text {
-  padding: 10px 14px;
-  border-radius: 14px;
-  font-size: 13px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.row-user .bubble-text {
-  background: linear-gradient(135deg, #2b8a82 0%, #1e5a55 100%);
-  color: #ffffff;
-  border-bottom-right-radius: 3px;
-  box-shadow: 0 3px 10px rgba(43, 138, 130, 0.25);
-}
-
-.row-ai .bubble-text {
-  background: #ffffff;
-  color: #1a3a5c;
-  border: 1px solid rgba(232, 200, 116, 0.35);
-  border-bottom-left-radius: 3px;
-  box-shadow: 0 3px 10px rgba(26, 58, 92, 0.06);
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   P0: FINANCIAL CONFIRMATION UX CARD
-   ═══════════════════════════════════════════════════════════════ */
-.financial-confirmation-card {
-  margin-top: 10px;
-  background: linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%);
-  border: 2px solid #e8c874;
-  border-radius: 14px;
-  padding: 14px;
-  box-shadow: 0 6px 18px rgba(232, 200, 116, 0.35);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.confirmation-card-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #b45309;
-}
-
-.confirmation-action-title {
-  font-family: 'Lora', serif;
-  font-size: 15px;
-  font-weight: 700;
-  color: #1a3a5c;
-}
-
-.confirmation-amount-highlight {
-  font-size: 20px;
+.conf-amount-highlight {
+  font-size: 28px;
   font-weight: 800;
-  color: #c0392b;
-  letter-spacing: 0.5px;
-  padding: 4px 0;
+  color: #34d399;
+  text-shadow: 0 0 14px rgba(52, 211, 153, 0.4);
+  margin-bottom: 16px;
 }
 
-.confirmation-details-list {
+.conf-details-grid {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #476582;
-  background: rgba(255, 255, 255, 0.7);
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(232, 200, 116, 0.3);
+  gap: 8px;
+  background: rgba(18, 8, 42, 0.7);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  text-align: left;
 }
-
-.detail-item {
+.conf-detail-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  font-size: 13px;
 }
-
-.detail-label {
-  color: #78530b;
-}
-
-.detail-value {
-  color: #1a3a5c;
-}
-
-.detail-badge {
-  background: #fef9c3;
-  padding: 1px 6px;
+.conf-detail-row .label { color: #a78bfa; }
+.conf-detail-row .val { color: #ffffff; font-weight: 600; }
+.conf-detail-row .val.badge {
+  background: rgba(124, 58, 237, 0.35);
+  padding: 2px 8px;
   border-radius: 6px;
-  font-weight: 600;
-  color: #854d0e;
+  font-size: 12px;
+}
+.conf-detail-row .val.badge.wallet {
+  background: rgba(232, 200, 116, 0.25);
+  color: #e8c874;
 }
 
-.detail-badge.wallet {
-  background: #e0f2fe;
-  color: #0369a1;
+.conf-prompt-question {
+  font-size: 14px;
+  color: #ddd6fe;
+  margin-bottom: 18px;
 }
 
-.confirmation-button-group {
+.conf-action-buttons {
   display: flex;
-  gap: 10px;
-  margin-top: 6px;
+  gap: 12px;
+  justify-content: center;
 }
 
-.btn-confirm-action {
-  flex: 1;
-  background: linear-gradient(135deg, #2b8a82 0%, #1e5a55 100%);
+.btn-system-confirm {
+  background: linear-gradient(135deg, #10b981, #059669);
   color: #ffffff;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 8px;
+  border: 1px solid #34d399;
+  border-radius: 10px;
+  padding: 10px 22px;
+  font-size: 14px;
   font-weight: 700;
-  font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 3px 8px rgba(43, 138, 130, 0.35);
-  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+  transition: all 0.2s;
+}
+.btn-system-confirm:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
 }
 
-.btn-confirm-action:hover:not(:disabled) {
-  background: linear-gradient(135deg, #37a89e 0%, #2b8a82 100%);
-  transform: translateY(-1px);
-}
-
-.btn-cancel-action {
-  flex: 1;
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #f87171;
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 13px;
+.btn-system-cancel {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s;
+}
+.btn-system-cancel:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #ffffff;
 }
 
-.btn-cancel-action:hover:not(:disabled) {
-  background: #fecaca;
-  transform: translateY(-1px);
-}
-
-.tool-executed-card {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  background: #f0fdf4;
-  border: 1px solid #86efac;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 11px;
-  color: #15803d;
-  font-weight: 600;
-}
-
-/* Agent Working Indicators */
-.agent-working-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 12px;
-  border: 1px dashed rgba(79, 168, 160, 0.4);
-  width: fit-content;
-}
-
-.working-content {
+/* 3. Phản hồi hiện tại: PHẦN 10 */
+.system-response-display {
+  width: 100%;
+  max-width: 680px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  text-align: center;
+  animation: fadeIn 0.3s ease;
 }
 
-.working-label {
-  font-size: 11px;
-  color: #2b8a82;
-  font-style: italic;
-}
-
-.typing-dots {
-  display: flex;
-  gap: 4px;
-}
-
-.typing-dots span {
-  width: 6px;
-  height: 6px;
-  background: #2b8a82;
-  border-radius: 50%;
-  animation: typingDot 1.4s ease-in-out infinite;
-}
-
-.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-.progress-bar-xianxia {
-  width: 120px;
-  height: 4px;
-  background: #e2e8f0;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, #2b8a82, #e8c874, #2b8a82);
-  background-size: 200% 100%;
-  animation: progressRunes 1.5s linear infinite;
-}
-
-/* Live Voice Transcript */
-.live-transcript-box {
-  padding: 6px 14px;
-  background: #eff6ff;
-  border-top: 1px solid #bfdbfe;
-  font-size: 12px;
-  color: #1e40af;
+.response-seal {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-/* Quick Suggestions Bar */
-.quick-suggestions-bar {
-  display: flex;
-  gap: 6px;
-  padding: 6px 14px;
-  overflow-x: auto;
-  border-top: 1px solid rgba(232, 200, 116, 0.25);
-  background: rgba(255, 255, 255, 0.6);
-  white-space: nowrap;
-}
-
-.suggestion-chip {
-  background: #ffffff;
-  border: 1px solid rgba(79, 168, 160, 0.35);
-  border-radius: 12px;
-  padding: 3px 8px;
-  font-size: 11px;
-  color: #1a3a5c;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.suggestion-chip:hover {
-  background: #e0f7f5;
-  border-color: #2b8a82;
-}
-
-/* Sanctuary Footer */
-.sanctuary-footer {
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.85);
-  border-top: 1px solid rgba(232, 200, 116, 0.35);
-}
-
-.chat-input-row {
-  display: flex;
   gap: 8px;
-  align-items: center;
+  margin-bottom: 16px;
+}
+.seal-icon { font-size: 18px; }
+.seal-tag {
+  font-size: 12px;
+  letter-spacing: 1.2px;
+  font-weight: 700;
+  color: #e8c874;
+}
+.countdown-badge {
+  font-size: 11px;
+  color: #a78bfa;
+  background: rgba(124, 58, 237, 0.2);
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(167, 139, 250, 0.3);
 }
 
-.khi-linh-input {
-  flex: 1;
-  padding: 9px 14px;
-  border: 1px solid rgba(232, 200, 116, 0.6);
+.response-main-text {
+  font-family: 'Lora', serif;
+  font-size: 20px;
+  line-height: 1.8;
+  color: #f5f3ff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  margin-bottom: 20px;
+}
+
+.execution-result-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(52, 211, 153, 0.4);
   border-radius: 12px;
+  padding: 8px 18px;
+  color: #6ee7b7;
   font-size: 13px;
-  outline: none;
-  background: #ffffff;
-  color: #1a3a5c;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-weight: 600;
 }
 
-.khi-linh-input:focus {
-  border-color: #2b8a82;
-  box-shadow: 0 0 0 2px rgba(43, 138, 130, 0.2);
+/* 4. Khung trống thường trực: PHẦN 5 & PHẦN 13 */
+.system-empty-standby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+  opacity: 0.9;
 }
 
-.mic-action-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: 1px solid rgba(232, 200, 116, 0.6);
-  background: #ffffff;
-  cursor: pointer;
+.standby-sigil {
+  position: relative;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  transition: all 0.2s ease;
+}
+.sigil-outer-ring {
+  position: absolute;
+  inset: 0;
+  border: 1.5px dashed rgba(167, 139, 250, 0.5);
+  border-radius: 50%;
+  animation: rotateHalo 12s linear infinite;
+}
+.sigil-inner-rune {
+  font-size: 24px;
+  color: #a78bfa;
+  animation: floatBob 2.5s ease-in-out infinite;
 }
 
-.mic-action-btn:hover:not(:disabled) {
-  background: #e0f7f5;
-  border-color: #2b8a82;
-}
-
-.mic-action-btn.recording {
-  background: #fee2e2;
-  border-color: #ef4444;
-  animation: micPulse 1s infinite;
-}
-
-.send-action-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  border: none;
-  background: linear-gradient(135deg, #2b8a82 0%, #1e5a55 100%);
-  color: #ffffff;
-  cursor: pointer;
+.standby-hint {
+  font-size: 15px;
+  color: #c4b5fd;
+  max-width: 480px;
+  line-height: 1.6;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  box-shadow: 0 2px 8px rgba(43, 138, 130, 0.3);
-  transition: all 0.2s ease;
+  gap: 8px;
 }
 
-.send-action-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #37a89e 0%, #2b8a82 100%);
-  transform: translateY(-1px);
+.pulse-dot-cyan {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22d3ee;
+  box-shadow: 0 0 8px #22d3ee;
+  display: inline-block;
+  animation: blink 1.5s infinite;
 }
 
-.send-action-btn:disabled,
-.mic-action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.standby-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 6px;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   ANIMATIONS & KEYFRAMES
-   ═══════════════════════════════════════════════════════════════ */
-@keyframes floatBob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
+.ex-chip {
+  background: rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  color: #ddd6fe;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 14px;
 }
 
-@keyframes haloPulse {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.15); opacity: 0.9; }
+/* ─── SYSTEM FRAME FOOTER ─── */
+.system-frame-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: rgba(18, 8, 42, 0.75);
+  border-top: 1px solid rgba(167, 139, 250, 0.2);
+  font-size: 12px;
 }
 
-@keyframes pulseDot {
-  0%, 100% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.3); opacity: 1; }
+.footer-status-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a78bfa;
 }
 
-@keyframes soundRipple {
-  0% { transform: scale(0.9); opacity: 0.8; }
-  100% { transform: scale(1.6); opacity: 0; }
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.dot-sleeping { background: #8b5cf6; box-shadow: 0 0 6px #8b5cf6; }
+.dot-awakening { background: #c084fc; box-shadow: 0 0 8px #c084fc; animation: blink 0.5s infinite; }
+.dot-listening { background: #34d399; box-shadow: 0 0 6px #34d399; }
+.dot-speaking { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
+.dot-processing { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+.dot-confirming { background: #f87171; box-shadow: 0 0 6px #f87171; }
+.dot-timeout { background: #9ca3af; }
+.dot-closed { background: #6b7280; }
+.dot-idle { background: #94a3b8; }
+
+.btn-live-mic-toggle {
+  background: rgba(124, 58, 237, 0.25);
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  color: #e9d5ff;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-live-mic-toggle.active {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
 }
 
-@keyframes soundBar {
-  0% { height: 20%; }
-  100% { height: 100%; }
-}
-
-@keyframes micPulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
-  50% { transform: scale(1.08); box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
-}
-
-@keyframes badgeAttention {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-}
-
-@keyframes typingDot {
-  0%, 100% { transform: translateY(0); opacity: 0.4; }
-  50% { transform: translateY(-4px); opacity: 1; }
-}
-
-@keyframes progressRunes {
-  0% { background-position: 0% 0%; }
-  100% { background-position: 200% 0%; }
-}
-
-@keyframes sanctuarySlideUp {
-  0% { opacity: 0; transform: translateY(24px) scale(0.96); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   ACCESSIBILITY & REDUCED MOTION
-   ═══════════════════════════════════════════════════════════════ */
-@media (prefers-reduced-motion: reduce) {
-  .khi-linh-floating-companion,
-  .spirit-halo,
-  .sound-wave-ring,
-  .pulse-dot,
-  .typing-dots span,
-  .progress-fill {
-    animation: none !important;
-    transition: none !important;
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .system-frame {
+    width: 92vw;
+    height: 80vh;
+    padding: 0;
   }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   RESPONSIVE DESIGN (MOBILE ADAPTATION)
-   ═══════════════════════════════════════════════════════════════ */
-@media (max-width: 480px) {
-  .khi-linh-floating-companion {
-    bottom: 16px;
-    right: 16px;
-    width: 60px;
-    height: 60px;
+  .system-frame-body {
+    padding: 20px 16px;
   }
-
-  .khi-linh-sanctuary {
-    bottom: 12px;
-    right: 12px;
-    width: calc(100vw - 24px);
-    height: calc(100vh - 24px);
-    border-radius: 16px;
+  .response-main-text {
+    font-size: 17px;
   }
 }
 </style>

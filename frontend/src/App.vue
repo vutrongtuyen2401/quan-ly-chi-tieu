@@ -1281,19 +1281,36 @@
       <section v-if="activeTab === 'chat'" class="tab-panel">
         <h2 class="section-title">💬 Khấu Bái Khí Linh — Trợ Lý AI Tiên Trí</h2>
 
-        <div class="khilinh-tab-portal-card">
-          <div class="portal-spirit-icon">🔮</div>
-          <h3 class="portal-title">Đạo Quán Khí Linh Tiên Trí — Trợ Lý AI Trung Tâm</h3>
-          <p class="portal-desc">
-            Khí Linh Tiên Trí hiện diện khắp mọi nơi trong Đạo Đường Càn Khôn. Đạo hữu có thể trò chuyện bằng giọng nói (STT tiếng Việt), nhập văn bản, tra cứu số dư ngân lượng, hoặc ghi nhận giao dịch chi tiêu/thu nhập với cơ chế xác nhận an toàn tuyệt đối.
-          </p>
-          <div class="portal-actions">
-            <button id="btn-open-khilinh-tab" class="btn-jade" @click="isKhiLinhOpen = true">
-              ✨ Khấu Bái & Mở Giao Diện Khí Linh
-            </button>
+        <div class="chat-container">
+          <div class="chat-messages" ref="chatMessagesEl">
+            <div class="chat-welcome">
+              <div class="chat-ai-avatar">🔮</div>
+              <p>Kính chào Ký Chủ! Ta là <strong>Khí Linh Tiên Trí</strong>, trợ lý tài chính AI phong cách tu tiên. Hãy hỏi ta bất cứ điều gì về tài chính của đạo hữu!</p>
+            </div>
+            <div v-for="(msg, idx) in chatMessages" :key="idx"
+                 :class="['chat-bubble', msg.role === 'user' ? 'user-bubble' : 'ai-bubble']">
+              <div class="bubble-avatar">{{ msg.role === 'user' ? '🧙' : '🔮' }}</div>
+              <div class="bubble-content" v-html="formatChatText(msg.text)"></div>
+            </div>
+            <div v-if="chatLoading && activeTab === 'chat'" class="chat-bubble ai-bubble">
+              <div class="bubble-avatar">🔮</div>
+              <div class="bubble-content typing-indicator">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
           </div>
-          <div class="portal-hints">
-            <span>💡 <strong>Mẹo:</strong> Biểu tượng linh khí Khí Linh luôn hiện diện ở góc dưới bên phải màn hình trên mọi trang. Đạo hữu có thể bấm vào bất kỳ lúc nào để ra lệnh.</span>
+          <div v-if="suggestedQuestions.length > 0" class="suggested-questions-container">
+            <span class="suggested-chip" v-for="q in suggestedQuestions" :key="q" @click="chatInput = q">
+              {{ q }}
+            </span>
+          </div>
+          <div class="chat-input-area">
+            <input v-model="chatInput" type="text"
+                   placeholder="Hỏi Tiên Trí về tài chính..."
+                   @keyup.enter="sendChat" />
+            <button class="btn-jade-sm" @click="sendChat" :disabled="chatLoading || !chatInput.trim()">
+              ⚡ Gửi
+            </button>
           </div>
         </div>
       </section>
@@ -3190,9 +3207,12 @@ export default {
 
       chatLoading.value = true
       try {
-        const { data } = await api.post('/api/ai/chat', { message: msg }, { timeout: 15000 })
+        const { data } = await api.post('/api/ai/chat', { message: msg, mode: 'knowledge' }, { timeout: 25000 })
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
-        chatMessages.value.push({ role: 'ai', text: data.response })
+        chatMessages.value.push({ role: 'ai', text: data.response || 'Đã tiếp nhận mệnh lệnh.' })
+        if (data.state === 'SUCCESS' && data.tool_executed) {
+          await onKhiLinhTransactionCompleted()
+        }
       } catch (err) {
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
         const errMsg = err.code === 'ECONNABORTED'
@@ -3263,8 +3283,6 @@ export default {
         loadCompare()
       } else if (tabId === 'budgets') {
         loadBudgets()
-      } else if (tabId === 'chat') {
-        isKhiLinhOpen.value = true
       }
       nextTick(() => {
         const activeBtn = tabNavEl.value?.querySelector('.tab-btn.active')
@@ -3305,6 +3323,7 @@ export default {
     })
 
     return {
+      api,
       isLoggedIn, authMode, authForm, forgotForm, resetForm, devResetToken,
       loading, loadingTips, loadingProfile, loadingSoulLamp, errorMsg, toast,
       activeTab, tabs, displayTabs, userName, userEmail, userRole, currentUserId, currentTheme, isUserAdmin,
@@ -5699,58 +5718,164 @@ body[data-theme='modern'] .dp__menu {
   }
 }
 
-/* Khí Linh Tab Portal Card */
-.khilinh-tab-portal-card {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(224, 247, 245, 0.85) 100%);
+/* ─── AI CHAT (RESTORED LARGE TEXT UI) ─── */
+.chat-container {
+  background: rgba(255, 255, 255, 0.85);
   border: 1px solid rgba(232, 200, 116, 0.6);
-  border-radius: 20px;
-  padding: 36px 28px;
-  text-align: center;
-  box-shadow: 0 12px 32px rgba(26, 58, 92, 0.08);
-  max-width: 680px;
-  margin: 20px auto;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  height: calc(100vh - 280px);
+  min-height: 500px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 35px rgba(26, 58, 92, 0.08);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-welcome {
+  display: flex;
+  align-items: flex-start;
   gap: 14px;
+  padding: 20px;
+  background: rgba(232, 200, 116, 0.15);
+  border: 1px solid rgba(232, 200, 116, 0.4);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
 }
-
-.portal-spirit-icon {
-  font-size: 48px;
-  animation: floatBob 3s ease-in-out infinite;
+.chat-ai-avatar {
+  font-size: 36px;
+  animation: float 3s ease-in-out infinite;
 }
-
-.portal-title {
-  font-family: 'Lora', serif;
-  font-size: 20px;
-  color: #1a3a5c;
-  font-weight: 700;
-}
-
-.portal-desc {
+.chat-welcome p {
   font-size: 14px;
-  line-height: 1.6;
-  color: #476582;
-  max-width: 540px;
+  color: var(--text-primary);
+  line-height: 1.7;
 }
 
-.portal-actions {
-  margin-top: 8px;
+.chat-bubble {
+  display: flex;
+  gap: 12px;
+  max-width: 85%;
+  animation: fadeIn 0.3s ease-out;
+}
+.user-bubble { align-self: flex-end; flex-direction: row-reverse; }
+.ai-bubble { align-self: flex-start; }
+
+.bubble-avatar { font-size: 24px; flex-shrink: 0; }
+.bubble-content {
+  padding: 14px 18px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.user-bubble .bubble-content {
+  background: linear-gradient(135deg, #e8c874, #d99b26);
+  color: #1a3a5c;
+  font-weight: 500;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 4px 12px rgba(232, 200, 116, 0.3);
+}
+.ai-bubble .bubble-content {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(232, 200, 116, 0.4);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
 }
 
-.portal-actions .btn-jade {
-  padding: 12px 28px;
-  font-size: 15px;
-  box-shadow: 0 4px 16px rgba(43, 138, 130, 0.35);
+.typing-indicator {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px !important;
+}
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  background: var(--gold);
+  border-radius: 50%;
+  animation: typingPulse 1.2s infinite ease-in-out;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+.suggested-questions-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 15px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  align-items: center;
+}
+.suggested-chip {
+  background: rgba(14, 165, 233, 0.1);
+  color: var(--primary-color);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+.suggested-chip:hover {
+  background: var(--primary-color);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(14, 165, 233, 0.3);
 }
 
-.portal-hints {
-  font-size: 12px;
-  color: #78530b;
-  background: rgba(254, 249, 195, 0.8);
-  padding: 8px 16px;
-  border-radius: 12px;
+.chat-input-area {
+  display: flex;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(232, 200, 116, 0.4);
+  background: rgba(238, 244, 248, 0.6);
+}
+.chat-input-area input {
+  flex: 1;
+  padding: 12px 16px;
+  background: #ffffff;
   border: 1px solid rgba(232, 200, 116, 0.5);
-  margin-top: 8px;
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  font-family: var(--font-body);
+  transition: border-color 0.3s;
+}
+.chat-input-area input:focus {
+  border-color: var(--jade-glow);
+  box-shadow: 0 0 0 3px rgba(79, 168, 160, 0.2);
+}
+
+.btn-jade-sm {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #e8c874, #d99b26);
+  color: #1a3a5c;
+  border: 1px solid #f3d994;
+  border-radius: 10px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  font-size: 14px;
+  transition: all 0.3s;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(232, 200, 116, 0.3);
+}
+.btn-jade-sm:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(232, 200, 116, 0.5);
+}
+.btn-jade-sm:disabled { opacity: 0.5; }
+
+@media (max-width: 768px) {
+  .chat-container { height: calc(100vh - 240px); min-height: 400px; }
 }
 </style>

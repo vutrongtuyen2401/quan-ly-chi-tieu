@@ -18,7 +18,11 @@ import time
 import csv
 import io
 import math
+import logging
+import traceback
 from contextlib import contextmanager
+
+logger = logging.getLogger("can_khon_backend")
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     try:
@@ -485,6 +489,7 @@ RecurringTransactionUpdateBody = RecurringUpdateBody
 
 class ChatBody(BaseModel):
     message: str
+    mode: Optional[str] = "action"
 
 class DebtCreateBody(BaseModel):
     debt_type: str
@@ -2257,7 +2262,9 @@ async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
         agent_resp: AgentResponse = await core.process_request(
             user_id=user_id,
             user_message=body.message,
-            recent_history=recent_history
+            recent_history=recent_history,
+            user_role=user.get("role", "user"),
+            mode=body.mode or "action"
         )
         t_ai_1 = time.time()
 
@@ -2281,7 +2288,27 @@ async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Tiên Trí gặp trở ngại: {str(e)}")
+        logger.error(f"Lỗi xử lý AI Chat cho user {user.get('id', user.get('user_id'))}: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail="Tiên Trí tạm thời gặp trở ngại khi tiếp nhận thông tin. Đạo hữu vui lòng thử lại hoặc nêu rõ hơn."
+        )
+
+
+@app.post("/api/ai/cancel-pending")
+def cancel_pending_action(user: dict = Depends(get_current_user)):
+    """Hủy bỏ hành động đang chờ (Pending Action) của người dùng hiện tại"""
+    core = get_agent_core()
+    core.clear_pending_action(user["user_id"])
+    return {"status": "ok", "message": "Đã hủy bỏ hành động đang chờ thành công."}
+
+
+@app.get("/api/ai/pending-action")
+def get_pending_action_status(user: dict = Depends(get_current_user)):
+    """Lấy trạng thái hành động đang chờ của người dùng hiện tại"""
+    core = get_agent_core()
+    action = core.get_pending_action(user["user_id"])
+    return {"pending_action": action}
 
 
 @app.get("/api/ai/chat-history")

@@ -5,6 +5,20 @@
 - Chỉ chỉnh sửa, chạy thử và kiểm thử mã nguồn ở môi trường cục bộ (Local).
 - Khi sửa code xong, chỉ thông báo kết quả kiểm thử local và hỏi ý kiến người dùng nếu họ muốn push code lên GitHub.
 
+## 🚫 QUY TẮC KIỂM THỬ: DỪNG TOÀN BỘ BROWSER AUTOMATION
+- **TUYỆT ĐỐI KHÔNG** mở Chrome.
+- **TUYỆT ĐỐI KHÔNG** dùng browser subagent / browser automation.
+- **TUYỆT ĐỐI KHÔNG** thực hiện browser verification, navigate localhost, hoặc login qua browser.
+- **TUYỆT ĐỐI KHÔNG** kiểm thử UI bằng browser.
+- Nếu một bước kiểm thử hoặc quy tắc cũ yêu cầu browser / mở trình duyệt: **BẮT BUỘC SKIP BƯỚC ĐÓ** và chuyển sang kiểm thử bằng các phương pháp không dùng browser.
+- **CHỈ ĐƯỢC KIỂM THỬ BẰNG:**
+  1. Backend tests (`python -m unittest ...`, `pytest`, v.v.)
+  2. Unit / Integration tests
+  3. API / Live HTTP tests (dùng `FastAPI TestClient`, `urllib`, `requests`, `httpx`...)
+  4. Database verification (kiểm tra trạng thái SQLite `app.db`, integrity, records)
+  5. Frontend build validation (`npm run build`)
+- **Trọng tâm phát triển:** Agent Core, Tool Registry, Natural-language argument resolution và Actual tool execution.
+
 ## 📌 6 NGUYÊN TẮC BẮT BUỘC KHI PHÁT TRIỂN & SỬA CODE
 
 ### 1. KHAI BÁO ĐẦY ĐỦ TRƯỚC KHI DÙNG
@@ -17,14 +31,14 @@
 - Sau khi sửa xong 1 phần, PHẢI kiểm tra lại toàn bộ các trang khác trong web (không chỉ phần vừa sửa) để đảm bảo không có phần nào bị ảnh hưởng dây chuyền.
 - Nếu tính năng mới đủ lớn (có form, modal, hoặc logic phức tạp riêng), cân nhắc tách thành 1 component Vue riêng (file `.vue` độc lập) thay vì nhồi thêm vào `App.vue`, để giảm rủi ro và dễ kiểm tra hơn.
 
-### 3. KIỂM TRA CONSOLE TRƯỚC KHI BÁO ĐÃ XONG
-- Sau MỌI lần sửa code, bắt buộc phải mở trình duyệt, tải lại toàn bộ ứng dụng, và kiểm tra tab Console.
-- Nếu có BẤT KỲ dòng lỗi đỏ (Uncaught, TypeError, ReferenceError...) hoặc cảnh báo vàng dạng `[Vue warn]: Property ... was accessed but is not defined` xuất hiện — dù không liên quan trực tiếp tới phần vừa sửa — PHẢI dừng lại và sửa hết trước khi báo cáo hoàn thành, KHÔNG được bỏ qua với lý do "không liên quan tới yêu cầu hiện tại".
-- Việc kiểm tra Console không chỉ ở trang vừa sửa, mà phải thử qua ít nhất các trang chính: Đăng nhập, Tổng Quan, Giao Dịch, Linh Nhãn OCR, Khí Linh AI, Quản Lý Tài Khoản.
+### 3. KIỂM THỬ KHÔNG DÙNG BROWSER & BUILD SẠCH
+- Kiểm tra kết quả qua frontend `npm run build` không có lỗi bundling.
+- Kiểm tra cú pháp template, biến định nghĩa đầy đủ.
+- Bỏ qua việc mở browser thủ công; tập trung vào HTTP test và build check.
 
-### 4. KIỂM THỬ LUỒNG CHỨC NĂNG LIÊN QUAN, KHÔNG CHỈ PHẦN VỪA SỬA
-- Trước khi báo "đã hoàn thành", phải tự kiểm thử thực tế bằng cách thao tác trực tiếp trên giao diện (không chỉ đọc code rồi suy đoán là đúng): đăng nhập thử, bấm nút thử, nhập dữ liệu thử.
-- Liệt kê rõ trong báo cáo: đã test những gì, kết quả cụ thể ra sao — không được chỉ nói chung chung "đã hoạt động tốt" mà không có bằng chứng cụ thể (ví dụ log Console sạch, ảnh chụp, hoặc mô tả hành vi quan sát được).
+### 4. KIỂM THỬ LUỒNG CHỨC NĂNG BẰNG TEST SUITE & HTTP TESTS
+- Chạy test suite tương ứng (`test_full_system_agent.py`, `test_conversational_financial_ai.py`, `test_conversational_confirmation.py`, `test_suite.py`...).
+- Liệt kê rõ trong báo cáo: đã test những gì, kết quả cụ thể ra sao bằng output kiểm thử thực tế (pass/fail, execution time, assertions).
 
 ### 5. THẬN TRỌNG VỚI CÁC THAY ĐỔI ẢNH HƯỞNG DIỆN RỘNG
 - Với các thay đổi liên quan tới: cấu trúc database (thêm/sửa cột, bảng), biến toàn cục dùng ở nhiều trang, hoặc theme/CSS variables dùng chung — PHẢI đặc biệt cẩn trọng vì phạm vi ảnh hưởng rộng hơn bình thường.
@@ -34,4 +48,5 @@
 ### 6. BÁO CÁO RÕ RÀNG, TRUNG THỰC
 - Nếu trong quá trình sửa phát hiện thêm lỗi khác không thuộc phạm vi yêu cầu ban đầu, phải báo cáo rõ cho người dùng biết (không tự ý sửa luôn nếu thay đổi lớn, hoặc sửa xong thì phải liệt kê rõ đã sửa thêm gì ngoài yêu cầu).
 - Nếu có phần nào chưa chắc chắn đã sửa triệt để, hoặc còn nghi ngờ có thể phát sinh lỗi trong 1 số trường hợp hiếm, phải nói rõ điều đó thay vì báo "hoàn thành" một cách tuyệt đối.
+
 
