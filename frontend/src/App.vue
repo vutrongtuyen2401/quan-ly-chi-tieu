@@ -145,706 +145,105 @@
 
   <!-- MAIN APP -->
   <div v-else class="app-realm">
-    <!-- HEADER -->
-    <header class="realm-header">
-      <div class="header-inner">
-        <!-- REQUIREMENT 4: Click Title -> Switch to Dashboard -->
-        <div class="header-left clickable-brand" @click="switchTab('dashboard')" title="Trở về Đạo Đường Tổng Quan">
-          <span class="header-symbol">☯</span>
-          <h1 class="header-title">Càn Khôn Linh Thạch Các</h1>
-          <span class="version-badge">v3.0</span>
-        </div>
-        <div class="header-right">
-          <!-- REQUIREMENT: Theme Switch Button -->
-          <button id="btn-toggle-theme" class="theme-btn" @click="switchTheme" :title="currentTheme === 'modern' ? 'Chuyển sang Đạo Quán Tu Tiên' : 'Chuyển sang Giao Diện Hiện Đại'">
-            {{ currentTheme === 'modern' ? '☀️ Giao Diện Sáng' : '🌙 Giao Diện Tối' }}
-          </button>
-          <!-- REQUIREMENT 5 & 6: User Badge click -> Open Account Management -->
-          <button class="user-badge-btn" @click="openProfileModal" title="Quản Lý Đạo Tâm (Tài Khoản)">
-            🧙 {{ userName }}
-          </button>
-          <button class="btn-logout" @click="doLogout">🚪 Hạ Sơn</button>
-        </div>
-      </div>
-    </header>
-
-    <!-- TAB NAVIGATION -->
-    <nav class="tab-nav" :class="{ 'has-overflow-left': canScrollNavLeft, 'has-overflow-right': canScrollNavRight }">
-      <div class="tab-nav-wrapper">
-        <!-- Left Scroll Arrow -->
-        <button v-show="canScrollNavLeft" class="tab-scroll-btn left" @click="scrollNav('left')" title="Cuộn sang trái" aria-label="Cuộn sang trái">
-          ◀
-        </button>
-
-        <!-- Inner Nav Tabs Container -->
-        <div ref="tabNavEl" class="tab-nav-inner" @scroll="checkNavScroll" @wheel.passive="handleNavWheel">
-          <button v-for="tab in displayTabs" :key="tab.id"
-                  :class="['tab-btn', { active: activeTab === tab.id, 'admin-tab-btn': tab.adminOnly }]"
-                  @click="switchTab(tab.id)">
-            <span class="tab-icon">{{ tab.icon }}</span>
-            <span class="tab-label">{{ tab.label }}</span>
-          </button>
-        </div>
-
-        <!-- Right Scroll Arrow -->
-        <button v-show="canScrollNavRight" class="tab-scroll-btn right" @click="scrollNav('right')" title="Cuộn sang phải" aria-label="Cuộn sang phải">
-          ▶
-        </button>
-      </div>
-    </nav>
+    <!-- ═══ APP HEADER & NAVIGATION (STITCH CELESTIAL DESIGN) ═══ -->
+    <AppHeader
+      :active-tab="activeTab"
+      :tabs="tabs"
+      :user-name="userName"
+      :user-role="userRole"
+      :is-user-admin="isUserAdmin"
+      :current-theme="currentTheme"
+      :can-scroll-nav-left="canScrollNavLeft"
+      :can-scroll-nav-right="canScrollNavRight"
+      @switch-tab="switchTab"
+      @open-profile="openProfileModal"
+      @switch-theme="switchTheme"
+      @logout="doLogout"
+      @scroll-nav="scrollNav"
+    />
 
     <!-- CONTENT AREA -->
     <main class="realm-content">
-      <!-- ═══════ TAB 1: DASHBOARD ═══════ -->
+      <!-- ═══════ TAB 1: DASHBOARD (STITCH CELESTIAL MODERN) ═══════ -->
       <section v-if="activeTab === 'dashboard'" class="tab-panel">
-        <h2 class="section-title">📊 Đạo Đường Tổng Quan</h2>
-
-        <!-- Metrics Cards -->
-        <div class="metrics-grid">
-          <div class="metric-card jade">
-            <div class="metric-icon">💰</div>
-            <div class="metric-info">
-              <span class="metric-label">Thu Nhập Linh Mạch</span>
-              <span class="metric-value">{{ formatVND(summary.total_income) }}</span>
-            </div>
-          </div>
-          <div class="metric-card crimson">
-            <div class="metric-icon">🔥</div>
-            <div class="metric-info">
-              <span class="metric-label">Tiêu Hao Linh Thạch</span>
-              <span class="metric-value">{{ formatVND(summary.total_expense) }}</span>
-            </div>
-          </div>
-          <div class="metric-card gold">
-            <div class="metric-icon">⚖️</div>
-            <div class="metric-info">
-              <span class="metric-label">Tiết Kiệm Thuần</span>
-              <span class="metric-value" :class="summary.net_savings >= 0 ? 'positive' : 'negative'">
-                {{ formatVND(summary.net_savings) }}
-              </span>
-            </div>
-          </div>
-          <div class="metric-card purple">
-            <div class="metric-icon">👛</div>
-            <div class="metric-info">
-              <span class="metric-label">Tổng Túi Càn Khôn</span>
-              <span class="metric-value">{{ formatVND(summary.total_balance) }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Budget Alerts -->
-        <div v-if="budgetAlerts.length" class="alerts-section">
-          <h3 class="sub-title">⚠️ Cảnh Báo Tâm Ma Chi Tiêu</h3>
-          <div v-for="alert in budgetAlerts" :key="alert.category"
-               :class="['alert-card', alert.level === 'DANGER' ? 'danger' : 'warning']">
-            <span class="alert-icon">{{ alert.icon }}</span>
-            <span class="alert-msg">{{ alert.message }}</span>
-            <span class="alert-pct">{{ alert.percent }}%</span>
-          </div>
-        </div>
-
-        <!-- Dashboard Charts Row -->
-        <div class="dashboard-charts-row">
-          <div class="chart-card" v-if="summary.expense_by_category && summary.expense_by_category.length">
-            <ChartComponent
-              type="doughnut"
-              :chart-data="dashboardDoughnutData"
-              title="🥧 Phân Bổ Chi Tiêu Tháng Này"
-            />
-          </div>
-          <div class="chart-card" v-if="trendData.trend && trendData.trend.length">
-            <ChartComponent
-              type="bar"
-              :chart-data="dashboardBarData"
-              title="📊 Thu/Chi 6 Tháng Gần Đây"
-            />
-          </div>
-        </div>
-
-        <!-- AI Saving Tips -->
-        <div class="saving-tips-section">
-          <div class="saving-tips-header">
-            <h3 class="sub-title">🔮 Khai Thị Tiết Kiệm AI</h3>
-            <button class="btn-jade-sm" @click="loadSavingTips" :disabled="loadingTips">
-              {{ loadingTips ? '🔮 Đang cầu tiên...' : '✨ Nhận Khai Thị' }}
-            </button>
-          </div>
-          <div v-if="savingTips" class="saving-tips-card">
-            <div class="tips-meta">
-              <span>📅 Tháng: {{ savingTips.month_year }}</span>
-              <span>📈 Tỷ lệ tiết kiệm: <strong :class="savingTips.savings_rate >= 20 ? 'positive' : 'negative'">{{ savingTips.savings_rate }}%</strong></span>
-            </div>
-            <div class="tips-content" v-html="formatChatText(savingTips.tips)"></div>
-          </div>
-        </div>
-
-        <!-- Recent Transactions -->
-        <h3 class="sub-title">📜 Giao Dịch Linh Thạch Gần Đây</h3>
-        <div class="table-scroll">
-          <table class="xianxia-table">
-            <thead>
-              <tr>
-                <th>Ngày</th>
-                <th>Danh Mục</th>
-                <th>Ghi Chú</th>
-                <th>Ví</th>
-                <th>Số Tiền</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="txn in transactions.slice(0, 10)" :key="txn.id">
-                <td>{{ txn.transaction_date }}</td>
-                <td><span class="cat-badge">{{ txn.category_icon }} {{ txn.category_name }}</span></td>
-                <td>{{ txn.note || '—' }}</td>
-                <td>{{ txn.wallet_name }}</td>
-                <td :class="txn.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
-                  {{ txn.transaction_type === 'INCOME' ? '+' : '-' }}{{ formatVND(txn.amount) }}
-                </td>
-              </tr>
-              <tr v-if="!transactions.length">
-                <td colspan="5" class="empty-row">Chưa có giao dịch nào...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Expense by Category (bar breakdown) -->
-        <div v-if="summary.expense_by_category && summary.expense_by_category.length" class="category-breakdown">
-          <h3 class="sub-title">📈 Phân Bổ Tiêu Hao Theo Danh Mục</h3>
-          <div class="cat-bars">
-            <div v-for="cat in summary.expense_by_category" :key="cat.category_name" class="cat-bar-row">
-              <span class="cat-bar-label">{{ cat.icon }} {{ cat.category_name }}</span>
-              <div class="cat-bar-track">
-                <div class="cat-bar-fill"
-                     :style="{ width: Math.min(100, (cat.total / maxCategoryExpense * 100)) + '%' }"></div>
-              </div>
-              <span class="cat-bar-value">{{ formatVND(cat.total) }}</span>
-            </div>
-          </div>
-        </div>
+        <DashboardView
+          :summary="summary"
+          :budget-alerts="budgetAlerts"
+          :trend-data="trendData"
+          :dashboard-doughnut-data="dashboardDoughnutData"
+          :dashboard-bar-data="dashboardBarData"
+          :saving-tips="savingTips"
+          :loading-tips="loadingTips"
+          :transactions="transactions"
+          :user-name="userName"
+          :user-role="userRole"
+          :max-category-expense="maxCategoryExpense"
+          :format-v-n-d="formatVND"
+          :format-chat-text="formatChatText"
+          @load-saving-tips="loadSavingTips"
+          @switch-tab="switchTab"
+        />
       </section>
 
-      <!-- ═══════ TAB 2: TRANSACTIONS ═══════ -->
+      <!-- ═══════ TAB 2: TRANSACTIONS (STITCH CELESTIAL LEDGER) ═══════ -->
       <section v-if="activeTab === 'transactions'" class="tab-panel">
-        <div class="section-header-flex">
-          <h2 class="section-title">💸 Tàng Kinh Giao Dịch</h2>
-          <div class="action-btn-group">
-            <button class="btn-action-gold" @click="showRecurringSection = !showRecurringSection">
-              🔄 {{ showRecurringSection ? 'Ẩn Định Kỳ' : 'Linh Trận Định Kỳ' }} ({{ recurringList.length }})
-            </button>
-            <button class="btn-action-jade" @click="doExportReports('excel')">
-              📥 Xuất Excel
-            </button>
-            <button class="btn-action-secondary" @click="doExportReports('csv')">
-              📄 Xuất CSV
-            </button>
-          </div>
-        </div>
-
-        <!-- RECURRING TRANSACTIONS SECTION -->
-        <div v-if="showRecurringSection" class="recurring-box">
-          <div class="recurring-header">
-            <h3 class="sub-title">🔄 Linh Trận Định Kỳ (Tự Động Sinh Giao Dịch)</h3>
-            <p class="hint-text">Thiết lập chi tiêu / thu nhập tự động định kỳ (hàng tuần hoặc hàng tháng)</p>
-          </div>
-
-          <!-- Add Recurring Form -->
-          <div class="form-grid recurring-form-grid">
-            <div class="input-group-xianxia">
-              <label>Loại</label>
-              <select v-model="recurringForm.transaction_type">
-                <option value="EXPENSE">🔥 Tiêu Hao (Chi)</option>
-                <option value="INCOME">💎 Thu Hoạch (Thu)</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Tiền (VNĐ)</label>
-              <input v-model.number="recurringForm.amount" type="number" placeholder="0" min="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Túi Càn Khôn</label>
-              <select v-model="recurringForm.wallet_id">
-                <option v-for="w in wallets" :key="'rec-w-'+w.id" :value="w.id">{{ w.wallet_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Danh Mục</label>
-              <select v-model="recurringForm.category_id">
-                <option v-for="c in categories.filter(cat => cat.category_type === recurringForm.transaction_type)" :key="'rec-c-'+c.id" :value="c.id">
-                  {{ c.icon }} {{ c.category_name }}
-                </option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Tần Suất</label>
-              <select v-model="recurringForm.frequency">
-                <option value="monthly">📅 Hàng Tháng</option>
-                <option value="weekly">📆 Hàng Tuần</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Ngày Chạy Kế Tiếp</label>
-              <input v-model="recurringForm.next_run_date" type="date" />
-            </div>
-            <div class="input-group-xianxia" style="grid-column: 1 / -1;">
-              <label>Ghi Chú</label>
-              <input v-model="recurringForm.note" type="text" placeholder="VD: Tiền trọ hàng tháng, Lương định kỳ..." />
-            </div>
-          </div>
-          <button class="btn-jade" @click="createRecurring" :disabled="loading" style="margin-top: 14px;">
-            {{ loading ? '⏳...' : '✨ Khởi Tạo Linh Trận Định Kỳ' }}
-          </button>
-
-          <!-- Recurring List Table -->
-          <div class="table-scroll" style="margin-top: 20px;">
-            <table class="xianxia-table">
-              <thead>
-                <tr>
-                  <th>Loại</th>
-                  <th>Danh Mục</th>
-                  <th>Số Tiền</th>
-                  <th>Ví</th>
-                  <th>Tần Suất</th>
-                  <th>Kỳ Kế Tiếp</th>
-                  <th>Trạng Thái</th>
-                  <th>Thao Tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="rec in recurringList" :key="rec.id">
-                  <td>
-                    <span :class="rec.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
-                      {{ rec.transaction_type === 'INCOME' ? '💎 Thu' : '🔥 Chi' }}
-                    </span>
-                  </td>
-                  <td><span class="cat-badge">{{ rec.category_icon }} {{ rec.category_name }}</span></td>
-                  <td :class="rec.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
-                    {{ formatVND(rec.amount) }}
-                  </td>
-                  <td>{{ rec.wallet_name }}</td>
-                  <td>{{ rec.frequency === 'weekly' ? 'Hàng Tuần' : 'Hàng Tháng' }}</td>
-                  <td><strong>{{ rec.next_run_date }}</strong></td>
-                  <td>
-                    <button :class="rec.is_active ? 'btn-status-active' : 'btn-status-inactive'" @click="toggleRecurring(rec)">
-                      {{ rec.is_active ? '✅ Đang chạy' : '⏸️ Tạm dừng' }}
-                    </button>
-                  </td>
-                  <td>
-                    <div class="action-cell">
-                      <button class="btn-sm-edit" @click="openEditRecurring(rec)" title="Sửa">✏️</button>
-                      <button class="btn-sm-danger" @click="deleteRecurring(rec.id)" title="Xóa">🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="!recurringList.length">
-                  <td colspan="8" class="empty-row">Chưa có giao dịch định kỳ nào...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Add Transaction Form -->
-        <div class="form-card">
-          <h3 class="sub-title">✍️ Ghi Nhận Giao Dịch Linh Thạch</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Loại Giao Dịch</label>
-              <select v-model="txnForm.transaction_type">
-                <option value="EXPENSE">🔥 Tiêu Hao (Chi)</option>
-                <option value="INCOME">💎 Thu Hoạch (Thu)</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Linh Thạch (VNĐ)</label>
-              <input v-model.number="txnForm.amount" type="number" placeholder="0" min="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Túi Càn Khôn (Ví)</label>
-              <select v-model="txnForm.wallet_id">
-                <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Danh Mục</label>
-              <select v-model="txnForm.category_id">
-                <option v-for="c in filteredCategories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.category_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Ngày Giao Dịch</label>
-              <input v-model="txnForm.transaction_date" type="date" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Ghi Chú</label>
-              <input v-model="txnForm.note" type="text" placeholder="Mô tả giao dịch..." />
-            </div>
-          </div>
-          <button class="btn-jade" @click="createTransaction" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '⚡ Ghi Nhận Giao Dịch' }}
-          </button>
-        </div>
-
-        <!-- FILTER & SEARCH BAR -->
-        <div class="filter-card">
-          <div class="filter-header">
-            <h3 class="filter-title">🔍 Bộ Lọc & Tìm Kiếm Giao Dịch</h3>
-            <button class="btn-link" @click="resetTxnFilter">🔄 Đặt lại bộ lọc</button>
-          </div>
-          <div class="filter-grid">
-            <div class="input-group-xianxia">
-              <label>Từ Ngày</label>
-              <input v-model="txnFilter.start_date" type="date" @change="loadTransactions(true)" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Đến Ngày</label>
-              <input v-model="txnFilter.end_date" type="date" @change="loadTransactions(true)" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Danh Mục</label>
-              <select v-model="txnFilter.category_id" @change="loadTransactions(true)">
-                <option value="">— Tất cả danh mục —</option>
-                <option v-for="c in categories" :key="'flt-c-'+c.id" :value="c.id">{{ c.icon }} {{ c.category_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Túi Càn Khôn</label>
-              <select v-model="txnFilter.wallet_id" @change="loadTransactions(true)">
-                <option value="">— Tất cả ví —</option>
-                <option v-for="w in wallets" :key="'flt-w-'+w.id" :value="w.id">{{ w.wallet_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Loại</label>
-              <select v-model="txnFilter.transaction_type" @change="loadTransactions(true)">
-                <option value="">— Tất cả loại —</option>
-                <option value="EXPENSE">🔥 Tiêu Hao</option>
-                <option value="INCOME">💎 Thu Hoạch</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Từ Khóa Ghi Chú</label>
-              <input v-model="txnFilter.keyword" type="text" placeholder="Tìm theo ghi chú..." @input="loadTransactions(true)" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Transactions Table -->
-        <div class="table-header-flex" style="margin-top: 24px;">
-          <h3 class="sub-title">📜 Lịch Sử Giao Dịch ({{ txnPagination.totalCount }})</h3>
-          <div class="pagination-controls" v-if="totalPages > 1">
-            <button class="btn-page" :disabled="txnPagination.page <= 1" @click="changeTxnPage(txnPagination.page - 1)">« Trước</button>
-            <span class="page-info">Trang {{ txnPagination.page }} / {{ totalPages }}</span>
-            <button class="btn-page" :disabled="txnPagination.page >= totalPages" @click="changeTxnPage(txnPagination.page + 1)">Sau »</button>
-          </div>
-        </div>
-
-        <div class="table-scroll">
-          <table class="xianxia-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Ngày</th>
-                <th>Danh Mục</th>
-                <th>Ghi Chú</th>
-                <th>Ví</th>
-                <th>Số Tiền</th>
-                <th>Thao Tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(txn, idx) in transactions" :key="txn.id">
-                <td>{{ (txnPagination.page - 1) * txnPagination.limit + idx + 1 }}</td>
-                <td>{{ txn.transaction_date }}</td>
-                <td><span class="cat-badge">{{ txn.category_icon }} {{ txn.category_name }}</span></td>
-                <td>{{ txn.note || '—' }}</td>
-                <td>{{ txn.wallet_name }}</td>
-                <td :class="txn.transaction_type === 'INCOME' ? 'amt-income' : 'amt-expense'">
-                  {{ txn.transaction_type === 'INCOME' ? '+' : '-' }}{{ formatVND(txn.amount) }}
-                </td>
-                <td>
-                  <button class="btn-sm-danger" @click="deleteTransaction(txn.id)" title="Xóa">🗑️</button>
-                </td>
-              </tr>
-              <tr v-if="!transactions.length">
-                <td colspan="7" class="empty-row">Không tìm thấy giao dịch nào phù hợp...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Bottom Pagination -->
-        <div class="pagination-footer" v-if="totalPages > 1">
-          <button class="btn-page" :disabled="txnPagination.page <= 1" @click="changeTxnPage(txnPagination.page - 1)">« Trang Trước</button>
-          <span class="page-info">Trang {{ txnPagination.page }} / {{ totalPages }} (Tổng {{ txnPagination.totalCount }} giao dịch)</span>
-          <button class="btn-page" :disabled="txnPagination.page >= totalPages" @click="changeTxnPage(txnPagination.page + 1)">Trang Sau »</button>
-        </div>
+        <TransactionsView
+          :wallets="wallets"
+          :categories="categories"
+          :transactions="transactions"
+          :recurring-list="recurringList"
+          :txn-form="txnForm"
+          :recurring-form="recurringForm"
+          :txn-filter="txnFilter"
+          :txn-pagination="txnPagination"
+          :total-pages="totalPages"
+          :loading="loading"
+          :formatVND="formatVND"
+          @create-transaction="createTransaction"
+          @delete-transaction="deleteTransaction"
+          @create-recurring="createRecurring"
+          @toggle-recurring="toggleRecurring"
+          @delete-recurring="deleteRecurring"
+          @edit-recurring="openEditRecurring"
+          @change-page="changeTxnPage"
+          @reset-filter="resetTxnFilter"
+          @filter-change="loadTransactions(true)"
+          @export-reports="doExportReports"
+        />
       </section>
 
-      <!-- ═══════ TAB: DEBTS (SỔ NỢ / VAY MƯỢN) ═══════ -->
+      <!-- ═══════ TAB: DEBTS (SỔ NỢ / VAY MƯỢN — CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'debts'" class="tab-panel">
-        <h2 class="section-title">📜 Sổ Ghi Nợ — Vay Mượn Linh Thạch</h2>
-
-        <!-- Debt Metrics Cards -->
-        <div class="metrics-grid">
-          <div class="metric-card crimson">
-            <div class="metric-icon">🔴</div>
-            <div class="metric-info">
-              <span class="metric-label">Tôi Nợ (Cần Trả)</span>
-              <span class="metric-value">{{ formatVND(debtsSummary.total_borrow_unsettled) }}</span>
-            </div>
-          </div>
-          <div class="metric-card jade">
-            <div class="metric-icon">🟢</div>
-            <div class="metric-info">
-              <span class="metric-label">Cho Vay (Cần Thu)</span>
-              <span class="metric-value">{{ formatVND(debtsSummary.total_lend_unsettled) }}</span>
-            </div>
-          </div>
-          <div class="metric-card gold">
-            <div class="metric-icon">⚖️</div>
-            <div class="metric-info">
-              <span class="metric-label">Hiệu Số Nợ Ròng</span>
-              <span class="metric-value" :class="debtsSummary.total_lend_unsettled - debtsSummary.total_borrow_unsettled >= 0 ? 'positive' : 'negative'">
-                {{ formatVND(debtsSummary.total_lend_unsettled - debtsSummary.total_borrow_unsettled) }}
-              </span>
-            </div>
-          </div>
-          <div class="metric-card purple">
-            <div class="metric-icon">✅</div>
-            <div class="metric-info">
-              <span class="metric-label">Đã Tất Toán</span>
-              <span class="metric-value">{{ formatVND(debtsSummary.total_borrow_settled + debtsSummary.total_lend_settled) }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Add Debt Form -->
-        <div class="form-card">
-          <h3 class="sub-title">➕ Ghi Nhận Khoản Nợ / Cho Vay Mới</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Loại Khoản Nợ</label>
-              <select v-model="debtForm.debt_type">
-                <option value="BORROW">🔴 Tôi Vay Nợ (Cần trả người khác)</option>
-                <option value="LEND">🟢 Tôi Cho Vay (Người khác nợ tôi)</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Đối Tác / Người Vay-Mượn</label>
-              <input v-model="debtForm.person_name" type="text" placeholder="VD: Đạo hữu Tiêu Viêm" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Linh Thạch (VNĐ)</label>
-              <input v-model.number="debtForm.amount" type="number" placeholder="0" min="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Ngày Đến Hạn (Tùy chọn)</label>
-              <input v-model="debtForm.due_date" type="date" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Liên Kết Túi Càn Khôn (Tùy chọn)</label>
-              <select v-model="debtForm.wallet_id">
-                <option value="">— Không liên kết —</option>
-                <option v-for="w in wallets" :key="'debt-w-'+w.id" :value="w.id">{{ w.wallet_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Ghi Chú / Lý Do</label>
-              <input v-model="debtForm.note" type="text" placeholder="VD: Mượn mua đan dược..." />
-            </div>
-          </div>
-          <button class="btn-jade" @click="createDebt" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '✨ Ghi Vào Sổ Nợ' }}
-          </button>
-        </div>
-
-        <!-- Filter & Search Debts -->
-        <div class="form-card filter-card" style="margin-top: 24px;">
-          <div class="filter-card-header">
-            <h3 class="sub-title">🔍 Lọc Sổ Nợ</h3>
-          </div>
-          <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-            <div class="input-group-xianxia">
-              <label>Loại Khoản Nợ</label>
-              <select v-model="debtFilter.type" @change="loadDebts">
-                <option value="">Tất Cả Loại Nợ</option>
-                <option value="BORROW">🔴 Tôi Vay Nợ (Cần Trả)</option>
-                <option value="LEND">🟢 Tôi Cho Vay (Cần Thu)</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Trạng Thái Tất Toán</label>
-              <select v-model="debtFilter.is_settled" @change="loadDebts">
-                <option value="">Tất Cả Trạng Thái</option>
-                <option :value="0">⏳ Chưa Tất Toán</option>
-                <option :value="1">✅ Đã Tất Toán</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Debts Table -->
-        <div class="table-header-flex" style="margin-top: 24px;">
-          <h3 class="sub-title">📜 Danh Sách Khoản Nợ ({{ debts.length }})</h3>
-        </div>
-
-        <div class="table-scroll">
-          <table class="xianxia-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Phân Loại</th>
-                <th>Đối Tác</th>
-                <th>Số Tiền</th>
-                <th>Hạn Trả</th>
-                <th>Ví Liên Kết</th>
-                <th>Ghi Chú</th>
-                <th>Trạng Thái</th>
-                <th>Thao Tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(debt, idx) in debts" :key="debt.id" :class="{ 'row-settled': debt.is_settled }">
-                <td>{{ idx + 1 }}</td>
-                <td>
-                  <span :class="['badge-debt-type', debt.debt_type === 'BORROW' ? 'borrow' : 'lend']">
-                    {{ debt.debt_type === 'BORROW' ? '🔴 Vay Nợ' : '🟢 Cho Vay' }}
-                  </span>
-                </td>
-                <td class="person-cell"><strong>{{ debt.person_name }}</strong></td>
-                <td :class="debt.debt_type === 'BORROW' ? 'amt-expense' : 'amt-income'">
-                  {{ formatVND(debt.amount) }}
-                </td>
-                <td>
-                  <span v-if="debt.due_date">{{ debt.due_date }}</span>
-                  <span v-else class="text-dim">—</span>
-                </td>
-                <td>{{ debt.wallet_name || '—' }}</td>
-                <td>{{ debt.note || '—' }}</td>
-                <td>
-                  <span :class="['debt-status-tag', getDebtStatus(debt).class]">
-                    {{ getDebtStatus(debt).icon }} {{ getDebtStatus(debt).label }}
-                  </span>
-                </td>
-                <td>
-                  <div class="row-actions">
-                    <button class="btn-sm-settle" @click="toggleSettleDebt(debt)" :title="debt.is_settled ? 'Hoàn tác chưa trả' : 'Tất toán'">
-                      {{ debt.is_settled ? '↩️' : '✅' }}
-                    </button>
-                    <button class="btn-sm-edit" @click="openEditDebt(debt)" title="Sửa">✏️</button>
-                    <button class="btn-sm-danger" @click="deleteDebt(debt.id)" title="Xóa">🗑️</button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="!debts.length">
-                <td colspan="9" class="empty-row">Sổ Nợ đang trống hoặc không có khoản nợ phù hợp bộ lọc...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <DebtsView
+          :debts="debts"
+          :debts-summary="debtsSummary"
+          :debt-filter="debtFilter"
+          :debt-form="debtForm"
+          :wallets="wallets"
+          :loading="loading"
+          :formatVND="formatVND"
+          @create-debt="createDebt"
+          @delete-debt="deleteDebt"
+          @open-edit-debt="openEditDebt"
+          @toggle-settle-debt="toggleSettleDebt"
+          @load-debts="loadDebts"
+        />
       </section>
 
-      <!-- ═══════ TAB 3: WALLETS ═══════ -->
+      <!-- ═══════ TAB: WALLETS (TÚI CÀN KHÔN — CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'wallets'" class="tab-panel">
-        <h2 class="section-title">💳 Túi Càn Khôn — Quản Lý Ví</h2>
-
-        <div class="form-card">
-          <h3 class="sub-title">➕ Khai Mở Túi Càn Khôn Mới</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Tên Ví</label>
-              <input v-model="walletForm.wallet_name" type="text" list="bankList" placeholder="VD: Linh Mạch BIDV" />
-              <datalist id="bankList">
-                <option value="Linh Mạch Vietcombank"></option>
-                <option value="Linh Mạch Techcombank"></option>
-                <option value="Linh Mạch BIDV"></option>
-                <option value="Linh Mạch VietinBank"></option>
-                <option value="Linh Mạch Agribank"></option>
-                <option value="Linh Mạch MB Bank"></option>
-                <option value="Linh Mạch ACB"></option>
-                <option value="Linh Mạch VPBank"></option>
-                <option value="Linh Mạch Sacombank"></option>
-                <option value="Linh Mạch TPBank"></option>
-                <option value="Linh Mạch HDBank"></option>
-                <option value="Linh Mạch MoMo"></option>
-                <option value="Linh Mạch ZaloPay"></option>
-                <option value="Linh Mạch ViettelPay"></option>
-                <option value="Linh Mạch Tiền Mặt"></option>
-              </datalist>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Dư Ban Đầu (VNĐ)</label>
-              <input v-model.number="walletForm.balance" type="number" placeholder="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Loại Ví</label>
-              <select v-model="walletForm.wallet_type">
-                <option value="cash">💵 Tiền Mặt</option>
-                <option value="bank">🏦 Ngân Hàng</option>
-                <option value="e-wallet">📱 Ví Điện Tử</option>
-              </select>
-            </div>
-          </div>
-          <button class="btn-jade" @click="createWallet" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '✨ Khai Mở Ví Mới' }}
-          </button>
-        </div>
-
-        <!-- Wallet Transfer -->
-        <div class="form-card transfer-card">
-          <h3 class="sub-title">🔄 Chuyển Linh Thạch Giữa Các Ví</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Từ Ví</label>
-              <select v-model="transferForm.from_wallet_id">
-                <option :value="null" disabled>— Chọn ví nguồn —</option>
-                <option v-for="w in wallets" :key="'from-'+w.id" :value="w.id">
-                  {{ walletTypeIcon(w.wallet_type) }} {{ w.wallet_name }} ({{ formatVND(w.balance) }})
-                </option>
-              </select>
-            </div>
-            <div class="input-group-xianxia transfer-arrow-col">
-              <span class="transfer-arrow">⚡→</span>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Đến Ví</label>
-              <select v-model="transferForm.to_wallet_id">
-                <option :value="null" disabled>— Chọn ví đích —</option>
-                <option v-for="w in wallets" :key="'to-'+w.id" :value="w.id"
-                        :disabled="w.id === transferForm.from_wallet_id">
-                  {{ walletTypeIcon(w.wallet_type) }} {{ w.wallet_name }}
-                </option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Tiền Chuyển (VNĐ)</label>
-              <input v-model.number="transferForm.amount" type="number" placeholder="0" min="0" />
-            </div>
-          </div>
-          <button class="btn-jade" @click="doTransfer" :disabled="loading || !transferForm.from_wallet_id || !transferForm.to_wallet_id || !transferForm.amount" style="margin-top: 16px;">
-            {{ loading ? '⏳ Đang chuyển...' : '🔄 Chuyển Linh Thạch' }}
-          </button>
-        </div>
-
-        <div class="wallet-grid">
-          <div v-for="w in wallets" :key="w.id" class="wallet-card">
-            <div class="wallet-card-top">
-              <span class="wallet-type-icon">
-                {{ walletTypeIcon(w.wallet_type) }}
-              </span>
-              <div class="card-action-btns">
-                <button class="btn-sm-edit" @click="openEditWallet(w)" title="Sửa ví">✏️</button>
-                <button class="btn-sm-danger" @click="deleteWallet(w.id)" title="Hủy ví">✕</button>
-              </div>
-            </div>
-            <h4 class="wallet-name">{{ w.wallet_name }}</h4>
-            <p class="wallet-balance">{{ formatVND(w.balance) }}</p>
-            <span class="wallet-type-label">{{ w.wallet_type === 'cash' ? 'Tiền Mặt' : w.wallet_type === 'bank' ? 'Ngân Hàng' : 'Ví Điện Tử' }}</span>
-          </div>
-          <div v-if="!wallets.length" class="empty-state">Chưa có Túi Càn Khôn nào...</div>
-        </div>
+        <WalletsView
+          :wallets="wallets"
+          :wallet-form="walletForm"
+          :transfer-form="transferForm"
+          :loading="loading"
+          :formatVND="formatVND"
+          :wallet-type-icon="walletTypeIcon"
+          @create-wallet="createWallet"
+          @delete-wallet="deleteWallet"
+          @edit-wallet="openEditWallet"
+          @do-transfer="doTransfer"
+        />
       </section>
 
       <!-- ═══════ TAB 4: CATEGORIES ═══════ -->
@@ -1037,135 +436,20 @@
         </div>
       </section>
 
-      <!-- ═══════ TAB: SAVING GOALS (MỤC TIÊU TIẾT KIỆM) ═══════ -->
+      <!-- ═══════ TAB: SAVING GOALS (MỤC TIÊU TIẾT KIỆM — CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'goals'" class="tab-panel">
-        <h2 class="section-title">🎯 Mục Tiêu Tích Lũy — Tụ Khí Linh Thạch</h2>
-
-        <!-- Goals Summary Metrics -->
-        <div class="metrics-grid">
-          <div class="metric-card gold">
-            <div class="metric-icon">🎯</div>
-            <div class="metric-info">
-              <span class="metric-label">Tổng Mục Tiêu</span>
-              <span class="metric-value">{{ formatVND(goalsSummary.total_target) }}</span>
-            </div>
-          </div>
-          <div class="metric-card jade">
-            <div class="metric-icon">💎</div>
-            <div class="metric-info">
-              <span class="metric-label">Đã Tích Lũy</span>
-              <span class="metric-value">{{ formatVND(goalsSummary.total_saved) }}</span>
-            </div>
-          </div>
-          <div class="metric-card purple">
-            <div class="metric-icon">📈</div>
-            <div class="metric-info">
-              <span class="metric-label">Tiến Độ Chung</span>
-              <span class="metric-value">{{ goalsSummary.overall_percent }}%</span>
-            </div>
-          </div>
-          <div class="metric-card crimson">
-            <div class="metric-icon">🏆</div>
-            <div class="metric-info">
-              <span class="metric-label">Hoàn Thành</span>
-              <span class="metric-value">{{ goalsSummary.completed_count }} / {{ goalsSummary.completed_count + goalsSummary.active_count }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Add Goal Form -->
-        <div class="form-card">
-          <h3 class="sub-title">➕ Khởi Tạo Mục Tiêu Tiết Kiệm Mới</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Tên Mục Tiêu</label>
-              <input v-model="goalForm.target_name" type="text" placeholder="VD: Tậu Phi Kiếm Mới (Laptop)" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Tiền Đích (VNĐ)</label>
-              <input v-model.number="goalForm.target_amount" type="number" placeholder="0" min="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Số Tiền Ban Đầu (VNĐ)</label>
-              <input v-model.number="goalForm.current_amount" type="number" placeholder="0" min="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Thời Hạn Hoàn Thành (Tùy chọn)</label>
-              <input v-model="goalForm.target_date" type="date" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Biểu Tượng</label>
-              <select v-model="goalForm.icon">
-                <option value="🎯">🎯 Mục Tiêu</option>
-                <option value="💻">💻 Thiết Bị</option>
-                <option value="🚗">🚗 Phương Tiện</option>
-                <option value="🏠">🏠 Nhà Cửa</option>
-                <option value="✈️">✈️ Du Ngoạn</option>
-                <option value="🛡️">🛡️ Quỹ Dự Phòng</option>
-                <option value="🎓">🎓 Học Tập</option>
-                <option value="🎁">🎁 Quà Tặng</option>
-              </select>
-            </div>
-          </div>
-          <button class="btn-jade" @click="createSavingGoal" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '✨ Khởi Tạo Mục Tiêu' }}
-          </button>
-        </div>
-
-        <!-- Goals Cards Grid -->
-        <div class="table-header-flex" style="margin-top: 24px;">
-          <h3 class="sub-title">🏆 Danh Sách Mục Tiêu ({{ savingGoals.length }})</h3>
-        </div>
-
-        <div class="goals-grid">
-          <div v-for="goal in savingGoals" :key="goal.id" :class="['goal-card', { 'goal-completed': goal.is_completed }]">
-            <div class="goal-header">
-              <div class="goal-icon-name">
-                <span class="goal-icon">{{ goal.icon }}</span>
-                <div>
-                  <h4 class="goal-name">{{ goal.target_name }}</h4>
-                  <span v-if="goal.target_date" class="goal-date">
-                    📅 Hạn: {{ goal.target_date }}
-                    <span v-if="goal.days_left !== null" :class="goal.days_left < 0 ? 'text-crimson' : 'text-gold'">
-                      ({{ goal.days_left < 0 ? `Quá hạn ${Math.abs(goal.days_left)} ngày` : `Còn ${goal.days_left} ngày` }})
-                    </span>
-                  </span>
-                </div>
-              </div>
-              <span :class="['goal-badge', goal.is_completed ? 'completed' : 'in-progress']">
-                {{ goal.is_completed ? '🎉 Đạt Mục Tiêu' : '⏳ Đang Tích Lũy' }}
-              </span>
-            </div>
-
-            <!-- Progress Info -->
-            <div class="goal-progress-wrap">
-              <div class="goal-amounts">
-                <span class="goal-current">{{ formatVND(goal.current_amount) }}</span>
-                <span class="goal-target">/ {{ formatVND(goal.target_amount) }}</span>
-              </div>
-              <div class="goal-progress-bar">
-                <div class="goal-progress-fill" :style="{ width: goal.percent + '%' }"></div>
-              </div>
-              <div class="goal-progress-labels">
-                <span>Tiến độ: <strong>{{ goal.percent }}%</strong></span>
-                <span v-if="!goal.is_completed">Còn thiếu: {{ formatVND(goal.remaining_amount) }}</span>
-              </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="goal-actions">
-              <button class="btn-action-jade" @click="openDepositGoal(goal, 'deposit')" :disabled="goal.is_completed">
-                ➕ Nạp Thêm
-              </button>
-              <button class="btn-action-gold" @click="openDepositGoal(goal, 'withdraw')" :disabled="goal.current_amount <= 0">
-                ➖ Rút Bớt
-              </button>
-              <button class="btn-sm-edit" @click="openEditGoal(goal)" title="Sửa">✏️</button>
-              <button class="btn-sm-danger" @click="deleteSavingGoal(goal.id)" title="Xóa">🗑️</button>
-            </div>
-          </div>
-          <div v-if="!savingGoals.length" class="empty-state">Chưa có mục tiêu tiết kiệm nào. Hãy tạo mục tiêu đầu tiên!</div>
-        </div>
+        <SavingGoalsView
+          :saving-goals="savingGoals"
+          :goals-summary="goalsSummary"
+          :goal-form="goalForm"
+          :loading="loading"
+          :formatVND="formatVND"
+          @create-goal="createSavingGoal"
+          @open-edit-goal="openEditGoal"
+          @open-deposit-goal="openDepositGoal"
+          @delete-goal="deleteSavingGoal"
+          @load-goals="loadSavingGoals"
+        />
       </section>
 
       <!-- ═══════ TAB 7: STATISTICS ═══════ -->
@@ -1438,6 +722,9 @@
         </div>
       </section>
     </main>
+
+    <!-- ═══ APP FOOTER (STITCH CELESTIAL DESIGN) ═══ -->
+    <AppFooter />
 
     <!-- REQUIREMENT 5: ACCOUNT MANAGEMENT MODAL -->
     <div v-if="showProfileModal" class="modal-backdrop" @click.self="showProfileModal = false">
@@ -1779,13 +1066,20 @@ import { ref, computed, onMounted, nextTick, onErrorCaptured, watch } from 'vue'
 import axios from 'axios'
 import ChartComponent from './components/ChartComponents.vue'
 import KhiLinhAssistant from './components/KhiLinhAssistant.vue'
+import AppHeader from './components/common/AppHeader.vue'
+import AppFooter from './components/common/AppFooter.vue'
+import DashboardView from './components/dashboard/DashboardView.vue'
+import TransactionsView from './components/transactions/TransactionsView.vue'
+import WalletsView from './components/wallets/WalletsView.vue'
+import DebtsView from './components/debts/DebtsView.vue'
+import SavingGoalsView from './components/goals/SavingGoalsView.vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
 
 export default {
   name: 'CankKhonApp',
-  components: { ChartComponent, VueDatePicker, KhiLinhAssistant },
+  components: { ChartComponent, VueDatePicker, KhiLinhAssistant, AppHeader, AppFooter, DashboardView, TransactionsView, WalletsView, DebtsView, SavingGoalsView },
   setup() {
     // ─── STATE ────────────────────
     const isLoggedIn = ref(false)
@@ -3051,7 +2345,9 @@ export default {
         await api.delete(`/api/wallets/${id}`)
         showToast('Ví đã xóa!')
         await loadAllData()
-      } catch {}
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi xóa ví!', 'error')
+      }
     }
 
     async function doTransfer() {
@@ -4237,7 +3533,7 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
   z-index: 1;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 32px 24px 100px;
+  padding: 112px 24px 100px;
 }
 
 .tab-panel {
@@ -5570,7 +4866,7 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
 @media (max-width: 768px) {
   .header-title { font-size: 17px; }
   .version-badge { display: none; }
-  .realm-content { padding: 20px 16px 80px; }
+  .realm-content { padding: 112px 16px 80px; }
   .metrics-grid { grid-template-columns: 1fr; }
   .categories-split { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }

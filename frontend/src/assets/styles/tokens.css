@@ -1,0 +1,116 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CÀN KHÔN LINH THẠCH CÁC — DESIGN SYSTEM TOKENS (STITCH CELESTIAL TREASURY)
+   Source of Truth: stitch_design/.../celestial_treasury/DESIGN.md
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ─── COLOR PALETTE: SURFACES & BACKGROUNDS ─── */
+  --color-background: #0b1326;
+  --color-on-background: #dae2fd;
+  
+  --color-surface: #0b1326;
+  --color-surface-dim: #0b1326;
+  --color-surface-bright: #31394d;
+  --color-surface-variant: #2d3449;
+
+  --color-surface-container-lowest: #060e20;
+  --color-surface-container-low: #131b2e;
+  --color-surface-container: #171f33;
+  --color-surface-container-high: #222a3d;
+  --color-surface-container-highest: #2d3449;
+
+  --color-on-surface: #dae2fd;
+  --color-on-surface-variant: #bdc9c6;
+  --color-inverse-surface: #dae2fd;
+  --color-inverse-on-surface: #283044;
+
+  --color-outline: #889391;
+  --color-outline-variant: #3e4947;
+  --color-surface-tint: #7dd6cc;
+
+  /* ─── PRIMARY: SPIRITUAL JADE (Tu Tiên Linh Thạch / Cốt Lõi) ─── */
+  --color-primary: #7dd6cc;
+  --color-primary-core: #2b8a82;
+  --color-on-primary: #003733;
+  --color-primary-container: #449f96;
+  --color-on-primary-container: #00302c;
+  --color-inverse-primary: #006a63;
+  --color-primary-fixed: #9af2e8;
+  --color-primary-fixed-dim: #7dd6cc;
+  --color-on-primary-fixed: #00201d;
+  --color-on-primary-fixed-variant: #00504b;
+
+  /* ─── SECONDARY: CELESTIAL INDIGO / MIDNIGHT (Thần Thức Tinh Vân) ─── */
+  --color-secondary: #c4c1fb;
+  --color-on-secondary: #2d2a5b;
+  --color-secondary-container: #444173;
+  --color-on-secondary-container: #b3afe9;
+  --color-secondary-fixed: #e3dfff;
+  --color-secondary-fixed-dim: #c4c1fb;
+  --color-on-secondary-fixed: #181445;
+  --color-on-secondary-fixed-variant: #444173;
+
+  /* ─── TERTIARY: TALISMAN GOLD (Hoàng Kim Phù Triện / Cảnh Báo Cao Cấp) ─── */
+  --color-tertiary: #e3c370;
+  --color-tertiary-gold: #e8c874;
+  --color-on-tertiary: #3d2e00;
+  --color-tertiary-container: #c6a858;
+  --color-on-tertiary-container: #4f3d00;
+  --color-tertiary-fixed: #ffe08f;
+  --color-tertiary-fixed-dim: #e3c370;
+  --color-on-tertiary-fixed: #241a00;
+  --color-on-tertiary-fixed-variant: #584400;
+
+  /* ─── STATUS: YIELD (THU LỢI) & TRIBULATION (KIẾP NẠN / HAO TỔN) ─── */
+  --color-success: #10b981;
+  --color-success-yield: #10b981;
+  --color-on-success: #003822;
+
+  --color-error: #ffb4ab;
+  --color-error-tribulation: #ef4444;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+
+  /* ─── RADII ─── */
+  --radius-sm: 0.25rem;    /* 4px */
+  --radius-DEFAULT: 0.5rem; /* 8px - Inputs, badges, table cells */
+  --radius-md: 0.75rem;    /* 12px - Buttons, smaller cards */
+  --radius-lg: 1rem;       /* 16px - Cards, dialogs, modals */
+  --radius-xl: 1.5rem;     /* 24px - Large master hero panels */
+  --radius-full: 9999px;   /* Pills, status chips, avatar orbs */
+
+  /* ─── SPACING (8-point Base Rhythm Grid) ─── */
+  --space-xs: 0.25rem; /* 4px */
+  --space-sm: 0.5rem;  /* 8px */
+  --space-md: 1rem;    /* 16px */
+  --space-lg: 1.5rem;  /* 24px */
+  --space-xl: 2rem;    /* 32px */
+
+  --gutter: 1.5rem;        /* 24px */
+  --gutter-mobile: 1rem;   /* 16px */
+  --margin: 2rem;          /* 32px */
+  --margin-mobile: 1rem;   /* 16px */
+
+  /* ─── ELEVATION & DEPTH TIERS ─── */
+  --tier-0-canvas: #0b1326;
+  --tier-0-ambient-radial: radial-gradient(ellipse at 80% 0%, rgba(30, 27, 75, 0.45) 0%, transparent 70%);
+
+  --tier-1-surface: rgba(19, 27, 46, 0.85);
+  --tier-1-border: rgba(255, 255, 255, 0.08);
+  --tier-1-backdrop-blur: blur(16px);
+  --tier-1-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.35);
+
+  --tier-2-surface: rgba(23, 31, 51, 0.95);
+  --tier-2-border: rgba(125, 214, 204, 0.25);
+  --tier-2-backdrop-blur: blur(24px);
+  --tier-2-shadow: 0 20px 50px rgba(0, 0, 0, 0.85);
+
+  --tier-3-hover-glow: 0 0 20px -4px rgba(125, 214, 204, 0.35);
+  --tier-3-inner-highlight: inset 0 1px 1px 0 rgba(255, 255, 255, 0.1);
+
+  /* ─── TRANSITIONS ─── */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}

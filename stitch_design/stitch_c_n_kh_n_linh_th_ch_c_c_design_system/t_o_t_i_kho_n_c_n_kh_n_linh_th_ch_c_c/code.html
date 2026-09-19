@@ -1,0 +1,150 @@
+<!DOCTYPE html><html class="dark" lang="vi" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Đăng ký - Càn Khôn Linh Thạch Các</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      background: radial-gradient(circle at 50% 0%, #172440 0%, #0B1326 60%, #070c18 100%);
+    }
+  </style>
+</head>
+<body class="bg-[#0B1326] font-sans text-slate-100 min-h-screen flex flex-col justify-between items-center selection:bg-[#2b8a82]/40 selection:text-white antialiased p-4 sm:p-6 md:p-8">
+<!-- Glow Ambient Accents -->
+<div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+<div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[500px] h-[300px] bg-[#2b8a82]/10 rounded-full blur-[120px]"></div>
+<div class="absolute bottom-10 left-1/2 -translate-x-1/2 w-[400px] h-[250px] bg-[#444173]/15 rounded-full blur-[130px]"></div>
+</div>
+<!-- Header Branding -->
+<header class="relative z-10 w-full max-w-md mx-auto pt-4 pb-2 flex flex-col items-center text-center">
+<div class="flex items-center justify-center gap-2.5 mb-1">
+<img alt="Logo" class="w-8 h-8 object-contain rounded-md" onerror="this.style.display='none'" src="https://lh3.googleusercontent.com/aida/AEtjO1XOvEDkOJXhTIyin_Ptb6H1tuqbzh35b6QCs0b__Nejo9gfeYJ3Ti_BBPSGv8MBpHPNZx8bs6wNKOWlasJDT5q3ntFxztog5hk8CKJAltbN3kGMwRQyvT_L7a_YqfZAoIhG-4svdpE16_IqlX1HL1Rjzx-T7-5IC4iTQf46TlaVhTwyRCcKVATQCD4xdJvIgVJQlNQTKRwS_dzDhGHAaISr5b4PxNtMNtdC_weqF5evRlTFpv4AhsMLqSU5">
+<h1 class="text-sm font-semibold tracking-widest text-emerald-400 uppercase">CÀN KHÔN LINH THẠCH CÁC</h1>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="relative z-10 w-full max-w-md mx-auto my-auto py-2 flex flex-col items-center">
+<!-- Khí Linh Avatar Badge -->
+<div class="flex flex-col items-center mb-5 group">
+<div class="relative w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-emerald-500/50 to-teal-200/30 shadow-[0_0_18px_rgba(43,138,130,0.35)] transition-transform duration-300 group-hover:scale-105">
+<div class="w-full h-full rounded-full overflow-hidden bg-[#0e1628] flex items-center justify-center">
+<img alt="Khí Linh" class="w-full h-full object-cover object-center" src="https://lh3.googleusercontent.com/aida-public/AB6AXuABE0BrGDSLmQv6pleWxf0SYagPg9o0snO9lAbDj-0LN6JbqRENChMzum6uPM-W5lQky_IPwMEF4Yn7afuuTeLzSsVlvZobnb_8De-z0R_vTtQ9LD73lSSAw4I__v0qkPK_MRz_oJa0VDPGW0u-x9n10dN2npIL_mBfRkXri3QrGD24KZ9X5T4rVwZFAFEe04U6JzCBPx7ypbofXvySYDF5uMNfdEVQCavUvkpS7N6MVpjKd8A5BfFAUR6mP01Kxt4cjDs">
+</div>
+<div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#131b2e] border border-emerald-400/60 flex items-center justify-center">
+<span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+</div>
+</div>
+<span class="mt-2 text-xs font-medium text-slate-300 tracking-wider">Khí Linh</span>
+</div>
+<!-- Centered Registration Card -->
+<div class="w-full rounded-2xl bg-[#131b2e]/90 border border-white/10 p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
+<div class="text-center mb-6">
+<h2 class="text-2xl font-bold text-white tracking-tight">Tạo tài khoản</h2>
+<p class="text-sm text-slate-400 mt-1.5 leading-relaxed">Khởi tạo ngân khố và kết nối bản mệnh linh thức.</p>
+</div>
+<form class="space-y-4" id="registerForm" onsubmit="event.preventDefault(); triggerRegister();">
+<!-- Field 1: Họ tên -->
+<div class="space-y-1.5">
+<label class="block text-xs font-medium text-slate-300" for="fullName">Họ tên</label>
+<div class="relative flex items-center">
+<input class="w-full h-11 rounded-xl bg-[#0b1326]/80 border border-white/10 text-white px-3.5 pl-10 text-sm placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/40 transition-all" id="fullName" placeholder="Bạch Thiềm Đạo Trưởng" required="" type="text">
+<span class="material-symbols-outlined absolute left-3 text-slate-400 text-[18px] pointer-events-none">person</span>
+</div>
+</div>
+<!-- Field 2: Email -->
+<div class="space-y-1.5">
+<label class="block text-xs font-medium text-slate-300" for="email">Email</label>
+<div class="relative flex items-center">
+<input class="w-full h-11 rounded-xl bg-[#0b1326]/80 border border-white/10 text-white px-3.5 pl-10 text-sm placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/40 transition-all" id="email" placeholder="daotruong@cankhon.tuien.vn" required="" type="email">
+<span class="material-symbols-outlined absolute left-3 text-slate-400 text-[18px] pointer-events-none">mail</span>
+</div>
+</div>
+<!-- Field 3: Mật khẩu -->
+<div class="space-y-1.5">
+<label class="block text-xs font-medium text-slate-300" for="password">Mật khẩu</label>
+<div class="relative flex items-center">
+<input class="w-full h-11 rounded-xl bg-[#0b1326]/80 border border-white/10 text-white px-3.5 pl-10 pr-10 text-sm placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/40 transition-all" id="password" minlength="4" placeholder="••••••••" required="" type="password">
+<span class="material-symbols-outlined absolute left-3 text-slate-400 text-[18px] pointer-events-none">lock</span>
+<button aria-label="Hiện hoặc ẩn mật khẩu" class="absolute right-3 text-slate-400 hover:text-slate-200 transition-colors focus:outline-none" onclick="togglePasswordVisibility()" type="button">
+<span class="material-symbols-outlined text-[18px]" id="pwdIcon">visibility</span>
+</button>
+</div>
+</div>
+<!-- Field 4: Soul Lamp -->
+<div class="space-y-1.5">
+<div class="flex items-center justify-between">
+<label class="block text-xs font-medium text-slate-300" for="soulLamp">Bản Mệnh Hồn Đăng</label>
+<span class="text-[11px] font-medium text-amber-300/90 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded-md">Bản Mệnh Hồn Đăng bảo mật</span>
+</div>
+<div class="relative flex items-center">
+<input class="w-full h-11 rounded-xl bg-[#0b1326]/80 border border-white/10 text-white px-3.5 pl-10 text-sm placeholder:text-slate-500 focus:outline-none focus:border-amber-400/50 focus:ring-1 focus:ring-amber-400/30 transition-all" id="soulLamp" placeholder="Nhập Bản Mệnh Hồn Đăng" required="" type="text">
+<span class="material-symbols-outlined absolute left-3 text-amber-400/80 text-[18px] pointer-events-none">local_fire_department</span>
+</div>
+</div>
+<!-- Submit Button -->
+<div class="pt-2">
+<button class="w-full py-3.5 rounded-xl bg-[#2b8a82] hover:bg-[#236e68] text-white font-medium text-sm shadow-lg shadow-[#2b8a82]/20 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99]" id="submitBtn" type="submit">
+<span class="">Đăng ký</span>
+</button>
+</div>
+</form>
+<!-- Bottom Redirect Link -->
+<div class="text-center mt-6 pt-1">
+<span class="text-sm text-slate-400">Đã có tài khoản?</span>
+<a class="text-sm font-medium text-slate-400 hover:text-white ml-1.5 transition-colors underline-offset-4 hover:underline" href="#login">Đăng nhập</a>
+</div>
+</div>
+</main>
+<!-- Clean Minimal Footer Note -->
+<footer class="relative z-10 w-full max-w-md mx-auto text-center py-4">
+<p class="text-xs text-slate-400/80 tracking-wide">
+      Bảo mật bởi cơ chế Soul Lamp Hash độc quyền
+    </p>
+</footer>
+<script>
+    function togglePasswordVisibility() {
+      const pwdInput = document.getElementById('password');
+      const pwdIcon = document.getElementById('pwdIcon');
+      if (pwdInput.type === 'password') {
+        pwdInput.type = 'text';
+        pwdIcon.textContent = 'visibility_off';
+      } else {
+        pwdInput.type = 'password';
+        pwdIcon.textContent = 'visibility';
+      }
+    }
+
+    function triggerRegister() {
+      const btn = document.getElementById('submitBtn');
+      const originalContent = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span><span>Đang khởi tạo...</span>';
+      
+      setTimeout(() => {
+        btn.classList.remove('bg-[#2b8a82]');
+        btn.classList.add('bg-emerald-600');
+        btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">done</span><span>Tạo Ngân Khố Thành Công!</span>';
+        setTimeout(() => {
+          btn.innerHTML = originalContent;
+          btn.disabled = false;
+          btn.classList.remove('bg-emerald-600');
+          btn.classList.add('bg-[#2b8a82]');
+        }, 2200);
+      }, 1000);
+    }
+  </script>
+</body></html>
