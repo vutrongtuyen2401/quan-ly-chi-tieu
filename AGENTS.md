@@ -5,19 +5,16 @@
 - Chỉ chỉnh sửa, chạy thử và kiểm thử mã nguồn ở môi trường cục bộ (Local).
 - Khi sửa code xong, chỉ thông báo kết quả kiểm thử local và hỏi ý kiến người dùng nếu họ muốn push code lên GitHub.
 
-## 🚫 QUY TẮC KIỂM THỬ: DỪNG TOÀN BỘ BROWSER AUTOMATION
-- **TUYỆT ĐỐI KHÔNG** mở Chrome.
-- **TUYỆT ĐỐI KHÔNG** dùng browser subagent / browser automation.
-- **TUYỆT ĐỐI KHÔNG** thực hiện browser verification, navigate localhost, hoặc login qua browser.
-- **TUYỆT ĐỐI KHÔNG** kiểm thử UI bằng browser.
-- Nếu một bước kiểm thử hoặc quy tắc cũ yêu cầu browser / mở trình duyệt: **BẮT BUỘC SKIP BƯỚC ĐÓ** và chuyển sang kiểm thử bằng các phương pháp không dùng browser.
-- **CHỈ ĐƯỢC KIỂM THỬ BẰNG:**
+## 🌐 QUY TẮC KIỂM THỬ & BROWSER AUTOMATION
+- **Cho phép sử dụng Browser Automation** (Playwright, Chrome, Browser subagents/tools) khi người dùng yêu cầu (ví dụ qua lệnh `/browser`, kiểm tra luồng giao diện UI/E2E).
+- Khi kiểm thử browser: thực hiện theo đúng các bước người dùng chỉ định, quan sát DOM/Console và báo cáo trung thực kết quả từng bước.
+- Đối với các tác vụ phát triển thông thường không có yêu cầu browser trực tiếp, ưu tiên kiểm thử nhanh và ổn định bằng:
   1. Backend tests (`python -m unittest ...`, `pytest`, v.v.)
   2. Unit / Integration tests
   3. API / Live HTTP tests (dùng `FastAPI TestClient`, `urllib`, `requests`, `httpx`...)
   4. Database verification (kiểm tra trạng thái SQLite `app.db`, integrity, records)
   5. Frontend build validation (`npm run build`)
-- **Trọng tâm phát triển:** Agent Core, Tool Registry, Natural-language argument resolution và Actual tool execution.
+- **Trọng tâm phát triển:** Agent Core, Tool Registry, Natural-language argument resolution, Actual tool execution và UI/E2E verification khi được yêu cầu.
 
 ## 📌 6 NGUYÊN TẮC BẮT BUỘC KHI PHÁT TRIỂN & SỬA CODE
 
@@ -31,13 +28,14 @@
 - Sau khi sửa xong 1 phần, PHẢI kiểm tra lại toàn bộ các trang khác trong web (không chỉ phần vừa sửa) để đảm bảo không có phần nào bị ảnh hưởng dây chuyền.
 - Nếu tính năng mới đủ lớn (có form, modal, hoặc logic phức tạp riêng), cân nhắc tách thành 1 component Vue riêng (file `.vue` độc lập) thay vì nhồi thêm vào `App.vue`, để giảm rủi ro và dễ kiểm tra hơn.
 
-### 3. KIỂM THỬ KHÔNG DÙNG BROWSER & BUILD SẠCH
+### 3. KIỂM THỬ BUILD & GIAO DIỆN SẠCH
 - Kiểm tra kết quả qua frontend `npm run build` không có lỗi bundling.
 - Kiểm tra cú pháp template, biến định nghĩa đầy đủ.
-- Bỏ qua việc mở browser thủ công; tập trung vào HTTP test và build check.
+- Khi có yêu cầu kiểm thử giao diện/browser, kiểm tra log Console và đảm bảo không có uncaught exception.
 
-### 4. KIỂM THỬ LUỒNG CHỨC NĂNG BẰNG TEST SUITE & HTTP TESTS
+### 4. KIỂM THỬ LUỒNG CHỨC NĂNG BẰNG TEST SUITE & HTTP/E2E TESTS
 - Chạy test suite tương ứng (`test_full_system_agent.py`, `test_conversational_financial_ai.py`, `test_conversational_confirmation.py`, `test_suite.py`...).
+- Khi kiểm thử UI/E2E với Browser Automation theo yêu cầu, ghi nhận chi tiết trạng thái từng bước và console.
 - Liệt kê rõ trong báo cáo: đã test những gì, kết quả cụ thể ra sao bằng output kiểm thử thực tế (pass/fail, execution time, assertions).
 
 ### 5. THẬN TRỌNG VỚI CÁC THAY ĐỔI ẢNH HƯỞNG DIỆN RỘNG

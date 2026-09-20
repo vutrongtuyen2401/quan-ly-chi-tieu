@@ -59,6 +59,16 @@ class TestLiveKhiLinhDay4(unittest.TestCase):
     @classmethod
     def _setup_test_data(cls):
         """Khởi tạo 2 ví mẫu, 1 ngân sách, 1 mục tiêu tiết kiệm, 1 sổ nợ cho user Day 4"""
+        # Dọn dẹp dữ liệu trùng lặp từ các lần chạy trước
+        con = sqlite3.connect("app.db")
+        u_row = con.execute("SELECT id FROM users WHERE email = ?", ("day4_khilinh_user@gmail.com",)).fetchone()
+        if u_row:
+            u_id = u_row[0]
+            con.execute("DELETE FROM saving_goals WHERE user_id = ? AND id NOT IN (SELECT min(id) FROM saving_goals WHERE user_id = ?)", (u_id, u_id))
+            con.execute("DELETE FROM wallets WHERE user_id = ? AND wallet_name NOT LIKE '%Tiền Mặt%' AND wallet_name NOT LIKE '%Vietcombank%'", (u_id,))
+            con.commit()
+        con.close()
+
         headers = {
             "Authorization": f"Bearer {cls.token}",
             "Content-Type": "application/json"

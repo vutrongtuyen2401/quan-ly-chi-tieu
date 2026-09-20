@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="khi-linh-vector-chibi" aria-hidden="true">
+  <defs>
+    <!-- Background Halo Gradient -->
+    <radialGradient id="klHaloGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7dd6cc" stop-opacity="0.45" />
+      <stop offset="65%" stop-color="#449f96" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#0b1326" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Hair Color Gradient -->
+    <linearGradient id="klHairGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff8e8" />
+      <stop offset="45%" stop-color="#fcedd0" />
+      <stop offset="100%" stop-color="#f0dab0" />
+    </linearGradient>
+
+    <!-- Inner Ear Blush -->
+    <linearGradient id="klEarInner" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffb8b8" />
+      <stop offset="100%" stop-color="#ffa0a0" />
+    </linearGradient>
+
+    <!-- Xianxia Jade Robe -->
+    <linearGradient id="klRobeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dd6cc" />
+      <stop offset="50%" stop-color="#2b8a82" />
+      <stop offset="100%" stop-color="#0f4a45" />
+    </linearGradient>
+
+    <!-- Gold Accent -->
+    <linearGradient id="klGoldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffe08f" />
+      <stop offset="50%" stop-color="#e3c370" />
+      <stop offset="100%" stop-color="#c6a858" />
+    </linearGradient>
+
+    <!-- Eye Gradient -->
+    <linearGradient id="klEyeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3d2212" />
+      <stop offset="60%" stop-color="#703e1a" />
+      <stop offset="100%" stop-color="#a45c28" />
+    </linearGradient>
+  </defs>
+
+  <!-- Ambient Spiritual Aura Disk -->
+  <circle cx="50" cy="50" r="48" fill="url(#klHaloGrad)" />
+
+  <!-- Surrounding Spiritual Runes / Sparkles -->
+  <g opacity="0.75">
+    <circle cx="16" cy="38" r="3.5" fill="none" stroke="#7dd6cc" stroke-width="0.8" stroke-dasharray="2 2" />
+    <polygon points="16,35 17.5,38 16,41 14.5,38" fill="#e3c370" />
+
+    <circle cx="84" cy="42" r="3.5" fill="none" stroke="#c4c1fb" stroke-width="0.8" stroke-dasharray="2 2" />
+    <polygon points="84,39 85.5,42 84,45 82.5,42" fill="#7dd6cc" />
+
+    <polygon points="26,18 27.5,21 26,24 24.5,21" fill="#7dd6cc" opacity="0.6" />
+    <polygon points="74,16 75.5,19 74,22 72.5,19" fill="#e3c370" opacity="0.6" />
+  </g>
+
+  <!-- Back Hair -->
+  <path d="M26,38 C22,48 20,64 27,74 C34,70 36,66 38,58 C38,58 35,76 46,78 C48,74 52,74 54,78 C65,76 62,58 62,58 C64,66 66,70 73,74 C80,64 78,48 74,38 Z" fill="url(#klHairGrad)" />
+
+  <!-- Fox / Spirit Ears -->
+  <!-- Left Ear -->
+  <g class="kl-ear-left">
+    <path d="M30,36 C24,20 32,8 41,12 C40,22 38,30 35,36 Z" fill="url(#klHairGrad)" />
+    <!-- Left Inner Ear -->
+    <path d="M32,32 C28,21 34,13 39,16 C38,23 37,28 35,32 Z" fill="url(#klEarInner)" opacity="0.9" />
+    <!-- Fluffy ear tuft -->
+    <path d="M36,26 Q32,28 34,32 Q37,30 36,26 Z" fill="#ffffff" opacity="0.95" />
+  </g>
+
+  <!-- Right Ear -->
+  <g class="kl-ear-right">
+    <path d="M70,36 C76,20 68,8 59,12 C60,22 62,30 65,36 Z" fill="url(#klHairGrad)" />
+    <!-- Right Inner Ear -->
+    <path d="M68,32 C72,21 66,13 61,16 C62,23 63,28 65,32 Z" fill="url(#klEarInner)" opacity="0.9" />
+    <!-- Fluffy ear tuft -->
+    <path d="M64,26 Q68,28 66,32 Q63,30 64,26 Z" fill="#ffffff" opacity="0.95" />
+  </g>
+
+  <!-- Chibi Face Base -->
+  <ellipse cx="50" cy="46" rx="20" ry="17" fill="#fff5ec" />
+
+  <!-- Cheeks Blush -->
+  <ellipse cx="36" cy="50" rx="4.5" ry="2.2" fill="#ffb4b4" opacity="0.6" />
+  <ellipse cx="64" cy="50" rx="4.5" ry="2.2" fill="#ffb4b4" opacity="0.6" />
+
+  <!-- Eyes -->
+  <!-- Left Eye -->
+  <g class="kl-eye-l">
+    <ellipse cx="40" cy="44" rx="4.2" ry="5.2" fill="url(#klEyeGrad)" />
+    <circle cx="41.5" cy="42" r="1.8" fill="#ffffff" />
+    <circle cx="38.5" cy="46" r="0.8" fill="#ffffff" opacity="0.8" />
+    <!-- Eyelash / Brow -->
+    <path d="M35,38 Q40,36 45,39" stroke="#522b12" stroke-width="1.2" stroke-linecap="round" fill="none" />
+  </g>
+
+  <!-- Right Eye -->
+  <g class="kl-eye-r">
+    <ellipse cx="60" cy="44" rx="4.2" ry="5.2" fill="url(#klEyeGrad)" />
+    <circle cx="61.5" cy="42" r="1.8" fill="#ffffff" />
+    <circle cx="58.5" cy="46" r="0.8" fill="#ffffff" opacity="0.8" />
+    <!-- Eyelash / Brow -->
+    <path d="M55,39 Q60,36 65,38" stroke="#522b12" stroke-width="1.2" stroke-linecap="round" fill="none" />
+  </g>
+
+  <!-- Cute Nose & Smile -->
+  <circle cx="50" cy="47.5" r="0.7" fill="#d2967d" />
+  <path d="M47.5,50 Q50,52.5 52.5,50" stroke="#7a3e20" stroke-width="1.1" stroke-linecap="round" fill="none" />
+
+  <!-- Front Hair Bangs & Tufts -->
+  <path d="M30,36 C34,26 44,24 50,26 C56,24 66,26 70,36 C66,32 58,34 52,38 C49,34 44,33 40,37 C36,33 32,34 30,36 Z" fill="url(#klHairGrad)" />
+  <!-- Center soft hair lock -->
+  <path d="M48,26 Q51,34 49,38 Q52,33 54,27 Z" fill="#fff8e8" />
+  <!-- Side hair strands -->
+  <path d="M30,36 C28,45 28,52 32,58 C31,52 32,46 34,42 Z" fill="url(#klHairGrad)" />
+  <path d="M70,36 C72,45 72,52 68,58 C69,52 68,46 66,42 Z" fill="url(#klHairGrad)" />
+
+  <!-- Xianxia Body & Robe -->
+  <g class="kl-body">
+    <!-- Inner White Collar -->
+    <polygon points="45,58 50,65 55,58 50,56" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.5" />
+    <!-- Jade Robe Front -->
+    <path d="M38,62 L45,58 L50,68 L55,58 L62,62 L66,82 L34,82 Z" fill="url(#klRobeGrad)" />
+    <!-- Gold Trim on Robe -->
+    <path d="M45,58 L50,68 L55,58" fill="none" stroke="url(#klGoldGrad)" stroke-width="1.2" stroke-linecap="round" />
+    <path d="M34,81 L66,81" fill="none" stroke="url(#klGoldGrad)" stroke-width="1.2" />
+
+    <!-- Sleeves -->
+    <path d="M38,62 C32,66 30,73 33,78 C36,75 38,72 40,68 Z" fill="url(#klRobeGrad)" />
+    <path d="M62,62 C68,66 70,73 67,78 C64,75 62,72 60,68 Z" fill="url(#klRobeGrad)" />
+
+    <!-- Tiny Chibi Hands holding Jade Talisman -->
+    <circle cx="43" cy="70" r="2.2" fill="#fff5ec" />
+    <circle cx="57" cy="70" r="2.2" fill="#fff5ec" />
+
+    <!-- Celestial Jade Bi Disc (Ngọc Bội) -->
+    <circle cx="50" cy="72" r="4.2" fill="#7dd6cc" stroke="url(#klGoldGrad)" stroke-width="0.9" />
+    <circle cx="50" cy="72" r="1.5" fill="#0b1326" />
+    <!-- Gold Tassel -->
+    <line x1="50" y1="76.2" x2="50" y2="83" stroke="#e3c370" stroke-width="1" stroke-linecap="round" />
+  </g>
+</svg>

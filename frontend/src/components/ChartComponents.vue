@@ -57,6 +57,7 @@ export default {
     type: { type: String, required: true }, // 'doughnut', 'bar', 'line'
     chartData: { type: Object, default: () => ({}) },
     title: { type: String, default: '' },
+    showLegend: { type: Boolean, default: true },
   },
   setup(props) {
     // ─── Common Options ───────────────
@@ -90,6 +91,7 @@ export default {
       cutout: '65%',
       plugins: {
         legend: {
+          display: props.showLegend,
           position: 'bottom',
           labels: {
             color: tickColor,
@@ -313,7 +315,7 @@ export default {
 .chart-wrapper {
   position: relative;
   width: 100%;
-  min-height: 300px;
-  max-height: 400px;
+  height: 100%;
+  min-height: 180px;
 }
 </style>

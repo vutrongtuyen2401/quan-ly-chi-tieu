@@ -10,6 +10,7 @@ import re
 import datetime
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any, List
+from .knowledge.builder import remove_accents
 
 
 class MessageIntent(str, Enum):
@@ -132,13 +133,23 @@ class VietnameseFinancialParser:
         if cls.is_cancellation(clean):
             return False
 
+        # 0. Lệnh đảo ngược chiều (swap) chuyển tiền hoặc từ chối sửa thông tin: "ngược lại", "đảo lại", "nhầm, từ X sang Y"
+        if any(kw in clean for kw in ["ngược lại", "nguoc lai", "đảo lại", "dao lai"]):
+            return True
+        if ("từ " in clean or "tu " in clean) and (" sang " in clean or " qua " in clean):
+            return True
+
+        # 0.1. Lệnh đính chính / từ chối thông tin cũ: "không phải", "nhầm", "lộn", "chứ không phải"
+        if any(kw in clean for kw in ["không phải", "khong phai", "nhầm", "nham", "lộn", "lon"]):
+            return True
+
         # 1. Có số tiền mới và từ khóa sửa đổi
         amt = cls.parse_amount(clean)
         mod_keywords = [
             "sửa", "sua", "đổi", "doi", "thành", "thanh", "chỉnh", "chinh",
             "thay", "thay đổi", "thay doi", "tính lại", "tinh lai", "lấy", "lay",
             "chỉ", "chi", "không phải", "khong phai", "nhầm", "nham", "tăng", "tang", "giảm", "giam",
-            "thôi", "thoi"
+            "thôi", "thoi", "không", "khong", "k", "lộn", "lon", "chứ", "chu", "là", "la"
         ]
         if amt and amt > 0:
             if any(kw in clean for kw in mod_keywords) or clean.endswith("thôi") or clean.endswith("thoi"):
@@ -152,10 +163,12 @@ class VietnameseFinancialParser:
                 return True
             return False
 
-        # 2. Sửa danh mục hoặc ví
+        # 2. Sửa danh mục, ví hoặc thời gian
         if any(kw in clean for kw in [
             "đổi sang ví", "doi sang vi", "sửa ví", "sua vi", "dùng ví", "dung vi",
-            "đổi danh mục", "doi danh muc", "sửa danh mục", "sua danh muc", "đổi sang", "doi sang"
+            "đổi danh mục", "doi danh muc", "sửa danh mục", "sua danh muc", "đổi sang", "doi sang",
+            "đổi ví", "doi vi", "ví khác", "vi khac", "đổi tháng", "doi thang", "sửa tháng", "sua thang",
+            "đổi kỳ", "doi ky", "tháng trước", "thang truoc", "tuần trước", "tuan truoc"
         ]):
             return True
 
@@ -312,7 +325,10 @@ class VietnameseFinancialParser:
             "thưởng", "thuong", "giao dịch", "giao dich", "tiền", "tien", "linh thạch", "linh thach",
             "ăn sáng", "an sang", "ăn trưa", "an trua", "ăn tối", "an toi", "đổ xăng", "do xang",
             "hóa đơn", "hoa don", "chuyển tiền", "chuyen tien", "báo cáo", "bao cao",
-            "mua", "bán", "đóng tiền", "trả tiền", "định kỳ", "dinh ky"
+            "mua", "bán", "đóng tiền", "trả tiền", "định kỳ", "dinh ky",
+            "ngân khố", "ngan kho", "khố phòng", "kho phong", "tán tài", "tan tai", "nạp tài", "nap tai",
+            "tụ linh trận", "tu linh tran", "trái chủ", "trai chu", "lỡ tiêu", "lo tieu", "quá tay", "qua tay",
+            "bất thường", "bat thuong", "tiêu bao nhiêu", "chi bao nhiêu", "còn bao nhiêu"
         ]
         if any(re.search(rf"\b{re.escape(ft)}\b", clean) for ft in fin_terms):
             return False
@@ -352,23 +368,90 @@ class VietnameseFinancialParser:
         return False
 
     @classmethod
-    def is_budget_write(cls, text: str) -> bool:
-        """Kiểm tra người dùng có đang ra lệnh thiết lập hạn mức ngân sách mới hay không.
-        Ví dụ: 'Đặt ngân sách ăn uống tháng sau là 3 triệu'
-        'Thiết lập hạn mức ăn uống 2 triệu'
-        """
-        clean = text.lower().strip()
-        budget_write_triggers = [
-            "đặt ngân sách", "dat ngan sach", "thiết lập ngân sách", "thiet lap ngan sach",
-            "cài ngân sách", "cai ngan sach", "tạo ngân sách", "tao ngan sach",
-            "đặt hạn mức", "dat han muc", "thiết lập hạn mức", "thiet lap han muc",
-            "cài hạn mức", "cai han muc", "tạo hạn mức", "tao han muc",
-            "lập ngân sách", "lap ngan sach"
+    def is_budget_intent(cls, text: str) -> bool:
+        """Kiểm tra câu nói có liên quan đến hạn mức / ngân sách / giới hạn chi tiêu hay không"""
+        raw = text.lower().strip()
+        budget_kws = [
+            "hạn mức", "han muc", "ngân sách", "ngan sach",
+            "giới hạn chi tiêu", "gioi han chi tieu", "mức chi tiêu", "muc chi tieu"
         ]
-        if any(trigger in clean for trigger in budget_write_triggers):
-            amt = cls.parse_amount(clean)
-            return amt is not None and amt > 0
+        return any(kw in raw for kw in budget_kws) or ("tối đa" in raw and cls.guess_category(text) is not None)
+
+    @classmethod
+    def is_budget_create_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định tạo/thêm/thiết lập hạn mức ngân sách mới.
+        Hỗ trợ cả trường hợp chưa cung cấp số tiền hoặc danh mục (để chuyển sang luồng hỏi thiếu tham số).
+        """
+        raw = text.lower().strip()
+        # Loại trừ xóa/hủy
+        if any(neg in raw for neg in ["xóa", "xoa", "hủy", "huy", "gỡ", "go", "bỏ", "bo"]):
+            return False
+        # Loại trừ sửa đổi/cập nhật
+        if any(kw in raw for kw in ["đổi", "doi", "sửa", "sua", "thay", "cập nhật", "cap nhat", "chỉnh", "chinh"]):
+            return False
+        # Loại trừ các câu hỏi tra cứu
+        if any(q in raw for q in ["thế nào", "the nao", "bao nhiêu", "bao nhieu", "còn", "con", "vượt", "vuot", "tra cứu", "xem danh sách"]):
+            return False
+
+        create_triggers = [
+            "thêm hạn mức", "them han muc", "tạo hạn mức", "tao han muc", "đặt hạn mức", "dat han muc",
+            "cài hạn mức", "cai han muc", "thiết lập hạn mức", "thiet lap han muc",
+            "thêm ngân sách", "them ngan sach", "tạo ngân sách", "tao ngan sach", "đặt ngân sách", "dat ngan sach",
+            "cài ngân sách", "cai ngan sach", "thiết lập ngân sách", "thiet lap ngan sach", "lập ngân sách", "lap ngan sach",
+            "đặt giới hạn chi tiêu", "dat gioi han chi tieu", "tạo giới hạn", "tao gioi han",
+            "đặt giới hạn", "dat gioi han", "cài giới hạn", "cai gioi han",
+            "cho tôi một ngân sách", "cho tôi 1 ngân sách", "cho tôi ngân sách mới",
+            "cho tôi một hạn mức", "cho tôi 1 hạn mức", "cho tôi hạn mức mới",
+            "cho tôi giới hạn chi tiêu", "cho toi gioi han chi tieu",
+            "hạn mức mới", "han muc moi", "ngân sách mới", "ngan sach moi"
+        ]
+        if any(trig in raw for trig in create_triggers):
+            return True
+
+        if re.search(r"\b(?:thêm|tạo|đặt|cài|thiết lập|lập)\s+(?:cho\s+(?:tôi|ta|mình)\s+)?(?:một\s+|1\s+)?(?:khoản\s+)?(?:hạn mức|ngân sách|giới hạn chi tiêu|mức chi tiêu)\b", raw, re.IGNORECASE):
+            return True
+
+        if re.search(r"\b(?:cho\s+(?:tôi|ta|mình)\s+)?(?:một\s+|1\s+)?(?:khoản\s+)?(?:giới hạn chi tiêu|hạn mức mới|ngân sách mới)\b", raw, re.IGNORECASE):
+            return True
+
+        # Ví dụ: 'tháng này cho ăn uống tối đa 2 triệu'
+        if re.search(r"\b(?:tối đa|toi da)\b", raw) and cls.guess_category(text) and cls.parse_amount(text):
+            return True
+
         return False
+
+    @classmethod
+    def is_budget_delete_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định xóa/hủy hạn mức ngân sách"""
+        raw = text.lower().strip()
+        if not cls.is_budget_intent(text):
+            return False
+        return any(kw in raw for kw in ["xóa", "xoa", "hủy", "huy", "gỡ", "go", "bỏ", "bo"])
+
+    @classmethod
+    def is_budget_update_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định sửa/cập nhật hạn mức ngân sách"""
+        raw = text.lower().strip()
+        if not cls.is_budget_intent(text):
+            return False
+        if any(neg in raw for neg in ["xóa", "xoa", "hủy", "huy"]):
+            return False
+        return any(kw in raw for kw in ["đổi", "doi", "sửa", "sua", "thay", "cập nhật", "cap nhat", "chỉnh", "chinh", "tăng", "tang", "giảm", "giam"])
+
+    @classmethod
+    def is_budget_read_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định tra cứu tình trạng hạn mức ngân sách"""
+        raw = text.lower().strip()
+        if not cls.is_budget_intent(text):
+            return False
+        if cls.is_budget_create_intent(text) or cls.is_budget_delete_intent(text) or cls.is_budget_update_intent(text):
+            return False
+        return True
+
+    @classmethod
+    def is_budget_write(cls, text: str) -> bool:
+        """Alias tương thích ngược cho is_budget_create_intent"""
+        return cls.is_budget_create_intent(text)
 
 
     @classmethod
@@ -391,26 +474,65 @@ class VietnameseFinancialParser:
         """
         raw = text.lower().strip()
 
+        # -1. Kiểm tra mệnh đề đính chính trước (ví dụ: 'không phải 1 triệu, 2 triệu' -> lấy 2 triệu)
+        m_corr = re.search(r"(?:không phải|khong phai|chứ không phải)\s+[^,;]+?(?:[,;]|mà là|ma la|mà|ma)\s*(.+)$", raw)
+        if m_corr:
+            sub_res = cls.parse_amount(m_corr.group(1))
+            if sub_res is not None:
+                return sub_res
+
+        m_nham = re.search(r"(?:nhầm|lộn|nham|lon)(?:\s+rồi|\s+roi)?[,;]?\s*(.+)$", raw)
+        if m_nham:
+            sub_res = cls.parse_amount(m_nham.group(1))
+            if sub_res is not None:
+                return sub_res
+
         # 0. Textual Vietnamese Numbers (Hỗ trợ số bằng chữ từ STT giọng nói)
         text_num_map = {
-            "nửa": 0.5, "mot": 1, "một": 1, "hai": 2, "ba": 3, "bốn": 4, "bon": 4, "tư": 4, "tu": 4,
+            "nửa": 0.5, "mot": 1, "một": 1, "mốt": 1, "hai": 2, "ba": 3, "bốn": 4, "bon": 4, "tư": 4, "tu": 4,
             "năm": 5, "nam": 5, "lăm": 5, "sáu": 6, "sau": 6, "bảy": 7, "bay": 7, "bẩy": 7,
             "tám": 8, "tam": 8, "chín": 9, "chin": 9, "mười": 10, "muoi": 10
         }
 
-        # 0.1: [nửa / một / hai... / 1..9] triệu rưỡi
-        m_tr_ruoi = re.search(r"(?:(?:(\d+)|(nửa|một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín|mười))\s*(?:triệu|tr))\s*rưỡi\b", raw)
+        # 0.1: [nửa / một / hai... / 1..9] (triệu / tr / củ / tỷ) rưỡi
+        m_tr_ruoi = re.search(r"(?:(?:(\d+(?:[.,]\d+)?)|(nửa|một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín|mười))\s*(?:triệu|trieu|tr|củ|cu|tỷ|ty))\s*rưỡi\b", raw)
         if m_tr_ruoi:
             digit_val = m_tr_ruoi.group(1)
             word_val = m_tr_ruoi.group(2)
-            base_n = float(digit_val) if digit_val else text_num_map.get(word_val, 1)
+            base_n = float(digit_val.replace(",", ".")) if digit_val else text_num_map.get(word_val, 1)
+            if any(u in raw for u in ["tỷ", "ty"]):
+                return int(round((base_n + 0.5) * 1_000_000_000))
             return int(round((base_n + 0.5) * 1_000_000))
 
-        # 0.2: [nửa / một / hai... / mười] triệu / tr / củ
-        m_word_tr = re.search(r"\b(nửa|một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín|mười)\s*(?:triệu|tr|củ)\b", raw)
-        if m_word_tr:
-            val_word = text_num_map.get(m_word_tr.group(1), 1)
-            return int(round(val_word * 1_000_000))
+        # 0.1b: Nửa tỷ / nửa củ / nửa lít
+        if re.search(r"\bnửa\s+(?:tỷ|ty)\b", raw):
+            return 500_000_000
+        if re.search(r"\bnửa\s+(?:củ|cu)\b", raw):
+            return 500_000
+        if re.search(r"\bnửa\s+(?:lít|lit)\b", raw):
+            return 50_000
+
+        # 0.1c: Tiếng lóng "năm chục", "hai chục", "ba chục" (50k, 20k, 30k)
+        m_chuc_slang = re.search(r"\b(nửa|một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín)\s*chục(?:\s*(?:nghìn|nghin|ngàn|ngan|k))?\b", raw)
+        if m_chuc_slang:
+            val = text_num_map.get(m_chuc_slang.group(1), 1) * 10_000
+            return int(val)
+
+        # 0.2: [mười lăm triệu, hai mươi triệu, hai mươi lăm triệu, một..mười triệu]
+        m_phrase_tr = re.search(r"\b(mười\s*(?:một|hai|ba|bốn|tư|lăm|năm|sáu|bảy|bẩy|tám|chín)?|(?:hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín)\s*mươi(?:\s*(?:mốt|hai|ba|bốn|tư|lăm|năm|sáu|bảy|bẩy|tám|chín))?|nửa|một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín|mười)\s*(?:triệu|trieu|tr|củ|cu)\b", raw)
+        if m_phrase_tr:
+            phrase = m_phrase_tr.group(1).strip()
+            if phrase in text_num_map:
+                base = text_num_map[phrase]
+            elif phrase.startswith("mười"):
+                parts = phrase.split()
+                base = 10 if len(parts) == 1 else 10 + text_num_map.get(parts[1], 0)
+            else:
+                parts = phrase.split()
+                tens = text_num_map.get(parts[0], 1) * 10
+                unit = text_num_map.get(parts[2], 0) if len(parts) >= 3 else 0
+                base = tens + unit
+            return int(round(base * 1_000_000))
 
         # 0.3: [một..chín] tỷ
         m_word_ty = re.search(r"\b(một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín|mười)\s*(?:tỷ|ty)\b", raw)
@@ -418,11 +540,19 @@ class VietnameseFinancialParser:
             val_word = text_num_map.get(m_word_ty.group(1), 1)
             return int(round(val_word * 1_000_000_000))
 
-        # 0.4: [một..chín] trăm [nghìn/ngàn/k]
-        m_word_tram = re.search(r"\b(nửa|một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín)\s*trăm(?:\s*(?:nghìn|nghin|ngàn|ngan|k))?\b", raw)
-        if m_word_tram:
-            val_word = text_num_map.get(m_word_tram.group(1), 1)
-            return int(round(val_word * 100_000))
+        # 0.4: [hai trăm ba mươi nghìn, năm trăm nghìn, một trăm nghìn...]
+        m_tram_chuc = re.search(r"\b(một|hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín)\s*trăm(?:\s*(?:lẻ|linh)\s*(một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín)|(?:\s*(hai|ba|bốn|tư|năm|sáu|bảy|tám|chín)?\s*mươi(?:\s*(mốt|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín))?))?\s*(?:nghìn|nghin|ngàn|ngan|k)?\b", raw)
+        if m_tram_chuc and any(u in raw for u in ["trăm", "nghìn", "nghin", "ngàn", "ngan", "k"]):
+            tram = text_num_map.get(m_tram_chuc.group(1), 1) * 100
+            chuc = 0
+            if m_tram_chuc.group(2):
+                chuc = text_num_map.get(m_tram_chuc.group(2), 0)
+            elif m_tram_chuc.group(3) or m_tram_chuc.group(4):
+                t_val = text_num_map.get(m_tram_chuc.group(3), 1) * 10 if m_tram_chuc.group(3) else 10
+                u_val = text_num_map.get(m_tram_chuc.group(4), 0) if m_tram_chuc.group(4) else 0
+                chuc = t_val + u_val
+            total_k = tram + chuc
+            return int(total_k * 1_000)
 
         # 0.5: [hai mươi, ba mươi, năm mươi...] nghìn/ngàn
         m_chuc_word = re.search(r"\b(hai|ba|bốn|tư|năm|sáu|bảy|bẩy|tám|chín)?\s*mươi(?:\s*(năm|lăm|mốt|hai|ba|bốn|tư|sáu|bảy|tám|chín))?\s*(?:nghìn|nghin|ngàn|ngan|k)\b", raw)
@@ -433,8 +563,8 @@ class VietnameseFinancialParser:
                 units = 1
             return int((tens + units) * 1_000)
 
-        # 1. Pattern: 1tr5, 2tr8, 1 triệu 5, 2 triệu 8
-        m_combo = re.search(r"(\d+)\s*(?:tr|triệu|trieu)\s*(\d+)(?!\d)", raw)
+        # 1. Pattern: 1tr5, 2tr8, 1 triệu 5, 2 triệu 8, 1 củ 2, 2 củ 5
+        m_combo = re.search(r"(\d+)\s*(?:tr|triệu|trieu|củ|cu)\s*(\d+)(?!\d)", raw)
         if m_combo:
             base = int(m_combo.group(1)) * 1_000_000
             dec = m_combo.group(2)
@@ -443,6 +573,22 @@ class VietnameseFinancialParser:
             else:
                 val = base + int(dec) * (10 ** (6 - len(dec)))
             return int(val)
+
+        # 1.1. Pattern: 1 tỷ 2, 2 tỷ 5
+        m_combo_ty = re.search(r"(\d+)\s*(?:tỷ|ty)\s*(\d+)(?!\d)", raw)
+        if m_combo_ty:
+            base = int(m_combo_ty.group(1)) * 1_000_000_000
+            dec = m_combo_ty.group(2)
+            if len(dec) == 1:
+                val = base + int(dec) * 100_000_000
+            else:
+                val = base + int(dec) * (10 ** (9 - len(dec)))
+            return int(val)
+
+        # 1.5. Pattern: Tiếng lóng vé (1 vé = 500k, 2 vé = 1tr)
+        m_ve = re.search(r"(\d+)\s*(?:vé|ve)\b", raw)
+        if m_ve:
+            return int(m_ve.group(1)) * 500_000
 
         # 2. Pattern: Số + chục + đơn vị (2 chục triệu, 3 chục ngàn, 5 chục k, 2 chục củ)
         m_chuc = re.search(r"(\d+(?:[.,]\d+)?)\s*chục\s*(triệu|trieu|tr|củ|nghìn|nghin|ngàn|ngan|k)?\b", raw)
@@ -509,11 +655,13 @@ class VietnameseFinancialParser:
         return None
 
     @classmethod
-    def parse_date(cls, text: str) -> str:
-        """Trích xuất ngày từ văn bản, mặc định là ngày hôm nay YYYY-MM-DD"""
+    def parse_explicit_date(cls, text: str) -> Optional[str]:
+        """Trích xuất ngày từ văn bản nếu người dùng có nói rõ (hôm nay, hôm qua, hôm kia, ngày mai, DD/MM/YYYY, YYYY-MM-DD), ngược lại trả về None."""
         raw = text.lower()
         today = datetime.date.today()
 
+        if "hôm nay" in raw or "hom nay" in raw:
+            return today.strftime("%Y-%m-%d")
         if "hôm qua" in raw or "hom qua" in raw:
             return (today - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
         if "hôm kia" in raw or "hom kia" in raw:
@@ -539,29 +687,54 @@ class VietnameseFinancialParser:
             except ValueError:
                 pass
 
-        return today.strftime("%Y-%m-%d")
+        return None
+
+    @classmethod
+    def parse_date(cls, text: str) -> str:
+        """Trích xuất ngày từ văn bản, mặc định là ngày hôm nay YYYY-MM-DD"""
+        d = cls.parse_explicit_date(text)
+        if d:
+            return d
+        return datetime.date.today().strftime("%Y-%m-%d")
+
+    @classmethod
+    def extract_date(cls, text: str) -> str:
+        """Trích xuất ngày từ văn bản (alias tương thích)"""
+        return cls.parse_date(text)
 
     @classmethod
     def extract_transfer_wallets(cls, text: str) -> Tuple[Optional[str], Optional[str]]:
         """Trích xuất tên ví nguồn và ví đích từ câu chuyển tiền.
         Ví dụ: 'Chuyển 500 nghìn từ ví A sang ví B' -> ('A', 'B')
+        'Chuyển tiền mặt sang momo' -> ('tiền mặt', 'momo')
         'Chuyển 1 triệu từ ví điện tử sang tiền mặt' -> ('ví điện tử', 'tiền mặt')
+        'Chuyển từ ví ngân hàng' -> ('ví ngân hàng', None)
         'Chuyển 500 nghìn cho ví Vietcombank' -> (None, 'Vietcombank')
         """
         raw = text.strip()
-        # Pattern 1: từ [ví] X sang/đến/qua/vào/cho [ví] Y
-        m = re.search(r"(?:từ|tu)\s+([^,\n]+?)\s+(?:sang|đến|qua|den|vao|vào|cho)\s+([^,.\n;]+)", raw, re.IGNORECASE)
+        # Pattern 1: chuyển [tiền] [từ] X sang/đến/qua/vào/cho Y
+        m = re.search(
+            r"(?:chuyển\s+(?:tiền(?!\s+mặt)\s+)?|chuyen\s+(?:tien(?!\s+mat)\s+)?|từ\s+|tu\s+)(?:từ\s+|tu\s+)?([^,\n]+?)\s+(?:sang|đến|qua|den|vao|vào|cho)\s+([^,.\n;]+)",
+            raw,
+            re.IGNORECASE
+        )
         if m:
             raw_from = m.group(1).strip()
+            # Bỏ số tiền đi kèm ở đầu ví nguồn nếu có (ví dụ '500k từ momo' -> 'momo')
+            raw_from = re.sub(r'^\d+[\d.,]*\s*(?:triệu|trieu|nghìn|nghin|ngàn|ngan|tr|k|củ|tỷ|ty|vnđ|vnd|đ|đồng)?\s*(?:từ\s+|tu\s+)?', '', raw_from, flags=re.IGNORECASE).strip()
             raw_to = m.group(2).strip()
 
             if re.search(r"^(?:ví|vi)\s+(?:điện tử|dien tu)\b", raw_from, re.IGNORECASE):
                 w_from = "ví điện tử"
+            elif raw_from.lower() in ("tiền mặt", "tien mat"):
+                w_from = "tiền mặt"
             else:
                 w_from = re.sub(r'^(?:ví|túi|vi|tui)\s+', '', raw_from, flags=re.IGNORECASE).strip(" .,!?:;")
 
             if re.search(r"^(?:ví|vi)\s+(?:điện tử|dien tu)\b", raw_to, re.IGNORECASE):
                 w_to = "ví điện tử"
+            elif raw_to.lower() in ("tiền mặt", "tien mat"):
+                w_to = "tiền mặt"
             else:
                 w_to = re.sub(r'^(?:ví|túi|vi|tui)\s+', '', raw_to, flags=re.IGNORECASE).strip(" .,!?:;")
 
@@ -575,6 +748,8 @@ class VietnameseFinancialParser:
             raw_cand = m2.group(1).strip()
             if re.search(r"^(?:điện tử|dien tu)\b", raw_cand, re.IGNORECASE):
                 candidate = "ví điện tử"
+            elif raw_cand.lower() in ("tiền mặt", "tien mat"):
+                candidate = "tiền mặt"
             else:
                 candidate = re.sub(r'^(?:ví|túi|vi|tui)\s+', '', raw_cand, flags=re.IGNORECASE).strip(" .,!?:;")
             candidate = re.sub(r"\s*(?:với|khoảng|tầm)?\s*(?:\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?|\b(?:nửa|một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười)\s*(?:triệu|tr|trăm|nghìn|ngàn|tỷ))\b.*$", "", candidate, flags=re.IGNORECASE).strip()
@@ -582,11 +757,13 @@ class VietnameseFinancialParser:
                 return None, candidate
 
         # Pattern 3: Chỉ có ví nguồn: từ [ví] X
-        m3 = re.search(r"(?:từ|tu)\s+(?:ví\s+|túi\s+|vi\s+|tui\s+)?([^,.\n;]+)", raw, re.IGNORECASE)
+        m3 = re.search(r"(?:chuyển\s+từ|từ|tu)\s+(?:ví\s+|túi\s+|vi\s+|tui\s+)?([^,.\n;]+)", raw, re.IGNORECASE)
         if m3:
             raw_cand = m3.group(1).strip()
             if re.search(r"^(?:điện tử|dien tu)\b", raw_cand, re.IGNORECASE):
                 candidate = "ví điện tử"
+            elif raw_cand.lower() in ("tiền mặt", "tien mat"):
+                candidate = "tiền mặt"
             else:
                 candidate = re.sub(r'^(?:ví|túi|vi|tui)\s+', '', raw_cand, flags=re.IGNORECASE).strip(" .,!?:;")
             candidate = re.sub(r"\s*(?:với|khoảng|tầm)?\s*(?:\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?|\b(?:nửa|một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười)\s*(?:triệu|tr|trăm|nghìn|ngàn|tỷ))\b.*$", "", candidate, flags=re.IGNORECASE).strip()
@@ -619,9 +796,9 @@ class VietnameseFinancialParser:
     def guess_category(cls, text: str) -> Optional[str]:
         """Dự đoán danh mục thu/chi từ ngữ cảnh câu nói"""
         raw = text.lower()
-        if any(k in raw for k in ["ăn", "uống", "cơm", "phở", "bún", "bánh mì", "trà sữa", "cafe", "cà phê", "nhậu", "tiệc", "sáng", "trưa", "tối"]):
+        if any(k in raw for k in ["ăn uống", "cơm", "phở", "bún", "bánh mì", "trà sữa", "cafe", "cà phê", "nhậu", "tiệc", "ăn sáng", "ăn trưa", "ăn tối", "bữa sáng", "bữa trưa", "bữa tối", "điểm tâm"]) or re.search(r"\b(ăn|uống)\b", raw):
             return "Ăn Uống"
-        if any(k in raw for k in ["xăng", "đổ xăng", "xe", "grab", "be", "taxi", "gửi xe", "vé xe", "sửa xe"]):
+        if any(k in raw for k in ["xăng", "đổ xăng", "grab", "taxi", "gửi xe", "vé xe", "sửa xe", "đi lại"]) or re.search(r"\b(xe|be)\b", raw):
             return "Đi Lại"
         if any(k in raw for k in ["điện", "nước", "internet", "wifi", "tiền nhà", "phòng trọ", "hóa đơn", "chung cư"]):
             return "Hóa Đơn"
@@ -646,9 +823,11 @@ class VietnameseFinancialParser:
             return "today"
         if any(k in raw for k in ["hôm qua", "hom qua"]):
             return "yesterday"
+        if any(k in raw for k in ["tuần trước", "tuan truoc", "tuần vừa rồi", "tuan vua roi"]):
+            return "last_week"
         if any(k in raw for k in ["tuần này", "tuan nay"]):
             return "this_week"
-        if any(k in raw for k in ["tháng trước", "thang truoc"]):
+        if any(k in raw for k in ["tháng trước", "thang truoc", "tháng vừa rồi", "thang vua roi", "tháng đó", "thang do"]):
             return "last_month"
         if any(k in raw for k in ["tháng này", "thang nay"]):
             return "this_month"
@@ -659,7 +838,24 @@ class VietnameseFinancialParser:
             else:
                 next_y, next_m = today.year, today.month + 1
             return f"{next_y:04d}-{next_m:02d}"
-
+        if any(k in raw for k in ["7 ngày qua", "7 ngày gần đây", "7 ngay qua", "7 ngay gan day"]):
+            return "last_7_days"
+        if any(k in raw for k in ["30 ngày qua", "30 ngày gần đây", "30 ngay qua", "30 ngay gan day"]):
+            return "last_30_days"
+        if any(k in raw for k in ["3 tháng gần đây", "3 thang gan day", "ba tháng gần đây"]):
+            return "last_3_months"
+        if any(k in raw for k in ["từ đầu tháng đến giờ", "đầu tháng", "tu dau thang den gio", "dau thang"]):
+            return "month_to_date"
+        if any(k in raw for k in ["cuối tháng", "cuoi thang"]):
+            return "month_end"
+        if any(k in raw for k in ["quý trước", "quy truoc"]):
+            return "last_quarter"
+        if any(k in raw for k in ["quý này", "quy nay"]):
+            return "this_quarter"
+        if any(k in raw for k in ["năm ngoái", "nam ngoai", "năm trước", "nam truoc"]):
+            return "last_year"
+        if any(k in raw for k in ["năm nay", "nam nay"]):
+            return "this_year"
 
         # Regex YYYY-MM
         m_ym = re.search(r"\b(\d{4})-(\d{2})\b", raw)
@@ -768,6 +964,27 @@ class VietnameseFinancialParser:
         }
 
     @classmethod
+    def is_debt_delete_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định xóa/hủy khoản nợ khỏi sổ sách"""
+        raw = text.lower().strip()
+        if not cls.is_debt_intent(text):
+            return False
+        return any(kw in raw for kw in ["xóa", "xoa", "hủy", "huy", "gỡ", "go", "bỏ", "bo"])
+
+    @classmethod
+    def is_debt_settle_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định tất toán / quyết toán / đã trả xong khoản nợ"""
+        raw = text.lower().strip()
+        if not cls.is_debt_intent(text):
+            return False
+        settle_triggers = [
+            "tất toán", "tat toan", "quyết toán", "quyet toan",
+            "đã trả", "da tra", "trả xong", "tra xong", "trả hết", "tra het",
+            "đã thu", "da thu", "thu hồi", "thu hoi", "thu xong", "thu xog"
+        ]
+        return any(trig in raw for trig in settle_triggers)
+
+    @classmethod
     def is_wallet_create_intent(cls, text: str) -> bool:
         """Kiểm tra câu nói có mang ý định tạo/thêm/mở ví hoặc tài khoản hay không"""
         raw = text.lower().strip()
@@ -854,23 +1071,31 @@ class VietnameseFinancialParser:
         if any(q in raw for q in ["ví nào", "vi nao", "túi nào", "tui nao", "nhiều tiền nhất", "nhiều nhất", "lớn nhất", "các ví", "mọi ví", "tất cả ví"]):
             return None
 
+        # Check specific wallet keywords first
+        if "vietcombank" in raw or "vcb" in raw:
+            return "Vietcombank"
+        if "momo" in raw:
+            return "MoMo"
+        if "tiền mặt" in raw or "tien mat" in raw:
+            return "Tiền Mặt"
+        if "zalopay" in raw or "zalo pay" in raw:
+            return "ZaloPay"
+
         m = re.search(r"(?:ví|túi|tài khoản|tai khoan|vi|tui)\s+([^?.,\n;]+)", text, re.IGNORECASE)
         if m:
             w_candidate = m.group(1).strip()
             w_candidate = re.sub(r"\s*(?:với|có|số dư|chứa|ban đầu)?\s*(?:\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?).*$", "", w_candidate, flags=re.IGNORECASE).strip()
-            for stop_w in ["còn bao nhiêu", "con bao nhieu", "của tôi", "của ta", "nào", "gì", "bao nhiêu", "hiện tại", "nhiều nhất", "lớn nhất", "đang còn", "dang con", "đi", "nha", "nhé", "giúp", "giùm", "đây"]:
+            for stop_w in [
+                "có bao nhiêu tiền", "co bao nhieu tien", "còn bao nhiêu tiền", "con bao nhieu tien",
+                "còn bao nhiêu", "con bao nhieu", "bao nhiêu tiền", "bao nhieu tien", "của tôi", "của ta",
+                "nào", "gì", "bao nhiêu", "hiện tại", "nhiều nhất", "lớn nhất", "đang còn", "dang con",
+                "đi", "nha", "nhé", "giúp", "giùm", "đây", "có", "tiền"
+            ]:
                 w_candidate = re.sub(rf"\b{re.escape(stop_w)}\b", "", w_candidate, flags=re.IGNORECASE).strip()
             w_candidate = w_candidate.strip(" \t\n\r\"'.,-:")
             if w_candidate and len(w_candidate) > 1 and not any(w in w_candidate.lower() for w in ["nào", "gì", "đang", "còn"]):
                 return w_candidate.title() if w_candidate.islower() else w_candidate
 
-        # Check specific wallet keywords
-        if "vietcombank" in raw or "vcb" in raw:
-            return "Vietcombank"
-        if "momo" in raw:
-            return "Momo"
-        if "tiền mặt" in raw or "tien mat" in raw:
-            return "Tiền Mặt"
         return None
 
     @classmethod
@@ -907,6 +1132,77 @@ class VietnameseFinancialParser:
             return True
 
         return False
+
+    @classmethod
+    def is_pronoun_reference(cls, text: str) -> Tuple[bool, Optional[str]]:
+        """Nhận diện câu hỏi có tham chiếu đại từ / ngữ cảnh đến thực thể gần nhất (Entity Reference Memory).
+        Ví dụ: 'kiểm tra nó', 'cái ví đó', 'ví đó còn bao nhiêu', 'ví đó thế nào', 'khoản vừa rồi', 'khoản đó sửa lại'
+        """
+        raw = text.lower().strip()
+        raw_unacc = remove_accents(raw)
+
+        # 1. Tham chiếu ví tiền: "cái ví đó", "ví đó", "kiểm tra nó", "nó còn bao nhiêu"
+        wallet_refs = [
+            "cái ví đó", "cai vi do", "ví đó", "vi do", "ví đấy", "vi day", "túi đó", "tui do",
+            "ví này", "vi nay", "cái ví này", "cai vi nay", "ví ấy", "vi ay", "cái ví hôm trước", "cai vi hom truoc"
+        ]
+        if any(w in raw or w in raw_unacc for w in wallet_refs):
+            return True, "wallet"
+        if any(w in raw for w in ["kiểm tra nó", "xem nó", "nó còn bao nhiêu", "nó có bao nhiêu", "số dư nó", "tra cứu nó"]):
+            return True, "wallet"
+
+        # 2. Tham chiếu giao dịch: "khoản vừa rồi", "khoản đó", "cái vừa rồi", "khoản kia"
+        txn_refs = [
+            "khoản vừa rồi", "khoan vua roi", "khoản đó", "khoan do", "khoản đấy", "khoan day",
+            "giao dịch vừa rồi", "giao dich vua roi", "giao dịch đó", "giao dich do",
+            "khoản kia", "khoan kia", "khoản này", "khoan nay", "cái vừa rồi", "cai vua roi"
+        ]
+        if any(t in raw or t in raw_unacc for t in txn_refs):
+            return True, "transaction"
+
+        # 3. Tham chiếu nợ
+        debt_refs = ["khoản nợ đó", "khoan no do", "khoản nợ kia", "khoan no kia", "món nợ đó", "mon no do", "khoản vay đó", "khoan vay do"]
+        if any(d in raw or d in raw_unacc for d in debt_refs):
+            return True, "debt"
+
+        # 4. Tham chiếu ngân sách
+        budget_refs = ["hạn mức đó", "han muc do", "ngân sách đó", "ngan sach do", "hạn mức này", "han muc nay"]
+        if any(b in raw or b in raw_unacc for b in budget_refs):
+            return True, "budget"
+
+        # 5. Tham chiếu mục tiêu
+        goal_refs = ["mục tiêu đó", "muc tieu do", "mục tiêu này", "muc tieu nay", "kế hoạch đó", "ke hoach do"]
+        if any(g in raw or g in raw_unacc for g in goal_refs):
+            return True, "saving_goal"
+
+        return False, None
+
+    @classmethod
+    def is_conditional_statement(cls, text: str) -> Tuple[bool, str]:
+        """Nhận diện câu điều kiện ('nếu... thì...').
+        Phân biệt giữa:
+        - 'read_only': Tra cứu dữ liệu có điều kiện, ví dụ: 'Nếu ví MoMo còn dưới 500k thì báo ta'
+        - 'mixed_write': Đọc dữ liệu rồi nếu thỏa mãn điều kiện mới thực thi ghi (mutation), ví dụ: 'Xem hạn mức ăn uống còn bao nhiêu, nếu dưới 500k thì tăng lên 2 triệu'
+        """
+        raw = text.lower().strip()
+        raw_unacc = remove_accents(raw)
+
+        if not re.search(r"\b(nếu|neu|hễ|giả sử|gia su)\b", raw):
+            return False, ""
+
+        # Kiểm tra xem có mệnh đề biến động dữ liệu (write/mutation) sau điều kiện không
+        write_triggers = [
+            "thì tăng", "thi tang", "thì giảm", "thi giam", "thì đổi", "thi doi",
+            "thì sửa", "thi sua", "thì chuyển", "thi chuyen", "thì nạp", "thi nap",
+            "thì trừ", "thi tru", "thì cộng", "thi cong", "thì thêm", "thi them",
+            "thì xóa", "thi xoa", "tăng lên", "tang len", "giảm xuống", "giam xuong",
+            "đặt thành", "dat thanh", "nâng lên", "nang len"
+        ]
+        if any(w in raw or w in raw_unacc for w in write_triggers):
+            return True, "mixed_write"
+
+        return True, "read_only"
+
 
     @classmethod
     def extract_person_name(cls, text: str) -> Optional[str]:
@@ -1115,8 +1411,16 @@ class VietnameseFinancialParser:
         if any(kw in raw for kw in ["chuyển tiền", "chuyển khoản", "bắn tiền", "chuyển từ", "bắn sang"]) and pending_tool != "transfer_money":
             return True
 
-        # Câu hỏi tra cứu dữ liệu cá nhân hoặc tri thức (ví dụ 'ta có bao nhiêu tiền', 'ngân sách tháng này thế nào')
-        if any(kw in raw for kw in ["bao nhiêu tiền", "số dư", "hạn mức thế nào", "ngân sách thế nào"]):
+        # Câu hỏi tra cứu dữ liệu cá nhân hoặc tri thức (ví dụ 'ta có bao nhiêu tiền', 'ngân sách tháng này thế nào', 'xem ngân sách')
+        read_intents = [
+            "bao nhiêu tiền", "số dư", "hạn mức thế nào", "ngân sách thế nào",
+            "xem ngân sách", "ngân sách tháng này", "tình hình ngân sách", "hạn mức",
+            "xem báo cáo", "xem tình hình", "kiểm tra ví", "xem sổ nợ", "xem nợ",
+            "xem chi tiêu", "chi tiêu tháng này", "tiêu bao nhiêu", "tiêu gì",
+            "tiết kiệm được bao nhiêu", "khoản nào bất thường", "so với tháng trước",
+            "ví nào", "khoản nợ", "ngân khố"
+        ]
+        if any(kw in raw for kw in read_intents):
             return True
 
         return False

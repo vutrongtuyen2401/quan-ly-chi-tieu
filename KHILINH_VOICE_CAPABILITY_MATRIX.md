@@ -1,0 +1,63 @@
+# KHÍ LINH VOICE INTELLIGENCE — CAPABILITY MATRIX
+
+> Bảng ma trận năng lực thực tế được khám phá trực tiếp từ Tool Registry (57 tools) và Knowledge Base của Càn Khôn Linh Thạch Các v2.1.0.
+
+| Capability ID | Miền (Domain) | Tool Hệ Thống | Ý Định (Intent) | Tham Số Bắt Buộc | Tham Số Tùy Chọn | Read/Write | Cần Xác Nhận? | Mức Độ Rủi Ro | Kết Quả Mong Đợi | Điểm Dễ Nhầm Lẫn / Thiếu Tham Số |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :--- | :--- |
+| `CAP-V01` | WALLET | `get_wallets` | `GET_WALLETS` | `Không` | `wallet_name` | READ | KHÔNG | `LOW` | Lấy danh sách các Túi Càn Khôn (ví) và số dư hiện có của Ký ... | Trùng tên ví, ví không tồn tại, nhầm nguồn/đích |
+| `CAP-V02` | WALLET | `wallet_status` | `WALLET_STATUS` | `Không` | `wallet_name` | READ | KHÔNG | `LOW` | Tra cứu số dư và danh sách các Túi Càn Khôn.... | Trùng tên ví, ví không tồn tại, nhầm nguồn/đích |
+| `CAP-V03` | WALLET | `create_wallet` | `CREATE_WALLET` | `wallet_name` | `balance, wallet_type` | WRITE | CÓ | `MEDIUM` | Tạo một Túi Càn Khôn (ví) mới với số dư ban đầu.... | Trùng tên ví, ví không tồn tại, nhầm nguồn/đích |
+| `CAP-V04` | WALLET | `update_wallet` | `UPDATE_WALLET` | `Không` | `wallet_name, new_name, balance, wallet_type` | WRITE | CÓ | `MEDIUM` | Cập nhật thông tin hoặc tên của Túi Càn Khôn.... | Trùng tên ví, ví không tồn tại, nhầm nguồn/đích |
+| `CAP-V05` | WALLET | `delete_wallet` | `DELETE_WALLET` | `Không` | `wallet_name, wallet_id` | DELETE | CÓ | `CRITICAL` | Xóa bỏ một Túi Càn Khôn khỏi hệ thống. (RỦI RO CAO)... | Trùng tên ví, ví không tồn tại, nhầm nguồn/đích |
+| `CAP-V06` | WALLET | `transfer_money` | `TRANSFER_MONEY` | `amount` | `from_wallet_name, to_wallet_name, from_wallet_id, to_wallet_id, note` | WRITE | CÓ | `HIGH` | Chuyển tiền giữa hai Túi Càn Khôn (ví). (YÊU CẦU XÁC NHẬN)... | Trùng tên ví, ví không tồn tại, nhầm nguồn/đích |
+| `CAP-V07` | CATEGORY | `get_categories` | `GET_CATEGORIES` | `Không` | `Không` | READ | KHÔNG | `LOW` | Lấy danh sách các danh mục thu chi của Ký Chủ.... | Không |
+| `CAP-V08` | CATEGORY | `create_category` | `CREATE_CATEGORY` | `category_name` | `category_type, icon` | WRITE | CÓ | `LOW` | Tạo một danh mục thu chi mới.... | Trùng tên danh mục, danh mục hệ thống không được sửa |
+| `CAP-V09` | CATEGORY | `update_category` | `UPDATE_CATEGORY` | `Không` | `category_name, new_name, icon` | WRITE | CÓ | `LOW` | Cập nhật tên hoặc biểu tượng của danh mục.... | Trùng tên danh mục, danh mục hệ thống không được sửa |
+| `CAP-V10` | CATEGORY | `delete_category` | `DELETE_CATEGORY` | `category_name` | `Không` | DELETE | CÓ | `HIGH` | Xóa bỏ một danh mục thu chi.... | Trùng tên danh mục, danh mục hệ thống không được sửa |
+| `CAP-V11` | TRANSACTION | `get_recent_transactions` | `GET_RECENT_TRANSACTIONS` | `Không` | `limit` | READ | KHÔNG | `LOW` | Xem các giao dịch thu/chi gần đây nhất trong sổ sách.... | Không |
+| `CAP-V12` | TRANSACTION | `transaction_search` | `TRANSACTION_SEARCH` | `Không` | `query, category_name, wallet_name, time_frame, min_amount, max_amount, txn_type, limit` | READ | KHÔNG | `LOW` | Tìm kiếm và tra soát giao dịch theo từ khóa, danh mục, ví ti... | Không |
+| `CAP-V13` | TRANSACTION | `search_transactions` | `SEARCH_TRANSACTIONS` | `Không` | `query, category_name, wallet_name, time_frame, min_amount, max_amount, txn_type, limit` | READ | KHÔNG | `LOW` | Tìm kiếm hoặc lọc các giao dịch theo từ khóa hoặc loại thu/c... | Không |
+| `CAP-V14` | TRANSACTION | `create_expense` | `CREATE_EXPENSE` | `amount, note` | `wallet_name, wallet_id, category_name, transaction_date` | WRITE | CÓ | `MEDIUM` | Thêm một khoản chi tiêu mới vào ví. (YÊU CẦU XÁC NHẬN)... | Không |
+| `CAP-V15` | TRANSACTION | `create_income` | `CREATE_INCOME` | `amount, note` | `wallet_name, wallet_id, category_name, transaction_date` | WRITE | CÓ | `MEDIUM` | Thêm một khoản thu nhập mới vào ví. (YÊU CẦU XÁC NHẬN)... | Không |
+| `CAP-V16` | TRANSACTION | `update_transaction` | `UPDATE_TRANSACTION` | `transaction_id` | `amount, note, transaction_date` | WRITE | CÓ | `MEDIUM` | Cập nhật hoặc chỉnh sửa một giao dịch đã lưu.... | Không |
+| `CAP-V17` | TRANSACTION | `delete_transaction` | `DELETE_TRANSACTION` | `transaction_id` | `Không` | DELETE | CÓ | `HIGH` | Xóa bỏ một giao dịch và hoàn lại số dư ví.... | Không |
+| `CAP-V18` | BUDGET | `budget_status` | `BUDGET_STATUS` | `Không` | `category_name, month_year` | READ | KHÔNG | `LOW` | Xem tiến độ và cảnh báo các hạn mức ngân sách chi tiêu trong... | Thiếu danh mục hoặc số tiền hạn mức |
+| `CAP-V19` | BUDGET | `get_budget_status` | `GET_BUDGET_STATUS` | `Không` | `category_name, month_year` | READ | KHÔNG | `LOW` | Xem tiến độ và cảnh báo các hạn mức chi tiêu trong tháng.... | Thiếu danh mục hoặc số tiền hạn mức |
+| `CAP-V20` | BUDGET | `create_budget` | `CREATE_BUDGET` | `limit_amount` | `category_name, category_id, month_year` | WRITE | CÓ | `MEDIUM` | Thiết lập hoặc cập nhật hạn mức ngân sách chi tiêu cho danh ... | Thiếu danh mục hoặc số tiền hạn mức |
+| `CAP-V21` | BUDGET | `update_budget` | `UPDATE_BUDGET` | `limit_amount` | `category_name, budget_id, month_year` | WRITE | CÓ | `MEDIUM` | Chỉnh sửa hạn mức ngân sách đã đặt.... | Thiếu danh mục hoặc số tiền hạn mức |
+| `CAP-V22` | BUDGET | `delete_budget` | `DELETE_BUDGET` | `Không` | `category_name, budget_id` | DELETE | CÓ | `MEDIUM` | Xóa bỏ một hạn mức ngân sách.... | Thiếu danh mục hoặc số tiền hạn mức |
+| `CAP-V23` | RECURRING | `get_recurring_transactions` | `GET_RECURRING_TRANSACTIONS` | `Không` | `Không` | READ | KHÔNG | `LOW` | Xem danh sách các giao dịch định kỳ đang hoạt động.... | Không |
+| `CAP-V24` | RECURRING | `create_recurring_transaction` | `CREATE_RECURRING_TRANSACTION` | `amount` | `transaction_type, frequency, category_name, wallet_name, note, next_run_date` | WRITE | CÓ | `HIGH` | Tạo một giao dịch định kỳ tự động (hàng tuần hoặc hàng tháng... | Không |
+| `CAP-V25` | RECURRING | `update_recurring_transaction` | `UPDATE_RECURRING_TRANSACTION` | `rec_id` | `amount, frequency, is_active` | WRITE | CÓ | `MEDIUM` | Chỉnh sửa hoặc bật/tắt giao dịch định kỳ.... | Không |
+| `CAP-V26` | RECURRING | `delete_recurring_transaction` | `DELETE_RECURRING_TRANSACTION` | `rec_id` | `Không` | DELETE | CÓ | `HIGH` | Xóa bỏ một giao dịch định kỳ.... | Không |
+| `CAP-V27` | DEBT | `debt_status` | `DEBT_STATUS` | `Không` | `debt_type` | READ | KHÔNG | `LOW` | Xem sổ nợ: tổng nợ phải trả, nợ người khác nợ mình và các kh... | Trùng tên đối tác nợ, thiếu loại nợ (cho vay/mượn) |
+| `CAP-V28` | DEBT | `get_debts` | `GET_DEBTS` | `Không` | `debt_type` | READ | KHÔNG | `LOW` | Xem sổ nợ: các khoản nợ phải trả và nợ người khác nợ mình.... | Trùng tên đối tác nợ, thiếu loại nợ (cho vay/mượn) |
+| `CAP-V29` | DEBT | `debt_list` | `DEBT_LIST` | `Không` | `debt_type` | READ | KHÔNG | `LOW` | Xem danh sách các khoản nợ phải trả và nợ người khác nợ mình... | Trùng tên đối tác nợ, thiếu loại nợ (cho vay/mượn) |
+| `CAP-V30` | DEBT | `create_debt` | `CREATE_DEBT` | `debt_type, person_name, amount` | `due_date, note` | WRITE | CÓ | `HIGH` | Ghi nhận khoản vay mượn mới (cho vay hoặc đi vay).... | Trùng tên đối tác nợ, thiếu loại nợ (cho vay/mượn) |
+| `CAP-V31` | DEBT | `update_debt` | `UPDATE_DEBT` | `Không` | `person_name, amount, due_date` | WRITE | CÓ | `MEDIUM` | Cập nhật thông tin khoản nợ.... | Trùng tên đối tác nợ, thiếu loại nợ (cho vay/mượn) |
+| `CAP-V32` | DEBT | `settle_debt` | `SETTLE_DEBT` | `Không` | `person_name, debt_id` | WRITE | CÓ | `HIGH` | Đánh dấu đã hoàn tất / thanh toán xong một khoản nợ.... | Trùng tên đối tác nợ, thiếu loại nợ (cho vay/mượn) |
+| `CAP-V33` | DEBT | `delete_debt` | `DELETE_DEBT` | `Không` | `person_name, debt_id` | DELETE | CÓ | `HIGH` | Xóa bỏ một khoản nợ khỏi sổ sách.... | Trùng tên đối tác nợ, thiếu loại nợ (cho vay/mượn) |
+| `CAP-V34` | SAVING_GOAL | `saving_goal_status` | `SAVING_GOAL_STATUS` | `Không` | `goal_name` | READ | KHÔNG | `LOW` | Tra cứu tiến độ tích lũy các mục tiêu tiết kiệm.... | Trùng tên mục tiêu, số tiền vượt mục tiêu |
+| `CAP-V35` | SAVING_GOAL | `get_saving_goals` | `GET_SAVING_GOALS` | `Không` | `goal_name` | READ | KHÔNG | `LOW` | Lấy danh sách các mục tiêu tiết kiệm và tiến độ tích lũy.... | Trùng tên mục tiêu, số tiền vượt mục tiêu |
+| `CAP-V36` | SAVING_GOAL | `create_saving_goal` | `CREATE_SAVING_GOAL` | `target_name, target_amount` | `current_amount, target_date, icon` | WRITE | CÓ | `MEDIUM` | Tạo một mục tiêu tiết kiệm mới.... | Trùng tên mục tiêu, số tiền vượt mục tiêu |
+| `CAP-V37` | SAVING_GOAL | `update_saving_goal` | `UPDATE_SAVING_GOAL` | `Không` | `target_name, target_amount, target_date` | WRITE | CÓ | `MEDIUM` | Chỉnh sửa mục tiêu tiết kiệm.... | Trùng tên mục tiêu, số tiền vượt mục tiêu |
+| `CAP-V38` | SAVING_GOAL | `saving_goal_deposit` | `SAVING_GOAL_DEPOSIT` | `amount` | `goal_name, goal_id, wallet_name, wallet_id` | WRITE | CÓ | `HIGH` | Nạp tiền vào một mục tiêu tiết kiệm. (YÊU CẦU XÁC NHẬN)... | Trùng tên mục tiêu, số tiền vượt mục tiêu |
+| `CAP-V39` | SAVING_GOAL | `saving_goal_withdraw` | `SAVING_GOAL_WITHDRAW` | `amount` | `goal_name, goal_id, wallet_name` | WRITE | CÓ | `HIGH` | Rút tiền từ mục tiêu tiết kiệm trở lại ví tiền. (YÊU CẦU XÁC... | Trùng tên mục tiêu, số tiền vượt mục tiêu |
+| `CAP-V40` | SAVING_GOAL | `delete_saving_goal` | `DELETE_SAVING_GOAL` | `goal_name` | `Không` | DELETE | CÓ | `HIGH` | Xóa bỏ một mục tiêu tiết kiệm.... | Trùng tên mục tiêu, số tiền vượt mục tiêu |
+| `CAP-V41` | REPORTS | `financial_overview` | `FINANCIAL_OVERVIEW` | `Không` | `period, month_year` | READ | KHÔNG | `LOW` | Xem báo cáo tổng quan tài chính (tổng thu, tổng chi, tiết ki... | Không |
+| `CAP-V42` | REPORTS | `get_financial_overview` | `GET_FINANCIAL_OVERVIEW` | `Không` | `period, month_year` | READ | KHÔNG | `LOW` | Xem báo cáo tổng quan tài chính tháng này.... | Không |
+| `CAP-V43` | REPORTS | `spending_summary` | `SPENDING_SUMMARY` | `Không` | `period` | READ | KHÔNG | `LOW` | Tổng hợp chi tiêu thực tế theo ngày, tuần, tháng.... | Không |
+| `CAP-V44` | REPORTS | `spending_by_category` | `SPENDING_BY_CATEGORY` | `Không` | `category_name, period` | READ | KHÔNG | `LOW` | Phân tích cơ cấu chi tiêu theo danh mục hoặc một mục cụ thể.... | Trùng tên danh mục, danh mục hệ thống không được sửa |
+| `CAP-V45` | REPORTS | `get_trend_report` | `GET_TREND_REPORT` | `Không` | `months` | READ | KHÔNG | `LOW` | Báo cáo xu hướng tài chính qua nhiều tháng liên tiếp.... | Không |
+| `CAP-V46` | REPORTS | `get_weekly_report` | `GET_WEEKLY_REPORT` | `Không` | `month_year` | READ | KHÔNG | `LOW` | Báo cáo chi tiết chi tiêu theo 4 tuần trong một tháng.... | Không |
+| `CAP-V47` | REPORTS | `compare_months` | `COMPARE_MONTHS` | `Không` | `month1, month2` | READ | KHÔNG | `LOW` | So sánh biến động thu chi giữa hai tháng cụ thể.... | Không |
+| `CAP-V48` | REPORTS | `export_reports` | `EXPORT_REPORTS` | `Không` | `format, month_year` | SYSTEM | KHÔNG | `LOW` | Xuất sao kê và báo cáo tài chính định dạng Excel hoặc CSV.... | Không |
+| `CAP-V49` | OCR | `get_ocr_logs` | `GET_OCR_LOGS` | `Không` | `limit` | READ | KHÔNG | `LOW` | Xem lịch sử các hóa đơn đã được quét qua Linh Nhãn OCR.... | Không |
+| `CAP-V50` | USER | `get_user_profile` | `GET_USER_PROFILE` | `Không` | `Không` | READ | KHÔNG | `LOW` | Xem thông tin đạo hiệu, vai trò và thống kê tiên phủ của bản... | Không |
+| `CAP-V51` | USER | `update_user_profile` | `UPDATE_USER_PROFILE` | `full_name` | `Không` | WRITE | CÓ | `LOW` | Cập nhật đạo hiệu hoặc họ tên người dùng.... | Không |
+| `CAP-V52` | NAVIGATION | `navigate_to` | `NAVIGATE_TO` | `target_tab` | `Không` | SYSTEM | KHÔNG | `LOW` | Điều hướng hoặc mở một trang/tab chức năng cụ thể trên websi... | Không |
+| `CAP-V53` | SYSTEM | `get_system_help` | `GET_SYSTEM_HELP` | `Không` | `Không` | READ | KHÔNG | `LOW` | Xem hướng dẫn tính năng và các pháp bảo trong Càn Khôn Linh ... | Không |
+| `CAP-V54` | ADMIN | `get_admin_stats` | `GET_ADMIN_STATS` | `Không` | `Không` | READ | KHÔNG | `LOW` | Xem thông số toàn môn: tổng đệ tử, tài khoản hoạt động, tài ... | Không |
+| `CAP-V55` | ADMIN | `list_admin_users` | `LIST_ADMIN_USERS` | `Không` | `search, role, status` | READ | KHÔNG | `LOW` | Tra cứu danh sách tất cả đệ tử trong Tông Môn. (DÀNH RIÊNG A... | Không |
+| `CAP-V56` | ADMIN | `toggle_user_status` | `TOGGLE_USER_STATUS` | `target_user_id` | `Không` | WRITE | CÓ | `HIGH` | Khóa hoặc mở khóa tài khoản đệ tử. (DÀNH RIÊNG ADMIN, YÊU CẦ... | Không |
+| `CAP-V57` | ADMIN | `change_user_role` | `CHANGE_USER_ROLE` | `target_user_id, new_role` | `Không` | WRITE | CÓ | `CRITICAL` | Thăng cấp hoặc giáng chức vai trò đệ tử (admin / user). (DÀN... | Không |

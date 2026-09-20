@@ -172,6 +172,7 @@
           <ChartComponent
             type="doughnut"
             :chart-data="dashboardDoughnutData"
+            :show-legend="false"
             title=""
           />
         </div>
@@ -186,24 +187,29 @@
           class="category-mini-list"
         >
           <div
-            v-for="cat in summary.expense_by_category.slice(0, 4)"
-            :key="cat.category_name"
-            class="category-mini-item"
+            v-for="(cat, idx) in summary.expense_by_category"
+            :key="cat.category_name || idx"
+            class="category-spending-row"
           >
-            <div class="cat-info-row">
-              <span class="cat-name">
-                <span class="cat-icon-emoji">{{ cat.icon }}</span>
-                {{ cat.category_name }}
-              </span>
-              <span class="cat-amount tabular-num">
-                {{ formatVND(cat.total) }}
-              </span>
+            <div class="cat-identity-col">
+              <span class="cat-color-dot" :style="{ backgroundColor: getCategoryColor(idx) }"></span>
+              <span class="cat-icon-emoji">{{ cat.icon || '🏷️' }}</span>
             </div>
-            <div class="progress-track">
-              <div
-                class="progress-fill"
-                :style="{ width: Math.min(100, Math.round((cat.total / (summary.total_expense || 1)) * 100)) + '%' }"
-              ></div>
+            <div class="cat-name-col" :title="cat.category_name">
+              <span class="cat-name-text">{{ cat.category_name }}</span>
+              <div class="progress-track">
+                <div
+                  class="progress-fill"
+                  :style="{
+                    width: getCategoryPercentage(cat.total) + '%',
+                    backgroundColor: getCategoryColor(idx)
+                  }"
+                ></div>
+              </div>
+            </div>
+            <div class="cat-value-col">
+              <span class="cat-amount tabular-num">{{ formatVND(cat.total) }}</span>
+              <span class="cat-percentage tabular-num">{{ getCategoryPercentage(cat.total) }}%</span>
             </div>
           </div>
         </div>
@@ -468,6 +474,27 @@ const currentMonthYear = computed(() => {
 const recentTransactions = computed(() => {
   return (props.transactions || []).slice(0, 8)
 })
+
+// Xianxia color palette synchronized with ChartComponents.vue
+const XIANXIA_COLORS = [
+  '#4fa8a0', '#e8c874', '#8b5cf6', '#ef4444', '#3b82f6',
+  '#f97316', '#10b981', '#ec4899', '#f59e0b', '#06b6d4',
+  '#a855f7', '#14b8a6', '#f43f5e', '#6366f1', '#fb923c',
+]
+
+const getCategoryColor = (idx) => {
+  return XIANXIA_COLORS[idx % XIANXIA_COLORS.length]
+}
+
+const totalCategoryExpense = computed(() => {
+  return (props.summary?.expense_by_category || []).reduce((acc, c) => acc + (c.total || 0), 0)
+})
+
+const getCategoryPercentage = (val) => {
+  const total = totalCategoryExpense.value || props.summary?.total_expense || 0
+  if (total <= 0) return 0
+  return Math.min(100, Math.round(((val || 0) / total) * 100))
+}
 </script>
 
 <style scoped>
@@ -730,13 +757,13 @@ const recentTransactions = computed(() => {
 .analytics-card {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   padding: var(--space-lg, 24px);
   background: var(--color-surface-container-low, #131b2e);
   border: 1px solid var(--tier-1-border, rgba(255, 255, 255, 0.08));
   border-radius: var(--radius-xl, 16px);
   backdrop-filter: blur(16px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-height: 440px;
 }
 
 .card-title-row {
@@ -789,7 +816,13 @@ const recentTransactions = computed(() => {
 }
 
 .doughnut-wrap {
-  height: 220px;
+  height: 180px;
+  min-height: 180px;
+  max-height: 180px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-chart-state {
@@ -798,7 +831,7 @@ const recentTransactions = computed(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 220px;
+  height: 180px;
   color: var(--color-on-surface-variant, #bdc9c6);
   font-size: 13px;
   text-align: center;
@@ -812,7 +845,7 @@ const recentTransactions = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--space-md, 16px);
+  margin-top: auto;
   padding-top: var(--space-sm, 8px);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 12px;
@@ -842,40 +875,78 @@ const recentTransactions = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: var(--space-md, 16px);
-  padding-top: var(--space-sm, 8px);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: var(--space-sm, 12px);
+  padding-top: var(--space-sm, 12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
-.category-mini-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.category-mini-list::-webkit-scrollbar {
+  width: 4px;
+}
+.category-mini-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.category-mini-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+.category-mini-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary, #7dd6cc);
 }
 
-.cat-info-row {
-  display: flex;
+.category-spending-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  font-size: 12.5px;
+  gap: 10px;
+  min-height: 32px;
+  padding: 2px 0;
 }
 
-.cat-name {
+.cat-identity-col {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--color-on-surface, #dae2fd);
+  flex-shrink: 0;
 }
-.cat-icon-emoji { font-size: 14px; }
 
-.cat-amount {
-  color: var(--color-on-surface-variant, #bdc9c6);
+.cat-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cat-icon-emoji {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.cat-name-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cat-name-text {
+  font-size: 12.5px;
   font-weight: 500;
+  color: var(--color-on-surface, #dae2fd);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
 .progress-track {
   width: 100%;
-  height: 5px;
+  height: 4px;
   border-radius: 9999px;
   background: var(--color-surface-container-highest, #2d3449);
   overflow: hidden;
@@ -884,8 +955,32 @@ const recentTransactions = computed(() => {
 .progress-fill {
   height: 100%;
   border-radius: 9999px;
-  background: var(--color-primary, #7dd6cc);
   transition: width 0.4s ease;
+}
+
+.cat-value-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cat-amount {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-on-surface, #dae2fd);
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.cat-percentage {
+  font-size: 11px;
+  color: var(--color-on-surface-variant, #bdc9c6);
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 /* ─── SECTION D: OPERATIONAL MODULES (5 COLS / 7 COLS) ─── */

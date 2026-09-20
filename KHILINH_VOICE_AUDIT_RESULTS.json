@@ -1,0 +1,281 @@
+{
+  "summary": {
+    "total": 30,
+    "passed": 24,
+    "failed": 6,
+    "pass_rate": "80.0%"
+  },
+  "console_errors": [],
+  "results": [
+    {
+      "phase": "PHASE 2",
+      "case_id": "WAKE-01",
+      "name": "Lọc phát âm thường khi đang ngủ",
+      "status": "PASS",
+      "details": "Không mở khi không có wake word",
+      "screenshot": "c:\\Code\\quan-ly-chi-tieu\\test_screenshots\\voice_audit\\p2_wake01_sleeping_filter.png",
+      "timestamp": "2026-09-20 18:10:44"
+    },
+    {
+      "phase": "PHASE 2",
+      "case_id": "WAKE-02",
+      "name": "Thức tỉnh bằng wake word 'Hệ thống'",
+      "status": "PASS",
+      "details": "Mở thành công và phản hồi: 'Dạ, Khí Linh nghe lệnh đạo hữu.'",
+      "screenshot": "c:\\Code\\quan-ly-chi-tieu\\test_screenshots\\voice_audit\\p2_wake02_awakening.png",
+      "timestamp": "2026-09-20 18:10:46"
+    },
+    {
+      "phase": "PHASE 2",
+      "case_id": "WAKE-03",
+      "name": "Đóng cửa sổ về trạng thái ngủ",
+      "status": "PASS",
+      "details": "Cửa sổ đã đóng hoàn toàn về SLEEPING",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:10:48"
+    },
+    {
+      "phase": "PHASE 2",
+      "case_id": "WAKE-04",
+      "name": "Lệnh kép thức tỉnh kèm lệnh chuyển tiền",
+      "status": "PASS",
+      "details": "Tự thức tỉnh và hiển thị thẻ xác nhận: XÁC NHẬN THAO TÁC CHUYỂN LINH THẠCH LIÊN VÍ - 1.000.000 VNĐ",
+      "screenshot": "c:\\Code\\quan-ly-chi-tieu\\test_screenshots\\voice_audit\\p2_wake04_compound_wake.png",
+      "timestamp": "2026-09-20 18:10:52"
+    },
+    {
+      "phase": "PHASE 3",
+      "case_id": "TX-01",
+      "name": "Tạo chi tiêu tự nhiên (50k ăn sáng)",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: XÁC NHẬN THAO TÁC GHI NHẬN KHOẢN CHI MỚI - 50.000 VNĐ",
+      "screenshot": "c:\\Code\\quan-ly-chi-tieu\\test_screenshots\\voice_audit\\p3_tx01_expense.png",
+      "timestamp": "2026-09-20 18:10:58"
+    },
+    {
+      "phase": "PHASE 3",
+      "case_id": "TX-05",
+      "name": "Tạo thu nhập (15tr Vietcombank)",
+      "status": "FAIL",
+      "details": "Card: {'visible': False, 'title': '', 'amount': '', 'note': ''}",
+      "screenshot": "c:\\Code\\quan-ly-chi-tieu\\test_screenshots\\voice_audit\\p3_tx05_income.png",
+      "timestamp": "2026-09-20 18:11:04"
+    },
+    {
+      "phase": "PHASE 3",
+      "case_id": "WAL-01",
+      "name": "Chuyển tiền liên ví một lượt",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: XÁC NHẬN THAO TÁC CHUYỂN LINH THẠCH LIÊN VÍ - 1.000.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:10"
+    },
+    {
+      "phase": "PHASE 3",
+      "case_id": "BUD-01",
+      "name": "Tạo hạn mức ngân sách một lượt",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: XÁC NHẬN THAO TÁC THIẾT LẬP NGÂN SÁCH HẠN MỨC - 2.000.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:15"
+    },
+    {
+      "phase": "PHASE 3",
+      "case_id": "SAV-01",
+      "name": "Tạo mục tiêu tiết kiệm một lượt",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: XÁC NHẬN THAO TÁC LẬP MỤC TIÊU TIẾT KIỆM MỚI - 50.000.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:21"
+    },
+    {
+      "phase": "PHASE 3",
+      "case_id": "DEB-01",
+      "name": "Ghi sổ nợ cho mượn một lượt",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: XÁC NHẬN THAO TÁC GHI SỔ CÔNG NỢ MỚI - 500.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:26"
+    },
+    {
+      "phase": "PHASE 3",
+      "case_id": "REC-01",
+      "name": "Thiết lập giao dịch định kỳ một lượt",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: XÁC NHẬN THAO TÁC GHI NHẬN KHOẢN CHI MỚI - 3.000.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:32"
+    },
+    {
+      "phase": "PHASE 4",
+      "case_id": "SLANG-01",
+      "name": "Tiếng lóng 'năm chục' (50.000 Đ)",
+      "status": "FAIL",
+      "details": "Card: {'visible': False, 'title': '', 'amount': '', 'note': ''}",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:37"
+    },
+    {
+      "phase": "PHASE 4",
+      "case_id": "SLANG-02",
+      "name": "Tiếng lóng '2 củ' (2.000.000 Đ)",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: 2.000.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:43"
+    },
+    {
+      "phase": "PHASE 4",
+      "case_id": "SLANG-03",
+      "name": "Tiếng lóng chuyển tiền 'rút một củ'",
+      "status": "PASS",
+      "details": "Thẻ xác nhận: 1.000.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:48"
+    },
+    {
+      "phase": "PHASE 5",
+      "case_id": "MISS-01",
+      "name": "Hỏi bổ sung tham số khi lệnh thiếu thông tin",
+      "status": "PASS",
+      "details": "AI đã hỏi lại: 'Ký Chủ muốn chuyển bao nhiêu Linh Thạch từ ví Linh Thạch Tiền Mặt sang ví ta?'",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:53"
+    },
+    {
+      "phase": "PHASE 5",
+      "case_id": "MISS-02",
+      "name": "Bổ sung tham số chuyển sang CONFIRMING",
+      "status": "FAIL",
+      "details": "Card: {'visible': False, 'title': '', 'amount': '', 'note': ''}",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:11:57"
+    },
+    {
+      "phase": "PHASE 6",
+      "case_id": "CORR-01",
+      "name": "Tự sửa chữa giữa câu (50k -> à nhầm 70k)",
+      "status": "PASS",
+      "details": "Đã lấy số tiền sau sửa: 70.000 VNĐ",
+      "screenshot": "c:\\Code\\quan-ly-chi-tieu\\test_screenshots\\voice_audit\\p6_corr01_self_repair.png",
+      "timestamp": "2026-09-20 18:12:03"
+    },
+    {
+      "phase": "PHASE 7",
+      "case_id": "CONF-01",
+      "name": "Khẩu lệnh 'Xác nhận' thực thi và lưu DB",
+      "status": "FAIL",
+      "details": "Chưa tìm thấy record trong DB",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:13"
+    },
+    {
+      "phase": "PHASE 7",
+      "case_id": "CONF-02",
+      "name": "Khẩu lệnh 'Thôi hủy bỏ' dọn sạch lệnh chờ",
+      "status": "FAIL",
+      "details": "Không mở thẻ để test hủy",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:17"
+    },
+    {
+      "phase": "PHASE 7",
+      "case_id": "CONF-03",
+      "name": "An toàn khi nói 'Xác nhận' lúc không có lệnh chờ",
+      "status": "PASS",
+      "details": "Không sinh giao dịch ma (Phantom execution prevention)",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:19"
+    },
+    {
+      "phase": "PHASE 8",
+      "case_id": "NOISE-01",
+      "name": "Lọc từ đệm và do dự (À thì là mà...)",
+      "status": "PASS",
+      "details": "Nhận diện chính xác 45.000 Đ: 45.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:23"
+    },
+    {
+      "phase": "PHASE 9",
+      "case_id": "NUM-01",
+      "name": "Chữ số tiếng Việt 'hai trăm ba mươi nghìn'",
+      "status": "FAIL",
+      "details": "Card: {'visible': True, 'title': 'XÁC NHẬN THAO TÁC GHI NHẬN KHOẢN CHI MỚI', 'amount': '200.000 VNĐ', 'note': 'Mua sách tu tiên hai trăm ba mươi nghìn'}",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:29"
+    },
+    {
+      "phase": "PHASE 9",
+      "case_id": "NUM-02",
+      "name": "Từ ngữ định lượng 'nửa triệu'",
+      "status": "PASS",
+      "details": "Chuyển đổi thành 500,000 Đ: 500.000 VNĐ",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:34"
+    },
+    {
+      "phase": "PHASE 11",
+      "case_id": "CONT-01",
+      "name": "Truy vấn ngữ cảnh ví MoMo",
+      "status": "PASS",
+      "details": "Trả lời: 'Số dư trong 'Túi Momo' của Ký Chủ hiện còn 24,250,000 VNĐ....'",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:39"
+    },
+    {
+      "phase": "PHASE 12",
+      "case_id": "READ-01",
+      "name": "Lệnh đọc dữ liệu không hiện thẻ xác nhận",
+      "status": "PASS",
+      "details": "Phản hồi trực tiếp không chặn: 'Tổng quan tài chính tháng này (09/2026): Thu 43,510,000đ, Chi 8,963,050đ, Tiết k...'",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:43"
+    },
+    {
+      "phase": "PHASE 13",
+      "case_id": "CONT-LOOP-01",
+      "name": "Chế độ hội thoại liên tục (Continuous Loop)",
+      "status": "PASS",
+      "details": "Footer status: 'Khí Linh đang truyền âm phản hồi (User nói chen sẽ không nhận).'",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:12:43"
+    },
+    {
+      "phase": "PHASE 14",
+      "case_id": "SILENCE-01",
+      "name": "Tự động đóng và dọn lệnh sau 10s im lặng",
+      "status": "PASS",
+      "details": "Cửa sổ tự đóng an toàn về SLEEPING sau 10s",
+      "screenshot": "c:\\Code\\quan-ly-chi-tieu\\test_screenshots\\voice_audit\\p14_silence_timeout.png",
+      "timestamp": "2026-09-20 18:12:54"
+    },
+    {
+      "phase": "PHASE 16",
+      "case_id": "DUP-01",
+      "name": "Chống kích hoạt lặp âm trong 1.5s (Debounce)",
+      "status": "PASS",
+      "details": "Chỉ nhận 1 lệnh duy nhất, 1 thẻ xác nhận",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:13:00"
+    },
+    {
+      "phase": "PHASE 17",
+      "case_id": "ERR-01",
+      "name": "Phục hồi êm dịu khi gặp câu vô nghĩa",
+      "status": "PASS",
+      "details": "Phản hồi hướng dẫn tự nhiên: '🔮 [Nhíu mày, phủi tay áo]\n\nKý Chủ à, khẩu quyết vừa rồi của ngài chứa toàn tạp k...'",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:13:06"
+    },
+    {
+      "phase": "PHASE 18",
+      "case_id": "PERSONA-01",
+      "name": "Nhất quán phong thái Tiên Hiệp / Khí Linh",
+      "status": "PASS",
+      "details": "Khí Linh xưng hô chuẩn tu tiên: '🔮 [Thu tay áo, mỉm cười thần bí]\n\nBản tọa chính là Khí Linh Tiên Trí — linh hồn thông tuệ ...'",
+      "screenshot": null,
+      "timestamp": "2026-09-20 18:13:09"
+    }
+  ]
+}

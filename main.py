@@ -554,7 +554,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(status_code=401, detail="Token không hợp lệ.")
 
     with get_db() as conn:
-        user_row = conn.execute("SELECT id, email, role, is_active, token_version FROM users WHERE id = ?", (user_id,)).fetchone()
+        user_row = conn.execute("SELECT id, email, full_name, role, is_active, token_version FROM users WHERE id = ?", (user_id,)).fetchone()
         if not user_row:
             raise HTTPException(status_code=401, detail="Tài khoản không tồn tại.")
         if "is_active" in user_row.keys() and user_row["is_active"] == 0:
@@ -572,6 +572,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         return {
             "user_id": user_row["id"],
             "email": user_row["email"],
+            "full_name": user_row["full_name"],
             "role": str(user_row["role"] or "user").lower(),
             "token_version": db_version
         }
@@ -2248,11 +2249,12 @@ async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
         t_db_1 = time.time()
 
     recent_history = ""
+    display_user = user.get("full_name") or "Ký Chủ"
     if history_rows:
         history_items = list(reversed(history_rows))
         lines = []
         for r in history_items:
-            lines.append(f"Đạo hữu: {r['prompt_question']}")
+            lines.append(f"{display_user}: {r['prompt_question']}")
             lines.append(f"Tiên Trí: {r['ai_response'][:150]}...")
         recent_history = "Hội thoại gần đây:\n" + "\n".join(lines) + "\n\n"
 
@@ -2264,7 +2266,8 @@ async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
             user_message=body.message,
             recent_history=recent_history,
             user_role=user.get("role", "user"),
-            mode=body.mode or "action"
+            mode=body.mode or "action",
+            user_name=display_user
         )
         t_ai_1 = time.time()
 

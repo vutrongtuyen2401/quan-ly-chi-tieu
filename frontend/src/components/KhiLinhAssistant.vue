@@ -19,62 +19,20 @@
     >
       <div class="spirit-halo"></div>
 
-      <!-- Chibi Celestial Spirit SVG -->
+      <!-- Chibi Celestial Spirit Character -->
       <div class="spirit-chibi-body">
-        <svg viewBox="0 0 100 100" class="spirit-svg" aria-hidden="true">
-          <defs>
-            <radialGradient id="spiritGrad" cx="45%" cy="40%" r="55%">
-              <stop offset="0%" stop-color="#ffffff" />
-              <stop offset="40%" stop-color="#e0f7f5" />
-              <stop offset="85%" stop-color="#a78bfa" />
-              <stop offset="100%" stop-color="#6d28d9" />
-            </radialGradient>
-            <radialGradient id="spiritHaloGrad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stop-color="rgba(167, 139, 250, 0.7)" />
-              <stop offset="70%" stop-color="rgba(124, 58, 237, 0.4)" />
-              <stop offset="100%" stop-color="rgba(124, 58, 237, 0)" />
-            </radialGradient>
-            <filter id="spiritGlow">
-              <feGaussianBlur stdDeviation="3" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-          </defs>
-
-          <!-- Halo Aura -->
-          <circle cx="50" cy="50" r="46" fill="url(#spiritHaloGrad)" class="halo-circle" />
-
-          <!-- Tiny Celestial Floating Wings -->
-          <path d="M16,56 C8,50 10,38 20,42 C20,32 32,32 34,44 Z" fill="rgba(255,255,255,0.85)" class="cloud-wing wing-left" />
-          <path d="M84,56 C92,50 90,38 80,42 C80,32 68,32 66,44 Z" fill="rgba(255,255,255,0.85)" class="cloud-wing wing-right" />
-
-          <!-- Spirit Orb Body -->
-          <circle cx="50" cy="52" r="32" fill="url(#spiritGrad)" filter="url(#spiritGlow)" class="main-orb" />
-
-          <!-- Yin-Yang Forehead Sigil -->
-          <circle cx="50" cy="33" r="4.5" fill="#e8c874" opacity="0.9" />
-          <circle cx="50" cy="33" r="2" fill="#7c3aed" />
-
-          <!-- Eyes -->
-          <ellipse cx="42" cy="50" rx="3.5" ry="4.5" fill="#1a103c" class="eye-left" />
-          <circle cx="43.5" cy="48.5" r="1.5" fill="#ffffff" />
-          <ellipse cx="58" cy="50" rx="3.5" ry="4.5" fill="#1a103c" class="eye-right" />
-          <circle cx="59.5" cy="48.5" r="1.5" fill="#ffffff" />
-
-          <!-- Blush -->
-          <ellipse cx="34" cy="55" rx="3.5" ry="2" fill="rgba(255, 130, 180, 0.45)" />
-          <ellipse cx="66" cy="55" rx="3.5" ry="2" fill="rgba(255, 130, 180, 0.45)" />
-
-          <!-- Cute Smile -->
-          <path d="M47,56 Q50,60 53,56" stroke="#1a103c" stroke-width="2" stroke-linecap="round" fill="none" />
-
-          <!-- Bottom Floating Clouds -->
-          <path d="M30,76 Q40,70 50,75 Q60,70 70,76 Q60,84 50,81 Q40,84 30,76 Z" fill="rgba(255, 255, 255, 0.9)" />
-        </svg>
+        <KhiLinhCharacter
+          size="md"
+          :state="agentState"
+          :show-aura="true"
+          :show-rings="true"
+          :show-status-dot="false"
+        />
       </div>
 
       <!-- State Badge -->
-      <div class="switch-badge">
-        <span class="badge-icon">🔮</span>
+      <div class="switch-badge" :class="'badge-' + agentState.toLowerCase()">
+        <span class="badge-dot"></span>
       </div>
 
       <!-- Tooltip prompt -->
@@ -84,48 +42,31 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- PHẦN 3 & 4: LIVE SYSTEM MODE (DARK OVERLAY & SYSTEM FRAME)  -->
+    <!-- STITCH SYSTEM WINDOW: CELESTIAL MODERN SYSTEM CONSOLE        -->
+    <!-- Desktop 70–80% viewport | Mobile 90–95% viewport             -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <Teleport to="body">
       <div v-if="isLiveActive" class="system-mode-overlay" @click.self="deactivateLiveMode">
-        <div class="system-frame" role="dialog" aria-modal="true" aria-labelledby="sys-title">
-          <!-- Ambient Corner Runes -->
-          <div class="frame-corner top-left"></div>
-          <div class="frame-corner top-right"></div>
-          <div class="frame-corner bottom-left"></div>
-          <div class="frame-corner bottom-right"></div>
+        <div class="system-window-shell" role="dialog" aria-modal="true" aria-labelledby="sys-title">
+          <!-- 4 Corner Technical Cut Accents -->
+          <div class="shell-corner corner-tl"></div>
+          <div class="shell-corner corner-tr"></div>
+          <div class="shell-corner corner-bl"></div>
+          <div class="shell-corner corner-br"></div>
 
-          <!-- ─── HEADER: KHÍ LINH GÓC TRÊN TRÁI & NÚT X GÓC TRÊN PHẢI ─── -->
-          <div class="system-frame-header">
-            <div class="spirit-header-left">
-              <!-- Khí Linh Chibi xuất hiện ở góc trên bên trái của System Frame -->
-              <div class="frame-spirit-orb" :class="'state-' + agentState.toLowerCase()">
-                <div class="chibi-avatar-wrap">
-                  <svg viewBox="0 0 100 100" class="chibi-small-svg">
-                    <circle cx="50" cy="50" r="44" fill="url(#spiritGrad)" />
-                    <circle cx="50" cy="33" r="3.5" fill="#e8c874" />
-                    <ellipse cx="42" cy="50" rx="3.5" ry="4.5" fill="#1a103c" />
-                    <ellipse cx="58" cy="50" rx="3.5" ry="4.5" fill="#1a103c" />
-                    <circle cx="43.5" cy="48.5" r="1.5" fill="#ffffff" />
-                    <circle cx="59.5" cy="48.5" r="1.5" fill="#ffffff" />
-                    <path d="M47,56 Q50,60 53,56" stroke="#1a103c" stroke-width="2" stroke-linecap="round" fill="none" />
-                  </svg>
-                </div>
-                <div class="spirit-pulse-ring" v-if="agentState === 'LISTENING' || agentState === 'SPEAKING'"></div>
-              </div>
-
-              <div class="system-title-group">
-                <span id="sys-title" class="system-codename">[ HỆ THỐNG THẦN THỨC CÀN KHÔN ]</span>
-                <div class="system-state-indicator" :class="'state-' + agentState.toLowerCase()">
-                  <span class="pulse-beacon"></span>
-                  <span class="state-label">{{ getStateDescription(agentState) }}</span>
-                </div>
-              </div>
+          <!-- ─── HEADER: HỆ THỐNG · KHÍ LINH & NÚT ĐÓNG X ─── -->
+          <div class="system-header">
+            <div class="system-header-left">
+              <span class="header-beacon-pulse"></span>
+              <h2 id="sys-title" class="system-header-title">
+                HỆ THỐNG · KHÍ LINH
+                <span class="system-badge-tag">[CAN-KHON::SYS-01] · TU TIÊN HỘ TRÌ</span>
+              </h2>
             </div>
 
-            <div class="spirit-header-right">
+            <div class="system-header-right">
               <!-- Sound wave visualizer when listening/speaking -->
-              <div v-if="agentState === 'LISTENING' || agentState === 'SPEAKING'" class="audio-wave-bars">
+              <div v-if="agentState === 'LISTENING' || agentState === 'SPEAKING'" class="audio-wave-visualizer" title="Tần số linh âm">
                 <span class="bar bar-1"></span>
                 <span class="bar bar-2"></span>
                 <span class="bar bar-3"></span>
@@ -135,7 +76,7 @@
 
               <!-- TTS Toggle -->
               <button
-                class="sys-icon-btn"
+                class="sys-tool-btn"
                 :class="{ active: ttsEnabled }"
                 @click="toggleTTS"
                 :title="ttsEnabled ? 'Tắt giọng nói Khí Linh' : 'Bật giọng nói Khí Linh'"
@@ -144,12 +85,12 @@
                 {{ ttsEnabled ? '🔊' : '🔇' }}
               </button>
 
-              <!-- Close Button X: PHẦN 14 -->
+              <!-- Close Button X: Full Live Session Close -->
               <button
                 id="btn-close-live-system"
-                class="sys-close-btn"
+                class="sys-close-x-btn"
                 @click="deactivateLiveMode"
-                title="Đóng Live System Mode (Esc)"
+                title="Đóng Hệ Thống Khí Linh (Esc)"
                 aria-label="Đóng giao diện Hệ Thống"
               >
                 ✕
@@ -157,141 +98,288 @@
             </div>
           </div>
 
-          <!-- ─── BODY: PHẦN 4 & 5 — SYSTEM FRAME DISPLAY ─── -->
-          <!-- KHÔNG hiển thị conversation history. KHÔNG hiển thị câu user nói -->
-          <!-- Ban đầu hoàn toàn trống. Chỉ hiện response/processing/confirmation/result -->
-          <div class="system-frame-body">
-            <!-- 1. Trạng thái PROCESSING / ĐANG TRA CỨU: PHẦN 10 -->
-            <div v-if="agentState === 'PROCESSING' || agentState === 'EXECUTING'" class="system-processing-state">
-              <div class="celestial-spinner">
-                <div class="spinner-ring"></div>
-                <div class="spinner-rune">☯</div>
-              </div>
-              <div class="processing-text-group">
-                <h4 class="processing-title">Đang tra cứu linh tịch...</h4>
-                <p class="processing-sub">Khí Linh đang tính toán sổ sách và đạo pháp</p>
-              </div>
-            </div>
-
-            <!-- 2. Hộp thoại XÁC NHẬN THAO TÁC: PHẦN 11 -->
-            <div v-else-if="currentConfirmation" class="system-confirmation-box">
-              <div class="conf-badge-header">
-                <span class="conf-warn-icon">⚠️</span>
-                <span class="conf-warn-title">XÁC NHẬN THAO TÁC HỆ THỐNG</span>
-              </div>
-
-              <div class="conf-action-name">
-                {{ currentConfirmation.title }}
-              </div>
-
-              <div v-if="currentConfirmation.amount" class="conf-amount-highlight">
-                {{ formatCurrency(currentConfirmation.amount) }}
-              </div>
-
-              <div class="conf-details-grid">
-                <div v-if="currentConfirmation.note" class="conf-detail-row">
-                  <span class="label">Nội dung:</span>
-                  <span class="val">{{ currentConfirmation.note }}</span>
+          <!-- ─── BODY CONTAINER (Scrollable Inner Console) ─── -->
+          <div class="system-body-container">
+            <div class="outer-system-console">
+              <!-- Spiritual Coordinates & Telemetry Overline Strip -->
+              <div class="telemetry-strip">
+                <div class="telemetry-left">
+                  <span class="telemetry-sys-id">
+                    <span class="telemetry-ping-dot"></span>
+                    [CAN-KHON::SYS-01]
+                  </span>
+                  <span class="telemetry-sync-rate hidden-mobile">
+                    TÂM THỨC LIÊN KẾT: 99.87%
+                  </span>
                 </div>
-                <div v-if="currentConfirmation.category" class="conf-detail-row">
-                  <span class="label">Danh mục:</span>
-                  <span class="val badge">{{ currentConfirmation.category }}</span>
-                </div>
-                <div v-if="currentConfirmation.wallet" class="conf-detail-row">
-                  <span class="label">Túi tiền:</span>
-                  <span class="val badge wallet">{{ currentConfirmation.wallet }}</span>
-                </div>
-                <div v-if="currentConfirmation.fromWallet" class="conf-detail-row">
-                  <span class="label">Ví nguồn:</span>
-                  <span class="val badge">{{ currentConfirmation.fromWallet }}</span>
-                </div>
-                <div v-if="currentConfirmation.toWallet" class="conf-detail-row">
-                  <span class="label">Ví đích:</span>
-                  <span class="val badge">{{ currentConfirmation.toWallet }}</span>
-                </div>
-                <div v-if="currentConfirmation.goal" class="conf-detail-row">
-                  <span class="label">Mục tiêu:</span>
-                  <span class="val badge">{{ currentConfirmation.goal }}</span>
+                <div class="telemetry-right" :class="'state-' + agentState.toLowerCase()">
+                  <span class="telemetry-state-icon">☯</span>
+                  <span class="telemetry-state-text">{{ getPhapTranStatus(agentState) }}</span>
                 </div>
               </div>
 
-              <div class="conf-prompt-question">
-                Ký chủ có muốn xác nhận thực thi thao tác này không?
+              <!-- Main System Grid: Left Portal (Avatar) + Right Dialogue Stream -->
+              <div class="system-grid">
+                <!-- Left Portal: Chibi Khí Linh Portal -->
+                <div class="spirit-portal-card">
+                  <div class="portal-micro micro-tl"></div>
+                  <div class="portal-micro micro-tr"></div>
+                  <div class="portal-micro micro-bl"></div>
+                  <div class="portal-micro micro-br"></div>
+
+                  <!-- Chibi Portal Center with Sacred Aura Rings -->
+                  <div class="chibi-portal-character-wrap">
+                    <KhiLinhCharacter
+                      size="portal"
+                      :state="agentState"
+                      :show-aura="true"
+                      :show-rings="true"
+                      :show-status-dot="false"
+                    />
+                  </div>
+
+                  <div class="spirit-portal-meta">
+                    <div class="spirit-name-row">
+                      <span class="spirit-name">Tiểu Linh Nhi</span>
+                      <span class="spirit-verified-badge" title="Khí Linh Chính Tông">✓</span>
+                    </div>
+                    <p class="spirit-realm-title">Khí Linh Đệ Thất Giai · Hộ Trì Ngân Khố</p>
+                    <div class="spirit-state-pill" :class="'state-' + agentState.toLowerCase()">
+                      <span class="state-dot-mini"></span>
+                      <span>{{ getStateDescription(agentState) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right Stream: Dialogue & Action Cards -->
+                <div class="action-stream-col">
+                  <!-- 1. Trạng thái PROCESSING / ĐANG TRA CỨU LINH TỊCH -->
+                  <div v-if="isProcessing || agentState === 'PROCESSING' || agentState === 'EXECUTING'" class="system-processing-state">
+                    <div class="celestial-spinner">
+                      <div class="spinner-ring"></div>
+                      <div class="spinner-rune">☯</div>
+                    </div>
+                    <div class="processing-text-group">
+                      <h4 class="processing-title">Đang tra cứu linh tịch...</h4>
+                      <p class="processing-sub">Khí Linh đang đối chiếu dữ liệu tài chính với AgentCore</p>
+                    </div>
+                  </div>
+
+                  <!-- 2. Hộp thoại XÁC NHẬN PHÁP LỆNH (CONFIRMATION TALISMAN CARD) -->
+                  <div v-else-if="currentConfirmation" class="talisman-confirmation-card">
+                    <div class="portal-micro micro-tl"></div>
+                    <div class="portal-micro micro-tr"></div>
+                    <div class="portal-micro micro-bl"></div>
+                    <div class="portal-micro micro-br"></div>
+
+                    <!-- Watermark Talisman Circle -->
+                    <div class="talisman-watermark" aria-hidden="true">
+                      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+                        <circle cx="50" cy="50" r="40" stroke-width="4"></circle>
+                        <rect height="50" stroke-width="3" width="50" x="25" y="25"></rect>
+                        <circle cx="50" cy="50" r="15" stroke-width="2"></circle>
+                      </svg>
+                    </div>
+
+                    <!-- Talisman Header -->
+                    <div class="talisman-header">
+                      <div class="talisman-title-group">
+                        <div class="talisman-gold-bar"></div>
+                        <div>
+                          <h3 class="talisman-title">Xác Nhận Thao Tác</h3>
+                          <p class="talisman-subtitle">{{ currentConfirmation.title }}</p>
+                        </div>
+                      </div>
+                      <span class="talisman-type-badge">
+                        {{ currentConfirmation.tool_name === 'transfer_money' ? 'Atomic Transfer' : 'Ghi Chép Ngân Khố' }}
+                      </span>
+                    </div>
+
+                    <!-- Flow Diagram (4 Variants: Transfer / Expense / Income / Goal) -->
+                    <div class="transaction-flow-grid">
+                      <!-- SOURCE ENTITY -->
+                      <div class="flow-box source-box">
+                        <span class="flow-label">
+                          {{ currentConfirmation.tool_name === 'create_income' ? 'Nguồn Thu / Danh Mục' : 'Từ Nguồn Quỹ' }}
+                        </span>
+                        <div class="flow-content">
+                          <div class="flow-icon-wrap source-icon">
+                            <span>{{ currentConfirmation.tool_name === 'create_income' ? '📥' : '💳' }}</span>
+                          </div>
+                          <div class="flow-meta">
+                            <p class="flow-name truncate">
+                              {{ currentConfirmation.fromWallet || currentConfirmation.wallet || currentConfirmation.category || 'Mặc định' }}
+                            </p>
+                            <p class="flow-sub">Nguồn thực thi</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- FLOW ARROW -->
+                      <div class="flow-arrow-col">
+                        <span class="flow-arrow-icon">➔</span>
+                      </div>
+
+                      <!-- TARGET ENTITY -->
+                      <div class="flow-box target-box">
+                        <span class="flow-label">
+                          {{ currentConfirmation.tool_name === 'create_expense' ? 'Danh Mục Chi' : (currentConfirmation.goal ? 'Mục Tiêu Tiết Kiệm' : 'Đến Đích Quỹ') }}
+                        </span>
+                        <div class="flow-content">
+                          <div class="flow-icon-wrap target-icon">
+                            <span>{{ currentConfirmation.goal ? '🎯' : (currentConfirmation.category ? '🏷️' : '💰') }}</span>
+                          </div>
+                          <div class="flow-meta">
+                            <p class="flow-name truncate">
+                              {{ currentConfirmation.toWallet || currentConfirmation.goal || currentConfirmation.category || currentConfirmation.wallet || 'Chung' }}
+                            </p>
+                            <p class="flow-sub">Đích luân chuyển</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Large Figure Presentation -->
+                    <div v-if="currentConfirmation.amount" class="large-figure-panel">
+                      <div>
+                        <span class="figure-label">Lượng Linh Thạch Luân Chuyển</span>
+                        <div class="figure-row">
+                          <span class="figure-amount">{{ formatCurrency(currentConfirmation.amount) }}</span>
+                        </div>
+                      </div>
+                      <div class="figure-fee-box">
+                        <span class="fee-label">Phí Pháp Lực (Tự Động)</span>
+                        <span class="fee-value">0 Đ</span>
+                      </div>
+                    </div>
+
+                    <!-- Extra Details (Note, etc.) -->
+                    <div v-if="currentConfirmation.note" class="talisman-note-row">
+                      <span class="note-label">Nội dung ghi chú:</span>
+                      <span class="note-val">{{ currentConfirmation.note }}</span>
+                    </div>
+
+                    <!-- Question Prompt -->
+                    <p class="conf-question-text">
+                      Ký chủ có muốn xác nhận thực thi pháp lệnh này không?
+                      <span class="conf-question-sub">(Nói "Xác nhận", "Hủy", hoặc gõ lệnh bên dưới)</span>
+                    </p>
+
+                    <!-- Action Buttons -->
+                    <div class="talisman-actions">
+                      <button
+                        id="btn-system-cancel"
+                        class="btn-talisman-cancel"
+                        @click="handleVoiceAction('Hủy')"
+                        type="button"
+                      >
+                        HỦY BỎ PHÁP LỆNH
+                      </button>
+                      <button
+                        id="btn-system-confirm"
+                        class="btn-talisman-confirm"
+                        @click="handleVoiceAction('Xác nhận')"
+                        type="button"
+                      >
+                        <span class="confirm-check-icon">✓</span>
+                        <span>XÁC NHẬN GIAO DỊCH</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 3. KẾT QUẢ / PHẢN HỒI THẦN THỨC / MISSING PARAM WAITING -->
+                  <div v-else-if="currentDisplayContent" class="system-reply-bubble">
+                    <div class="reply-header-tag">
+                      <span class="sparkle-icon">✨</span>
+                      <span>KHÍ LINH BẢO TRỢ</span>
+                      <span v-if="displaySecondsRemaining > 0" class="countdown-tag">
+                        ⏱ Tự dọn sau {{ displaySecondsRemaining }}s
+                      </span>
+                    </div>
+
+                    <div class="reply-card">
+                      <div class="reply-text" v-html="formatResponseText(currentDisplayContent)"></div>
+                    </div>
+
+                    <div v-if="currentExecutionResult" class="execution-result-tag">
+                      <span class="exec-spark">✨</span>
+                      <span>{{ currentExecutionResult }}</span>
+                    </div>
+                  </div>
+
+                  <!-- 4. KHUNG TRỐNG THƯỜNG TRỰC KHI MỚI MỞ / STANDBY -->
+                  <div v-else class="system-standby-view">
+                    <div class="standby-rune-circle">
+                      <div class="rune-outer-ring"></div>
+                      <div class="rune-inner-symbol">✨</div>
+                    </div>
+                    <p class="standby-lead-text">
+                      <span class="pulse-beacon-cyan"></span>
+                      Khí Linh đang thường trực lắng nghe. Ký chủ chỉ cần trực tiếp truyền khẩu lệnh hoặc gõ lệnh bên dưới.
+                    </p>
+                    <div class="standby-prompts-row">
+                      <button class="prompt-chip" @click="handleVoiceAction('Tháng này ta đã chi bao nhiêu?')">
+                        "Tháng này ta đã chi bao nhiêu?"
+                      </button>
+                      <button class="prompt-chip" @click="handleVoiceAction('Ăn sáng hết 50 nghìn ví tiền mặt')">
+                        "Ăn sáng hết 50 nghìn ví tiền mặt"
+                      </button>
+                      <button class="prompt-chip" @click="handleVoiceAction('Chuyển 500k từ MoMo sang Tiền mặt')">
+                        "Chuyển 500k từ MoMo sang Tiền mặt"
+                      </button>
+                      <button class="prompt-chip" @click="handleVoiceAction('Ví tiền mặt còn bao nhiêu?')">
+                        "Ví tiền mặt còn bao nhiêu?"
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <!-- Buttons (User can also speak "Xác nhận" or "Hủy") -->
-              <div class="conf-action-buttons">
-                <button
-                  id="btn-system-confirm"
-                  class="btn-system-confirm"
-                  @click="handleVoiceAction('Xác nhận')"
-                >
-                  ⚡ Xác Nhận (Nói "Xác nhận")
-                </button>
-                <button
-                  id="btn-system-cancel"
-                  class="btn-system-cancel"
-                  @click="handleVoiceAction('Hủy')"
-                >
-                  Hủy Bỏ (Nói "Hủy")
-                </button>
+              <!-- ─── FOOTER BAR: STATUS & COMMAND TEXT INPUT FALLBACK (SECTION 26) ─── -->
+              <div class="system-console-footer">
+                <!-- Status & Mic -->
+                <div class="footer-telemetry-row">
+                  <div class="footer-status-info">
+                    <span class="status-indicator-dot" :class="'dot-' + agentState.toLowerCase()"></span>
+                    <span class="status-text-desc">{{ getFooterStatusText() }}</span>
+                  </div>
+
+                  <div class="footer-controls">
+                    <button
+                      id="btn-khilinh-mic"
+                      class="btn-mic-stream-toggle"
+                      :class="{ active: isListening }"
+                      @click="toggleManualListening"
+                      :title="isListening ? 'Đang lắng nghe liên tục' : 'Bật lắng nghe'"
+                    >
+                      <span v-if="isListening">🔴 Đang Nghe...</span>
+                      <span v-else>🎙️ Bật Mic</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Text Command Input Fallback -->
+                <div class="command-input-bar">
+                  <div class="input-icon-glyph">💬</div>
+                  <input
+                    v-model="textCommand"
+                    type="text"
+                    class="command-input-field"
+                    placeholder="Truyền khẩu lệnh hoặc gõ văn bản tại đây (Enter để gửi)..."
+                    @keydown.enter="submitTextCommand"
+                    :disabled="isProcessing"
+                  />
+                  <button
+                    id="btn-khilinh-send"
+                    class="btn-command-submit"
+                    @click="submitTextCommand"
+                    :disabled="!textCommand.trim() || isProcessing"
+                    title="Gửi pháp lệnh (Enter)"
+                  >
+                    <span>Truyền Lệnh ➔</span>
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <!-- 3. KẾT QUẢ / PHẢN HỒI HIỆN TẠI: PHẦN 10 -->
-            <div v-else-if="currentDisplayContent" class="system-response-display">
-              <div class="response-seal">
-                <span class="seal-icon">📜</span>
-                <span class="seal-tag">PHẢN HỒI THẦN THỨC</span>
-                <span v-if="displaySecondsRemaining > 0" class="countdown-badge">
-                  ⏱ Tự dọn sau {{ displaySecondsRemaining }}s
-                </span>
-              </div>
-
-              <div class="response-main-text" v-html="formatResponseText(currentDisplayContent)"></div>
-
-              <div v-if="currentExecutionResult" class="execution-result-card">
-                <span class="exec-icon">✨</span>
-                <span class="exec-text">{{ currentExecutionResult }}</span>
-              </div>
-            </div>
-
-            <!-- 4. KHUNG TRỐNG KHI MỚI MỞ HOẶC SAU 10S: PHẦN 5 & PHẦN 13 -->
-            <div v-else class="system-empty-standby">
-              <div class="standby-sigil">
-                <div class="sigil-outer-ring"></div>
-                <div class="sigil-inner-rune">✨</div>
-              </div>
-              <p class="standby-hint">
-                <span class="pulse-dot-cyan"></span>
-                Khí Linh đang thường trực lắng nghe. Ký chủ chỉ cần trực tiếp truyền khẩu lệnh.
-              </p>
-              <div class="standby-examples">
-                <span class="ex-chip">"Tháng này ta đã chi bao nhiêu?"</span>
-                <span class="ex-chip">"Ăn sáng hết 50 nghìn"</span>
-                <span class="ex-chip">"Ví tiền mặt còn bao nhiêu?"</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- ─── FOOTER BAR: STATUS AND MIC ─── -->
-          <div class="system-frame-footer">
-            <div class="footer-status-left">
-              <span class="status-dot" :class="'dot-' + agentState.toLowerCase()"></span>
-              <span class="status-summary">{{ getFooterStatusText() }}</span>
-            </div>
-
-            <!-- Manual mic toggle for convenience / testing -->
-            <div class="footer-controls-right">
-              <button
-                class="btn-live-mic-toggle"
-                :class="{ active: isListening }"
-                @click="toggleManualListening"
-                :title="isListening ? 'Đang lắng nghe liên tục' : 'Bật lắng nghe'"
-              >
-                <span v-if="isListening">🔴 Đang Nghe...</span>
-                <span v-else>🎙️ Tiếp Tục Nghe</span>
-              </button>
             </div>
           </div>
         </div>
@@ -302,9 +390,13 @@
 
 <script>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import KhiLinhCharacter from './khi-linh/KhiLinhCharacter.vue'
 
 export default {
   name: 'KhiLinhAssistant',
+  components: {
+    KhiLinhCharacter
+  },
   props: {
     api: {
       type: [Function, Object],
@@ -327,6 +419,17 @@ export default {
     const currentConfirmation = ref(null)
     const currentExecutionResult = ref('')
     const isProcessing = ref(false)
+    const isSubmitting = isProcessing
+    const hasSubmittedUtterance = ref(false)
+    const lastSpokenText = ref('')
+    const quickActionChips = ref([
+      '💰 Số dư',
+      '📊 Tổng quan',
+      '📅 Tháng này',
+      '🏷️ Chi theo mục',
+      '🎯 Mục tiêu',
+      '📜 Sổ nợ'
+    ])
     const displaySecondsRemaining = ref(0)
     let displayTimer = null
     let countdownInterval = null
@@ -370,8 +473,9 @@ export default {
         synth = window.speechSynthesis
       }
 
-      // 2. Lắng nghe wake event (từ văn bản hoặc custom trigger)
+      // 2. Lắng nghe wake & voice event
       window.addEventListener('khilinh-wake', handleWakeEvent)
+      window.addEventListener('khilinh-voice', handleVoiceEvent)
       window.addEventListener('keydown', handleKeydown)
 
       if (props.isOpen) {
@@ -384,6 +488,7 @@ export default {
 
     onUnmounted(() => {
       window.removeEventListener('khilinh-wake', handleWakeEvent)
+      window.removeEventListener('khilinh-voice', handleVoiceEvent)
       window.removeEventListener('keydown', handleKeydown)
       clearSilenceTimer()
       stopRecognition()
@@ -409,6 +514,33 @@ export default {
         const trailing = (match[1] || '').trim()
         activateFromWakeWord(trailing)
       }
+    }
+
+    function handleVoiceEvent(e) {
+      const phrase = typeof e.detail === 'string' ? e.detail : (e.detail?.message || '')
+      if (!phrase) return
+
+      if (!isLiveActive.value) {
+        // Not active: only wake word can activate
+        const wakeRegex = /(?:hệ thống|he thong)[,\s]*(.*)/i
+        const match = phrase.match(wakeRegex)
+        if (match) {
+          const trailing = (match[1] || '').trim()
+          activateFromWakeWord(trailing)
+        }
+        return
+      }
+
+      // Active live mode: strip repeated wake word if present
+      const wakeRegex = /(?:hệ thống|he thong)[,\s]*(.*)/i
+      const wakeMatch = phrase.match(wakeRegex)
+      let cmd = phrase
+      if (wakeMatch) {
+        cmd = (wakeMatch[1] || '').trim()
+        if (!cmd) return
+      }
+      clearSilenceTimer()
+      handleVoiceAction(cmd)
     }
 
     // ─── ACTIVATION & DEACTIVATION ────────────────
@@ -735,7 +867,7 @@ export default {
           currentConfirmation.value = {
             tool_name: p.tool_name,
             title: getToolActionTitle(p.tool_name),
-            amount: p.args?.amount,
+            amount: p.args?.amount || p.args?.limit_amount || p.args?.target_amount,
             note: p.args?.note || p.args?.target_name || p.args?.wallet_name,
             category: p.args?.category_name,
             wallet: p.args?.wallet_name,
@@ -766,7 +898,14 @@ export default {
             currentExecutionResult.value = ''
           }
 
+          // Tự động đóng thẻ xác nhận khi có lệnh mới
+          // if (m && m.confirmation) m.confirmation.isPending = false
+          if (data.state === 'SUCCESS' || data.state === 'IDLE') {
+            agentState.value = 'IDLE'
+          }
+
           if (ttsEnabled.value && currentDisplayContent.value) {
+            lastSpokenText.value = currentDisplayContent.value
             speakAndResume(currentDisplayContent.value)
           } else {
             resumeListeningDirectly()
@@ -923,7 +1062,7 @@ export default {
         case 'SLEEPING': return 'Đang Trực Đợi Khẩu Lệnh "Hệ Thống"...'
         case 'AWAKENING': return 'Đang Khởi Động Thần Thức...'
         case 'LISTENING': return 'Đang Lắng Nghe Khẩu Quyết...'
-        case 'PROCESSING': return 'Đang Tra Cứu Linh Tịch...'
+        case 'PROCESSING': return 'Đang xử lý'
         case 'SPEAKING': return 'Đang Truyền Âm Trả Lời...'
         case 'CONFIRMING': return 'Chờ Ký Chủ Xác Nhận...'
         case 'EXECUTING': return 'Đang Thực Thi Pháp Quyết...'
@@ -943,7 +1082,7 @@ export default {
         return 'Hội thoại liên tục: Đang lắng nghe, không cần gọi "Hệ thống" lại.'
       }
       if (agentState.value === 'PROCESSING') {
-        return 'Đang đối chiếu dữ liệu tài chính với AgentCore...'
+        return 'Đang xử lý: Đang đối chiếu dữ liệu tài chính với AgentCore...'
       }
       if (agentState.value === 'CONFIRMING') {
         return 'Đang chờ lệnh "Xác nhận", "Hủy", hoặc sửa đổi từ Ký Chủ.'
@@ -972,6 +1111,36 @@ export default {
       return num.toLocaleString('vi-VN') + ' VNĐ'
     }
 
+    // ─── COMMAND TEXT INPUT & TELEMETRY HELPERS (SECTION 26) ───
+    const textCommand = ref('')
+
+    function submitTextCommand() {
+      const cmd = textCommand.value.trim()
+      if (!cmd) return
+      textCommand.value = ''
+      if (agentState.value === 'SPEAKING' || isSpeakingTTS.value) {
+        if (synth) {
+          try { synth.cancel() } catch (e) {}
+        }
+        isSpeakingTTS.value = false
+      }
+      handleVoiceAction(cmd)
+    }
+
+    function getPhapTranStatus(state) {
+      switch (state) {
+        case 'LISTENING': return 'Pháp Trận · Đang Lắng Nghe'
+        case 'PROCESSING':
+        case 'EXECUTING': return 'Pháp Trận · Đang Lĩnh Hội (Đang xử lý)'
+        case 'CONFIRMING': return 'Pháp Trận · Chờ Xác Nhận'
+        case 'SPEAKING': return 'Pháp Trận · Đang Truyền Âm'
+        case 'SUCCESS': return 'Pháp Trận · Đã Hoàn Tất'
+        case 'ERROR': return 'Pháp Trận · Trở Ngại'
+        case 'TIMEOUT': return 'Pháp Trận · Hết Hạn Chờ'
+        default: return 'Pháp Trận · Đang Giám Sát'
+      }
+    }
+
     return {
       isLiveActive,
       agentState,
@@ -979,10 +1148,17 @@ export default {
       currentConfirmation,
       currentExecutionResult,
       isProcessing,
+      isSubmitting,
+      hasSubmittedUtterance,
+      lastSpokenText,
+      quickActionChips,
       displaySecondsRemaining,
       isListening,
       speechSupported,
       ttsEnabled,
+      textCommand,
+      submitTextCommand,
+      getPhapTranStatus,
       activateLiveMode,
       deactivateLiveMode,
       toggleManualListening,
@@ -1068,17 +1244,50 @@ export default {
   position: absolute;
   top: -2px;
   right: -2px;
-  width: 22px;
-  height: 22px;
-  background: linear-gradient(135deg, #7c3aed, #4c1d95);
-  border: 1.5px solid #e8c874;
+  width: 18px;
+  height: 18px;
+  background: var(--color-surface, #0b1326);
+  border: 1.5px solid var(--color-primary, #7dd6cc);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  z-index: 3;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 5;
+  box-shadow: 0 0 8px rgba(125, 214, 204, 0.6);
+}
+
+.switch-badge .badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary, #7dd6cc);
+  display: block;
+}
+
+.switch-badge.badge-listening .badge-dot {
+  background: #7dd6cc;
+  box-shadow: 0 0 6px #7dd6cc;
+  animation: pingDot 1.2s infinite;
+}
+
+.switch-badge.badge-thinking .badge-dot {
+  background: #c4c1fb;
+  box-shadow: 0 0 6px #c4c1fb;
+}
+
+.switch-badge.badge-confirming .badge-dot {
+  background: #e3c370;
+  box-shadow: 0 0 6px #e3c370;
+}
+
+.switch-badge.badge-executing .badge-dot {
+  background: #7dd6cc;
+  box-shadow: 0 0 8px #7dd6cc;
+}
+
+.switch-badge.badge-error .badge-dot {
+  background: #ffb4ab;
+  box-shadow: 0 0 6px #ffb4ab;
 }
 
 .switch-tooltip {
@@ -1104,21 +1313,22 @@ export default {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PHẦN 3 & 4: LIVE SYSTEM MODE (DARK OVERLAY & SYSTEM FRAME)
-   Màu chủ đạo: Tím (#7c3aed, #4c1d95). Chiếm ~65% viewport
+   STITCH CELESTIAL SYSTEM CONSOLE STYLES (PHASE 4B)
+   Color palette: Spiritual Jade (#7dd6cc), Celestial Indigo (#c4c1fb),
+   Talisman Gold (#e3c370), Deep Midnight Surface (#0b1326, #171f33)
    ═══════════════════════════════════════════════════════════════ */
 .system-mode-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(10, 5, 25, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(6, 14, 32, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   z-index: 99999;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  animation: fadeInOverlay 0.35s ease-out;
+  padding: 1.5rem;
+  animation: fadeInOverlay 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes fadeInOverlay {
@@ -1126,160 +1336,135 @@ export default {
   to { opacity: 1; }
 }
 
-.system-frame {
-  width: 65vw;
-  height: 65vh;
-  min-width: 360px;
-  min-height: 420px;
-  max-width: 960px;
-  max-height: 700px;
-  background: linear-gradient(145deg, rgba(26, 12, 56, 0.96) 0%, rgba(18, 8, 38, 0.98) 100%);
-  border: 1.5px solid rgba(167, 139, 250, 0.45);
-  border-radius: 24px;
-  box-shadow:
-    0 0 50px rgba(124, 58, 237, 0.35),
-    inset 0 0 35px rgba(139, 92, 246, 0.12),
-    0 24px 64px rgba(0, 0, 0, 0.6);
+.system-window-shell {
+  position: relative;
+  width: min(78vw, 1060px);
+  max-height: 85vh;
+  background: rgba(23, 31, 51, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 1rem;
+  border: 1px solid rgba(125, 214, 204, 0.3);
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 50px rgba(43, 138, 130, 0.25), 0 20px 50px rgba(0, 0, 0, 0.85);
   display: flex;
   flex-direction: column;
-  position: relative;
   overflow: hidden;
-  animation: scaleInFrame 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: scaleInShell 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes scaleInFrame {
-  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+@keyframes scaleInShell {
+  from { opacity: 0; transform: scale(0.95) translateY(12px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Corner Rune Accents */
-.frame-corner {
+/* 4 Corner Technical Cut Accents */
+.shell-corner {
   position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 2px solid #e8c874;
+  width: 1.5rem;
+  height: 1.5rem;
   pointer-events: none;
-  z-index: 10;
+  z-index: 20;
 }
-.frame-corner.top-left { top: 8px; left: 8px; border-right: none; border-bottom: none; }
-.frame-corner.top-right { top: 8px; right: 8px; border-left: none; border-bottom: none; }
-.frame-corner.bottom-left { bottom: 8px; left: 8px; border-right: none; border-top: none; }
-.frame-corner.bottom-right { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+.shell-corner.corner-tl {
+  top: 0; left: 0;
+  border-top: 2px solid var(--color-primary, #7dd6cc);
+  border-left: 2px solid var(--color-primary, #7dd6cc);
+  border-top-left-radius: 0.5rem;
+}
+.shell-corner.corner-tr {
+  top: 0; right: 0;
+  border-top: 2px solid var(--color-tertiary, #e3c370);
+  border-right: 2px solid var(--color-tertiary, #e3c370);
+  border-top-right-radius: 0.5rem;
+}
+.shell-corner.corner-bl {
+  bottom: 0; left: 0;
+  border-bottom: 2px solid var(--color-secondary, #c4c1fb);
+  border-left: 2px solid var(--color-secondary, #c4c1fb);
+  border-bottom-left-radius: 0.5rem;
+}
+.shell-corner.corner-br {
+  bottom: 0; right: 0;
+  border-bottom: 2px solid var(--color-primary, #7dd6cc);
+  border-right: 2px solid var(--color-primary, #7dd6cc);
+  border-bottom-right-radius: 0.5rem;
+}
 
-/* ─── SYSTEM FRAME HEADER ─── */
-.system-frame-header {
+/* ─── SYSTEM HEADER ─── */
+.system-header {
+  height: 3.5rem;
+  padding: 0 1.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px;
-  border-bottom: 1px solid rgba(167, 139, 250, 0.25);
-  background: rgba(30, 14, 66, 0.6);
-}
-
-.spirit-header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-/* Khí Linh Chibi ở góc trên bên trái frame */
-.frame-spirit-orb {
+  background: rgba(34, 42, 61, 0.65);
+  border-bottom: 1px solid rgba(125, 214, 204, 0.2);
   position: relative;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: radial-gradient(circle, #7c3aed 0%, #4c1d95 100%);
-  border: 1.5px solid #e8c874;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.system-header-left {
   display: flex;
   align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 16px rgba(167, 139, 250, 0.5);
+  gap: 0.75rem;
 }
 
-.chibi-avatar-wrap {
-  width: 40px;
-  height: 40px;
-}
-.chibi-small-svg {
-  width: 100%;
-  height: 100%;
-}
-
-.spirit-pulse-ring {
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-  border: 2px solid rgba(167, 139, 250, 0.8);
-  animation: pulseAura 1.8s ease-out infinite;
+.header-beacon-pulse {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: var(--color-primary, #7dd6cc);
+  box-shadow: 0 0 10px #7dd6cc;
+  animation: beaconPulse 2s ease-in-out infinite;
 }
 
-@keyframes pulseAura {
-  0% { transform: scale(0.95); opacity: 1; }
-  100% { transform: scale(1.35); opacity: 0; }
+@keyframes beaconPulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.25); opacity: 1; }
 }
 
-.system-title-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.system-codename {
-  font-family: 'Cinzel', 'Lora', serif;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  color: #e8c874;
-  text-shadow: 0 0 10px rgba(232, 200, 116, 0.4);
-}
-
-.system-state-indicator {
+.system-header-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-on-surface, #dae2fd);
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #c4b5fd;
+  gap: 0.5rem;
+  letter-spacing: -0.01em;
+  margin: 0;
 }
 
-.pulse-beacon {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #a78bfa;
-  box-shadow: 0 0 8px #a78bfa;
-}
-.state-sleeping .pulse-beacon { background: #8b5cf6; box-shadow: 0 0 6px #8b5cf6; opacity: 0.6; }
-.state-awakening .pulse-beacon { background: #c084fc; box-shadow: 0 0 12px #c084fc; animation: blink 0.5s infinite; }
-.state-listening .pulse-beacon { background: #34d399; box-shadow: 0 0 10px #34d399; animation: blink 1.2s infinite; }
-.state-processing .pulse-beacon { background: #fbbf24; box-shadow: 0 0 10px #fbbf24; animation: blink 0.8s infinite; }
-.state-speaking .pulse-beacon { background: #60a5fa; box-shadow: 0 0 10px #60a5fa; animation: blink 1s infinite; }
-.state-confirming .pulse-beacon { background: #f87171; box-shadow: 0 0 10px #f87171; }
-.state-timeout .pulse-beacon { background: #9ca3af; box-shadow: 0 0 6px #9ca3af; }
-.state-closed .pulse-beacon { background: #6b7280; box-shadow: none; }
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+.system-badge-tag {
+  font-family: monospace;
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  background: rgba(125, 214, 204, 0.12);
+  border: 1px solid rgba(125, 214, 204, 0.3);
+  color: var(--color-primary, #7dd6cc);
+  letter-spacing: 0.05em;
+  font-weight: 500;
 }
 
-.spirit-header-right {
+.system-header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
-/* Sound wave audio visualizer */
-.audio-wave-bars {
+.audio-wave-visualizer {
   display: flex;
   align-items: center;
   gap: 3px;
   height: 18px;
-  padding: 0 8px;
+  padding: 0 6px;
 }
-.audio-wave-bars .bar {
+.audio-wave-visualizer .bar {
   width: 3px;
   height: 100%;
-  background: #a78bfa;
+  background: var(--color-primary, #7dd6cc);
   border-radius: 2px;
   animation: waveDance 1.2s ease-in-out infinite;
 }
@@ -1294,52 +1479,223 @@ export default {
   50% { height: 18px; }
 }
 
-.sys-icon-btn {
-  background: rgba(124, 58, 237, 0.2);
-  border: 1px solid rgba(167, 139, 250, 0.4);
-  color: #ddd6fe;
-  border-radius: 8px;
-  padding: 6px 10px;
+.sys-tool-btn {
+  background: rgba(6, 14, 32, 0.6);
+  border: 1px solid rgba(125, 214, 204, 0.3);
+  color: var(--color-on-surface, #dae2fd);
+  padding: 0.25rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
   cursor: pointer;
-  font-size: 13px;
   transition: all 0.2s;
 }
-.sys-icon-btn:hover {
-  background: rgba(124, 58, 237, 0.4);
-  color: #ffffff;
+.sys-tool-btn:hover {
+  background: rgba(34, 42, 61, 0.8);
+  border-color: var(--color-primary, #7dd6cc);
 }
 
-.sys-close-btn {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+.sys-close-x-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgba(6, 14, 32, 0.8);
+  border: 1px solid rgba(125, 214, 204, 0.3);
+  color: var(--color-on-surface-variant, #bdc9c6);
   cursor: pointer;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 600;
   transition: all 0.2s;
 }
-.sys-close-btn:hover {
-  background: rgba(239, 68, 68, 0.35);
-  color: #ffffff;
-  transform: scale(1.05);
+.sys-close-x-btn:hover {
+  border-color: var(--color-primary, #7dd6cc);
+  color: var(--color-primary, #7dd6cc);
+  background: rgba(34, 42, 61, 0.9);
+  transform: scale(1.06);
 }
 
-/* ─── SYSTEM FRAME BODY: PHẦN 4, 5, 10, 11 ─── */
-.system-frame-body {
-  flex: 1;
+/* ─── SYSTEM BODY CONTAINER ─── */
+.system-body-container {
+  padding: 1.25rem 1.5rem;
+  max-height: calc(85vh - 3.5rem);
   overflow-y: auto;
-  padding: 32px;
+}
+
+.outer-system-console {
+  background: rgba(6, 14, 32, 0.9);
+  backdrop-filter: blur(24px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(125, 214, 204, 0.2);
+  box-shadow: inset 0 0 20px rgba(196, 193, 251, 0.05), 0 12px 36px rgba(0,0,0,0.5);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Telemetry Strip */
+.telemetry-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, rgba(125, 214, 204, 0.12), rgba(196, 193, 251, 0.08), rgba(227, 195, 112, 0.08));
+  border: 1px solid rgba(125, 214, 204, 0.25);
+  box-shadow: 0 0 15px rgba(43, 138, 130, 0.1);
+}
+
+.telemetry-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.telemetry-sys-id {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-primary, #7dd6cc);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.telemetry-ping-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: var(--color-primary, #7dd6cc);
+  animation: pingDot 1.5s infinite;
+}
+
+@keyframes pingDot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.4; }
+}
+
+.telemetry-sync-rate {
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--color-outline, #889391);
+}
+
+.telemetry-right {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-tertiary, #e3c370);
+  text-transform: uppercase;
+}
+
+.telemetry-state-icon {
+  font-size: 0.875rem;
+}
+
+/* ─── SYSTEM GRID (LEFT PORTAL + RIGHT STREAM) ─── */
+.system-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+/* Left Spirit Portal Card */
+.spirit-portal-card {
+  background: rgba(19, 27, 46, 0.85);
+  border: 1px solid rgba(125, 214, 204, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 20px rgba(43, 138, 130, 0.15);
+}
+
+.portal-micro {
+  position: absolute;
+  width: 0.5rem;
+  height: 0.5rem;
+  pointer-events: none;
+}
+.portal-micro.micro-tl { top: 4px; left: 4px; border-top: 1px solid var(--color-primary, #7dd6cc); border-left: 1px solid var(--color-primary, #7dd6cc); }
+.portal-micro.micro-tr { top: 4px; right: 4px; border-top: 1px solid var(--color-tertiary, #e3c370); border-right: 1px solid var(--color-tertiary, #e3c370); }
+.portal-micro.micro-bl { bottom: 4px; left: 4px; border-bottom: 1px solid var(--color-secondary, #c4c1fb); border-left: 1px solid var(--color-secondary, #c4c1fb); }
+.portal-micro.micro-br { bottom: 4px; right: 4px; border-bottom: 1px solid var(--color-primary, #7dd6cc); border-right: 1px solid var(--color-primary, #7dd6cc); }
+
+.chibi-portal-character-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 10;
+  padding: 0.5rem 0;
+}
+
+.spirit-portal-meta {
+  margin-top: 0.875rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.spirit-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-on-surface, #dae2fd);
+}
+
+.spirit-verified-badge {
+  color: var(--color-primary, #7dd6cc);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.spirit-realm-title {
+  font-size: 0.75rem;
+  color: var(--color-on-surface-variant, #bdc9c6);
+  margin: 0;
+}
+
+.spirit-state-pill {
+  margin-top: 0.375rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background: rgba(34, 42, 61, 0.8);
+  border: 1px solid rgba(125, 214, 204, 0.25);
+  font-size: 0.6875rem;
+  color: var(--color-secondary, #c4c1fb);
+}
+
+.state-dot-mini {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--color-primary, #7dd6cc);
+}
+
+/* Right Stream Column */
+.action-stream-col {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: center;
-  position: relative;
+  gap: 1rem;
+  min-height: 280px;
 }
 
 /* 1. Trạng thái PROCESSING */
@@ -1347,15 +1703,16 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 1.25rem;
   text-align: center;
+  padding: 2rem 1rem;
   animation: fadeIn 0.3s ease;
 }
 
 .celestial-spinner {
   position: relative;
-  width: 72px;
-  height: 72px;
+  width: 4.5rem;
+  height: 4.5rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1365,8 +1722,8 @@ export default {
   position: absolute;
   inset: 0;
   border: 3px solid transparent;
-  border-top-color: #a78bfa;
-  border-right-color: #e8c874;
+  border-top-color: var(--color-primary, #7dd6cc);
+  border-right-color: var(--color-tertiary, #e3c370);
   border-radius: 50%;
   animation: spinRune 1.5s linear infinite;
 }
@@ -1377,328 +1734,607 @@ export default {
 }
 
 .spinner-rune {
-  font-size: 26px;
-  color: #e8c874;
-  text-shadow: 0 0 12px rgba(232, 200, 116, 0.6);
+  font-size: 1.625rem;
+  color: var(--color-tertiary, #e3c370);
+  text-shadow: 0 0 12px rgba(227, 195, 112, 0.6);
 }
 
 .processing-title {
-  font-family: 'Lora', serif;
-  font-size: 20px;
-  color: #f3e8ff;
+  font-size: 1.125rem;
+  color: var(--color-on-surface, #dae2fd);
   font-weight: 600;
+  margin: 0;
 }
 .processing-sub {
-  font-size: 14px;
-  color: #a78bfa;
+  font-size: 0.8125rem;
+  color: var(--color-secondary, #c4c1fb);
+  margin: 0.25rem 0 0 0;
 }
 
-/* 2. Hộp thoại CONFIRMATION: PHẦN 11 */
-.system-confirmation-box {
-  background: rgba(30, 12, 68, 0.85);
-  border: 1.5px solid rgba(232, 200, 116, 0.7);
-  border-radius: 18px;
-  padding: 24px 28px;
-  width: 100%;
-  max-width: 580px;
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5), 0 0 25px rgba(124, 58, 237, 0.3);
-  animation: fadeInScale 0.3s ease;
-  text-align: center;
-}
-
-@keyframes fadeInScale {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.conf-badge-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.conf-warn-icon { font-size: 20px; }
-.conf-warn-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #e8c874;
-}
-
-.conf-action-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: #ffffff;
-  margin-bottom: 10px;
-}
-
-.conf-amount-highlight {
-  font-size: 28px;
-  font-weight: 800;
-  color: #34d399;
-  text-shadow: 0 0 14px rgba(52, 211, 153, 0.4);
-  margin-bottom: 16px;
-}
-
-.conf-details-grid {
+/* 2. Talisman Confirmation Card */
+.talisman-confirmation-card {
+  background: rgba(19, 27, 46, 0.95);
+  border: 2px solid rgba(125, 214, 204, 0.35);
+  outline: 1px solid rgba(227, 195, 112, 0.3);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 25px rgba(43, 138, 130, 0.15);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: rgba(18, 8, 42, 0.7);
-  border: 1px solid rgba(167, 139, 250, 0.25);
-  border-radius: 12px;
-  padding: 14px 18px;
-  margin-bottom: 16px;
-  text-align: left;
+  gap: 1rem;
+  animation: fadeIn 0.25s ease;
 }
-.conf-detail-row {
+
+.talisman-watermark {
+  position: absolute;
+  right: -2rem;
+  bottom: -2rem;
+  width: 12rem;
+  height: 12rem;
+  opacity: 0.07;
+  color: var(--color-primary, #7dd6cc);
+  pointer-events: none;
+}
+
+.talisman-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  font-size: 13px;
-}
-.conf-detail-row .label { color: #a78bfa; }
-.conf-detail-row .val { color: #ffffff; font-weight: 600; }
-.conf-detail-row .val.badge {
-  background: rgba(124, 58, 237, 0.35);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-.conf-detail-row .val.badge.wallet {
-  background: rgba(232, 200, 116, 0.25);
-  color: #e8c874;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(125, 214, 204, 0.2);
 }
 
-.conf-prompt-question {
-  font-size: 14px;
-  color: #ddd6fe;
-  margin-bottom: 18px;
-}
-
-.conf-action-buttons {
+.talisman-title-group {
   display: flex;
-  gap: 12px;
-  justify-content: center;
+  align-items: center;
+  gap: 0.625rem;
 }
 
-.btn-system-confirm {
-  background: linear-gradient(135deg, #10b981, #059669);
-  color: #ffffff;
-  border: 1px solid #34d399;
-  border-radius: 10px;
-  padding: 10px 22px;
-  font-size: 14px;
+.talisman-gold-bar {
+  width: 0.25rem;
+  height: 1.5rem;
+  background: var(--color-tertiary, #e3c370);
+  border-radius: 9999px;
+  box-shadow: 0 0 8px #e3c370;
+}
+
+.talisman-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  color: var(--color-on-surface, #dae2fd);
+  margin: 0;
+}
+
+.talisman-subtitle {
+  font-size: 0.6875rem;
+  color: var(--color-on-surface-variant, #bdc9c6);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.talisman-type-badge {
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(68, 65, 115, 0.5);
+  border: 1px solid rgba(196, 193, 251, 0.4);
+  color: var(--color-secondary, #c4c1fb);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.transaction-flow-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.flow-box {
+  background: rgba(23, 31, 51, 0.85);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(196, 193, 251, 0.25);
+}
+
+.source-box {
+  border-color: rgba(196, 193, 251, 0.3);
+}
+
+.target-box {
+  border-color: rgba(125, 214, 204, 0.3);
+}
+
+.flow-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-outline, #889391);
+  display: block;
+  margin-bottom: 0.375rem;
+}
+
+.flow-content {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.flow-icon-wrap {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.source-icon {
+  background: rgba(68, 65, 115, 0.6);
+  border: 1px solid rgba(196, 193, 251, 0.4);
+}
+
+.target-icon {
+  background: rgba(68, 159, 150, 0.6);
+  border: 1px solid rgba(125, 214, 204, 0.4);
+}
+
+.flow-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.flow-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-on-surface, #dae2fd);
+  margin: 0;
+}
+
+.flow-sub {
+  font-size: 0.6875rem;
+  color: var(--color-on-surface-variant, #bdc9c6);
+  margin: 0;
+}
+
+.flow-arrow-col {
+  display: flex;
+  justify-content: center;
+  color: var(--color-primary, #7dd6cc);
+  font-size: 1.25rem;
+  font-weight: 700;
+  filter: drop-shadow(0 0 6px rgba(125, 214, 204, 0.6));
+}
+
+.large-figure-panel {
+  background: rgba(34, 42, 61, 0.6);
+  border: 1px solid rgba(227, 195, 112, 0.25);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.figure-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-tertiary, #e3c370);
+  display: block;
+  font-weight: 500;
+}
+
+.figure-amount {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: var(--color-primary, #7dd6cc);
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 12px rgba(125, 214, 204, 0.35);
+}
+
+.figure-fee-box {
+  text-align: right;
+}
+
+.fee-label {
+  font-size: 0.6875rem;
+  color: var(--color-outline, #889391);
+  display: block;
+}
+
+.fee-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-primary, #7dd6cc);
+}
+
+.talisman-note-row {
+  background: rgba(23, 31, 51, 0.6);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+.note-label { color: var(--color-outline, #889391); }
+.note-val { color: var(--color-on-surface, #dae2fd); font-weight: 500; }
+
+.conf-question-text {
+  font-size: 0.8125rem;
+  color: var(--color-on-surface, #dae2fd);
+  text-align: center;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.conf-question-sub {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--color-outline, #889391);
+  margin-top: 0.125rem;
+}
+
+.talisman-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.btn-talisman-cancel {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  background: rgba(45, 52, 73, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-on-surface-variant, #bdc9c6);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-talisman-cancel:hover {
+  background: rgba(49, 57, 77, 0.95);
+  color: var(--color-on-surface, #dae2fd);
+}
+
+.btn-talisman-confirm {
+  padding: 0.5rem 1.5rem;
+  border-radius: 0.5rem;
+  background: var(--color-primary-container, #449f96);
+  border: 1px solid rgba(125, 214, 204, 0.4);
+  color: var(--color-on-primary, #003733);
+  font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 16px rgba(43, 138, 130, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
   transition: all 0.2s;
 }
-.btn-system-confirm:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
+.btn-talisman-confirm:hover {
+  background: var(--color-primary, #7dd6cc);
+  box-shadow: 0 0 22px rgba(125, 214, 204, 0.5);
+  transform: translateY(-1px);
+}
+.confirm-check-icon {
+  font-size: 1rem;
+  font-weight: 800;
 }
 
-.btn-system-cancel {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  border-radius: 10px;
-  padding: 10px 18px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-system-cancel:hover {
-  background: rgba(239, 68, 68, 0.35);
-  color: #ffffff;
+/* 3. Reply / Response Bubble */
+.system-reply-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  animation: fadeIn 0.25s ease;
 }
 
-/* 3. Phản hồi hiện tại: PHẦN 10 */
-.system-response-display {
-  width: 100%;
-  max-width: 680px;
+.reply-header-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--color-primary, #7dd6cc);
+  text-transform: uppercase;
+}
+
+.countdown-tag {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--color-secondary, #c4c1fb);
+  background: rgba(68, 65, 115, 0.4);
+  border: 1px solid rgba(196, 193, 251, 0.3);
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+}
+
+.reply-card {
+  background: rgba(23, 31, 51, 0.9);
+  border: 1px solid rgba(125, 214, 204, 0.25);
+  border-radius: 0.75rem;
+  border-top-left-radius: 0;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.reply-text {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--color-on-surface, #dae2fd);
+}
+
+.execution-result-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.875rem;
+  color: #a7f3d0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  align-self: flex-start;
+}
+
+/* 4. Standby View */
+.system-standby-view {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 1rem;
   text-align: center;
+  padding: 1rem 0;
   animation: fadeIn 0.3s ease;
 }
 
-.response-seal {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.seal-icon { font-size: 18px; }
-.seal-tag {
-  font-size: 12px;
-  letter-spacing: 1.2px;
-  font-weight: 700;
-  color: #e8c874;
-}
-.countdown-badge {
-  font-size: 11px;
-  color: #a78bfa;
-  background: rgba(124, 58, 237, 0.2);
-  padding: 3px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(167, 139, 250, 0.3);
-}
-
-.response-main-text {
-  font-family: 'Lora', serif;
-  font-size: 20px;
-  line-height: 1.8;
-  color: #f5f3ff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  margin-bottom: 20px;
-}
-
-.execution-result-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  border-radius: 12px;
-  padding: 8px 18px;
-  color: #6ee7b7;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* 4. Khung trống thường trực: PHẦN 5 & PHẦN 13 */
-.system-empty-standby {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  text-align: center;
-  opacity: 0.9;
-}
-
-.standby-sigil {
+.standby-rune-circle {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 3.5rem;
+  height: 3.5rem;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.sigil-outer-ring {
+
+.rune-outer-ring {
   position: absolute;
   inset: 0;
-  border: 1.5px dashed rgba(167, 139, 250, 0.5);
+  border: 1.5px dashed rgba(125, 214, 204, 0.5);
   border-radius: 50%;
-  animation: rotateHalo 12s linear infinite;
-}
-.sigil-inner-rune {
-  font-size: 24px;
-  color: #a78bfa;
-  animation: floatBob 2.5s ease-in-out infinite;
+  animation: rotateAuraRings 12s linear infinite;
 }
 
-.standby-hint {
-  font-size: 15px;
-  color: #c4b5fd;
+.rune-inner-symbol {
+  font-size: 1.5rem;
+  color: var(--color-primary, #7dd6cc);
+}
+
+.standby-lead-text {
+  font-size: 0.875rem;
+  color: var(--color-on-surface-variant, #bdc9c6);
   max-width: 480px;
   line-height: 1.6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  margin: 0;
 }
 
-.pulse-dot-cyan {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22d3ee;
-  box-shadow: 0 0 8px #22d3ee;
-  display: inline-block;
-  animation: blink 1.5s infinite;
-}
-
-.standby-examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 6px;
-}
-
-.ex-chip {
-  background: rgba(124, 58, 237, 0.2);
-  border: 1px solid rgba(167, 139, 250, 0.3);
-  color: #ddd6fe;
-  font-size: 12px;
-  padding: 5px 12px;
-  border-radius: 14px;
-}
-
-/* ─── SYSTEM FRAME FOOTER ─── */
-.system-frame-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
-  background: rgba(18, 8, 42, 0.75);
-  border-top: 1px solid rgba(167, 139, 250, 0.2);
-  font-size: 12px;
-}
-
-.footer-status-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #a78bfa;
-}
-
-.status-dot {
+.pulse-beacon-cyan {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 9999px;
+  background: var(--color-primary, #7dd6cc);
+  box-shadow: 0 0 8px #7dd6cc;
+  display: inline-block;
+  margin-right: 0.25rem;
 }
-.dot-sleeping { background: #8b5cf6; box-shadow: 0 0 6px #8b5cf6; }
-.dot-awakening { background: #c084fc; box-shadow: 0 0 8px #c084fc; animation: blink 0.5s infinite; }
-.dot-listening { background: #34d399; box-shadow: 0 0 6px #34d399; }
-.dot-speaking { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; }
-.dot-processing { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
-.dot-confirming { background: #f87171; box-shadow: 0 0 6px #f87171; }
-.dot-timeout { background: #9ca3af; }
-.dot-closed { background: #6b7280; }
-.dot-idle { background: #94a3b8; }
 
-.btn-live-mic-toggle {
-  background: rgba(124, 58, 237, 0.25);
-  border: 1px solid rgba(167, 139, 250, 0.4);
-  color: #e9d5ff;
-  border-radius: 8px;
-  padding: 5px 12px;
-  font-size: 12px;
+.standby-prompts-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  max-width: 520px;
+  margin-top: 0.25rem;
+}
+
+.prompt-chip {
+  background: rgba(34, 42, 61, 0.7);
+  border: 1px solid rgba(125, 214, 204, 0.25);
+  color: var(--color-on-surface, #dae2fd);
+  font-size: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.5rem;
   cursor: pointer;
   transition: all 0.2s;
 }
-.btn-live-mic-toggle.active {
-  background: rgba(239, 68, 68, 0.25);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #fca5a5;
+.prompt-chip:hover {
+  background: rgba(68, 159, 150, 0.2);
+  border-color: var(--color-primary, #7dd6cc);
+  color: var(--color-primary, #7dd6cc);
+  transform: translateY(-1px);
 }
 
-/* Responsive adjustments */
+/* ─── FOOTER STATUS & COMMAND INPUT ─── */
+.system-console-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(125, 214, 204, 0.15);
+}
+
+.footer-telemetry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.footer-status-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-secondary, #c4c1fb);
+}
+
+.status-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+.dot-listening { background: var(--color-primary, #7dd6cc); box-shadow: 0 0 6px #7dd6cc; }
+.dot-speaking { background: var(--color-secondary, #c4c1fb); box-shadow: 0 0 6px #c4c1fb; }
+.dot-processing { background: var(--color-tertiary, #e3c370); box-shadow: 0 0 6px #e3c370; }
+.dot-confirming { background: var(--color-tertiary, #e3c370); box-shadow: 0 0 8px #e3c370; }
+.dot-success { background: #10b981; box-shadow: 0 0 6px #10b981; }
+.dot-error { background: #ffb4ab; box-shadow: 0 0 6px #ffb4ab; }
+.dot-timeout { background: #889391; }
+.dot-closed, .dot-sleeping { background: #444173; }
+
+.btn-mic-stream-toggle {
+  background: rgba(68, 65, 115, 0.4);
+  border: 1px solid rgba(196, 193, 251, 0.35);
+  color: var(--color-secondary, #c4c1fb);
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-mic-stream-toggle.active {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ffb4ab;
+}
+
+.command-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(34, 42, 61, 0.7);
+  border: 1px solid rgba(125, 214, 204, 0.25);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  box-shadow: inset 0 1px 4px rgba(0,0,0,0.3);
+}
+
+.command-input-bar:focus-within {
+  border-color: var(--color-primary, #7dd6cc);
+  box-shadow: 0 0 8px rgba(125, 214, 204, 0.25);
+}
+
+.input-icon-glyph {
+  font-size: 1rem;
+  opacity: 0.8;
+}
+
+.command-input-field {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-on-surface, #dae2fd);
+  font-size: 0.8125rem;
+}
+.command-input-field::placeholder {
+  color: var(--color-outline, #889391);
+}
+
+.btn-command-submit {
+  background: var(--color-primary-container, #449f96);
+  color: var(--color-on-primary, #003733);
+  border: none;
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-command-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-command-submit:not(:disabled):hover {
+  background: var(--color-primary, #7dd6cc);
+}
+
+/* ─── ACCESSIBILITY & REDUCED MOTION ─── */
+@media (prefers-reduced-motion: reduce) {
+  .aura-rings-svg,
+  .spirit-halo,
+  .spirit-chibi-body,
+  .rune-outer-ring,
+  .spinner-ring,
+  .header-beacon-pulse,
+  .telemetry-ping-dot,
+  .audio-wave-visualizer .bar {
+    animation: none !important;
+  }
+}
+
+/* ─── RESPONSIVE BREAKPOINTS ─── */
 @media (max-width: 768px) {
-  .system-frame {
-    width: 92vw;
-    height: 80vh;
-    padding: 0;
+  .system-window-shell {
+    width: 94vw;
+    max-height: 92vh;
   }
-  .system-frame-body {
-    padding: 20px 16px;
+  .system-body-container {
+    padding: 0.875rem;
   }
-  .response-main-text {
-    font-size: 17px;
+  .outer-system-console {
+    padding: 0.875rem;
+  }
+  .system-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .aura-rings-wrap {
+    width: 8rem;
+    height: 8rem;
+  }
+  .chibi-portal-orb {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+  .transaction-flow-grid {
+    grid-template-columns: 1fr;
+  }
+  .flow-arrow-col {
+    transform: rotate(90deg);
+    padding: 0.25rem 0;
+  }
+  .large-figure-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .figure-fee-box {
+    text-align: left;
+  }
+  .talisman-actions {
+    flex-direction: column-reverse;
+  }
+  .btn-talisman-cancel,
+  .btn-talisman-confirm {
+    width: 100%;
+    justify-content: center;
+  }
+  .hidden-mobile {
+    display: none !important;
   }
 }
 </style>

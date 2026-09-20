@@ -24,6 +24,8 @@ class DummyProvider:
 class TestDebtRoutingFix(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        import main
+        main.init_db()
         cls.registry = build_default_tool_registry()
         cls.provider = DummyProvider()
 

@@ -91,10 +91,10 @@ class KnowledgeRAG:
         is_followup = any(t in raw_lower for t in followup_triggers) or len(q_tokens) <= 4
 
         if is_followup and recent_history:
-            # Ưu tiên trích xuất từ câu hỏi của người dùng trong lịch sử (dòng bắt đầu bằng 'Đạo hữu:' hoặc 'User:')
+            # Ưu tiên trích xuất từ câu hỏi của người dùng trong lịch sử (dòng bắt đầu bằng 'Ký Chủ:', 'Đạo hữu:' hoặc 'User:')
             user_hist_lines = [
                 line.split(":", 1)[1] for line in recent_history.splitlines()
-                if any(line.strip().lower().startswith(p) for p in ["đạo hữu:", "user:", "người dùng:"])
+                if any(line.strip().lower().startswith(p) for p in ["ký chủ:", "ky chu:", "đạo hữu:", "user:", "người dùng:"])
             ]
             user_hist_text = " ".join(user_hist_lines) if user_hist_lines else recent_history
             user_hist_lower = user_hist_text.lower()
@@ -292,7 +292,7 @@ TÀI LIỆU NGUỒN TRI THỨC (RETRIEVED CONTEXT):
 {context_text}
 
 {recent_history}
-CÂU HỎI CỦA ĐẠO HỮU: {query}
+CÂU HỎI CỦA KÝ CHỦ: {query}
 
 HÃY TRẢ LỜI ĐẦY ĐỦ, CHÍNH XÁC VÀ BÁM SÁT TÀI LIỆU TRÊN:"""
         return prompt
@@ -336,7 +336,7 @@ HÃY TRẢ LỜI ĐẦY ĐỦ, CHÍNH XÁC VÀ BÁM SÁT TÀI LIỆU TRÊN:"""
             if not retrieved:
                 ans = (
                     "Khí Linh chưa tìm thấy thông tin đáng tin cậy trong kiến thức hiện tại của hệ thống về vấn đề này. "
-                    "Đạo hữu có thể hỏi về các tính năng hiện có của Càn Khôn Linh Thạch Các như Túi Càn Khôn, Giao Dịch, "
+                    "Ký Chủ có thể hỏi về các tính năng hiện có của Càn Khôn Linh Thạch Các như Túi Càn Khôn, Giao Dịch, "
                     "Hạn Mức Ngân Sách, Sổ Nợ, Mục Tiêu Tiết Kiệm hoặc Khám Hóa Đơn OCR."
                 )
                 return ans, []

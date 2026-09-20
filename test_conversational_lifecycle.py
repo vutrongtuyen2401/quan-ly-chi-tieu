@@ -845,8 +845,96 @@ class TestConversationalLifecycle(unittest.TestCase):
         self.assertEqual(res3.status_code, 200)
         self.assertEqual(res3.json()["state"], "CONFIRMING")
 
+    def test_26_create_budget_conversational_lifecycle(self):
+        """User journey: 'Thêm 1 hạn mức mới cho tôi' -> follow-up 'Ăn uống 2 triệu mỗi tháng' -> 'xác nhận'"""
+        with main.get_db() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO categories (id, category_name, category_type, user_id) "
+                "VALUES (2001, 'Ăn Uống', 'EXPENSE', 101)"
+            )
+
+        # Step 1: Initial vague command
+        res1 = self.client.post(
+            "/api/ai/chat",
+            json={"message": "Thêm 1 hạn mức mới cho tôi", "mode": "action"},
+            headers=self.headers1
+        )
+        self.assertEqual(res1.status_code, 200)
+        data1 = res1.json()
+        self.assertIn("hạn mức", data1["response"].lower())
+        self.assertIsNotNone(data1.get("pending_confirmation"))
+        self.assertEqual(data1["pending_confirmation"]["tool_name"], "create_budget")
+
+        # Step 2: Natural follow-up providing both category and amount
+        res2 = self.client.post(
+            "/api/ai/chat",
+            json={"message": "Ăn uống 2 triệu mỗi tháng", "mode": "action"},
+            headers=self.headers1
+        )
+        self.assertEqual(res2.status_code, 200)
+        data2 = res2.json()
+        self.assertEqual(data2["state"], "CONFIRMING")
+        p2 = data2.get("pending_confirmation")
+        self.assertIsNotNone(p2)
+        self.assertEqual(p2["args"]["category_name"], "Ăn Uống")
+        self.assertEqual(p2["args"]["limit_amount"], 2000000.0)
+
+        # Step 3: Confirm execution
+        res3 = self.client.post(
+            "/api/ai/chat",
+            json={"message": "xác nhận", "mode": "action"},
+            headers=self.headers1
+        )
+        self.assertEqual(res3.status_code, 200)
+        data3 = res3.json()
+        self.assertEqual(data3["state"], "SUCCESS")
+        self.assertEqual(data3["tool_executed"], "create_budget")
+
+        # Verify in DB
+        with main.get_db() as conn:
+            b_row = conn.execute(
+                "SELECT id, limit_amount FROM budgets WHERE user_id = 101 AND category_id = 2001",
+            ).fetchone()
+            self.assertIsNotNone(b_row)
+            self.assertEqual(b_row["limit_amount"], 2000000.0)
+
+    def test_27_single_turn_natural_create_budget(self):
+        """User journey: 'Tháng này cho ăn uống tối đa 2 triệu nhé' directly enters CONFIRMING without asking back"""
+        with main.get_db() as conn:
+            conn.execute("DELETE FROM budgets WHERE user_id = 101 AND category_id = 2001")
+            conn.execute(
+                "INSERT OR IGNORE INTO categories (id, category_name, category_type, user_id) "
+                "VALUES (2001, 'Ăn Uống', 'EXPENSE', 101)"
+            )
+
+        # Single-turn natural command
+        res = self.client.post(
+            "/api/ai/chat",
+            json={"message": "Tháng này cho ăn uống tối đa 2 triệu nhé", "mode": "action"},
+            headers=self.headers1
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["state"], "CONFIRMING")
+        p = data.get("pending_confirmation")
+        self.assertIsNotNone(p)
+        self.assertEqual(p["tool_name"], "create_budget")
+        self.assertEqual(p["args"]["category_name"], "Ăn Uống")
+        self.assertEqual(p["args"]["limit_amount"], 2000000.0)
+
+        # Confirm
+        res2 = self.client.post(
+            "/api/ai/chat",
+            json={"message": "xác nhận", "mode": "action"},
+            headers=self.headers1
+        )
+        self.assertEqual(res2.status_code, 200)
+        self.assertEqual(res2.json()["state"], "SUCCESS")
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
 

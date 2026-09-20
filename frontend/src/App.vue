@@ -36,115 +36,48 @@
       </div>
     </div>
 
-    <!-- LOGIN SCREEN -->
-    <div v-if="!isLoggedIn" class="login-realm">
-      <div class="login-card">
-        <div class="login-header">
-          <div class="login-theme-toggle">
-            <button id="btn-toggle-theme-login" class="theme-btn" @click="switchTheme" :title="currentTheme === 'modern' ? 'Chuyển sang Đạo Quán Tu Tiên' : 'Chuyển sang Giao Diện Hiện Đại'">
-              {{ currentTheme === 'modern' ? '☀️ Giao Diện Sáng' : '🌙 Giao Diện Tối' }}
-            </button>
-          </div>
-          <div class="dao-symbol">☯</div>
-          <h1 class="title-calligraphy">Càn Khôn Linh Thạch Các</h1>
-          <p class="subtitle-glow">Quản Lý Chi Tiêu AI — Phong Cách Tu Tiên</p>
-        </div>
-
-        <!-- Mode: Đăng Nhập -->
-        <div v-if="authMode === 'login'" class="auth-form">
-          <h2 class="form-title">🔮 Xác Thực Đạo Tâm</h2>
-        <div class="input-group-xianxia">
-          <label>📧 Linh Bưu (Email)</label>
-          <input v-model="authForm.email" type="email" placeholder="dao.huu@tongmon.com" @keyup.enter="doLogin" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🔑 Khẩu Quyết (Mật khẩu)</label>
-          <input v-model="authForm.password" type="password" placeholder="••••••" @keyup.enter="doLogin" />
-        </div>
-        <button class="btn-jade" @click="doLogin" :disabled="loading">
-          {{ loading ? '⏳ Đang xác thực...' : '⚡ Khai Mở Thần Thức' }}
-        </button>
-        <div class="auth-links">
-          <p class="auth-switch" @click="authMode = 'register'">Chưa có Đạo Tâm? <span>Đăng ký</span></p>
-          <p class="auth-switch" @click="openForgotPassword">Quên khẩu quyết? <span>Khôi phục</span></p>
-        </div>
-      </div>
-
-      <!-- Mode: Đăng Ký -->
-      <div v-else-if="authMode === 'register'" class="auth-form">
-        <h2 class="form-title">✨ Khai Mở Đạo Tâm Mới</h2>
-        <div class="input-group-xianxia">
-          <label>👤 Đạo Hiệu (Họ tên)</label>
-          <input v-model="authForm.full_name" type="text" placeholder="Ký Chủ" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>📧 Linh Bưu (Email)</label>
-          <input v-model="authForm.email" type="email" placeholder="dao.huu@tongmon.com" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🔑 Khẩu Quyết (Mật khẩu)</label>
-          <input v-model="authForm.password" type="password" placeholder="••••••" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🪔 Bản Mệnh Hồn Đăng (Bí mật bảo mật)</label>
-          <input v-model="authForm.soul_lamp" type="text" placeholder="VD: Tên con vật đầu tiên, người thân..." />
-          <p class="hint-text-small" style="font-size: 0.78rem; opacity: 0.8; margin-top: 4px; line-height: 1.3;">
-            Đây là câu trả lời bí mật chỉ mình bạn biết, dùng để khôi phục tài khoản khi quên mật khẩu — hãy chọn thứ dễ nhớ nhưng khó đoán.
-          </p>
-        </div>
-        <button class="btn-jade" @click="doRegister" :disabled="loading">
-          {{ loading ? '⏳ Đang khai mở...' : '🌟 Nhập Môn Tông Phái' }}
-        </button>
-        <p class="auth-switch" @click="authMode = 'login'">Đã có Đạo Tâm? <span>Đăng nhập</span></p>
-      </div>
-
-      <!-- Mode: Quên Mật Khẩu -->
-      <div v-else-if="authMode === 'forgot'" class="auth-form">
-        <h2 class="form-title">🔑 Khôi Phục Khẩu Quyết</h2>
-        <p class="hint-text" style="margin-bottom: 14px;">Nhập Email và Bản Mệnh Hồn Đăng để nhận mã xác thực đặt lại mật khẩu</p>
-        <div class="input-group-xianxia">
-          <label>📧 Linh Bưu (Email)</label>
-          <input v-model="forgotForm.email" type="email" placeholder="dao.huu@tongmon.com" @keyup.enter="doForgotPassword" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🪔 Bản Mệnh Hồn Đăng</label>
-          <input v-model="forgotForm.soul_lamp" type="text" placeholder="Nhập câu trả lời bí mật..." @keyup.enter="doForgotPassword" />
-        </div>
-        <button class="btn-jade" @click="doForgotPassword" :disabled="loading || !forgotForm.email || !forgotForm.soul_lamp">
-          {{ loading ? '⏳ Đang truyền tin...' : '📩 Gửi Mã Khôi Phục' }}
-        </button>
-        <p class="auth-switch" @click="authMode = 'login'">Trở về <span>Đăng nhập</span></p>
-      </div>
-
-      <!-- Mode: Đặt Lại Mật Khẩu -->
-      <div v-else-if="authMode === 'reset'" class="auth-form">
-        <h2 class="form-title">🔄 Đặt Khẩu Quyết Mới</h2>
-        <div v-if="devResetToken" class="dev-token-notice">
-          <span>⚡ Mã xác thực: <strong>{{ devResetToken }}</strong></span>
-        </div>
-        <div class="input-group-xianxia">
-          <label>📧 Linh Bưu (Email)</label>
-          <input v-model="resetForm.email" type="email" disabled class="disabled-input" />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🎫 Mã Xác Thực (OTP Token)</label>
-          <input v-model="resetForm.token" type="text" placeholder="Nhập mã 6 ký tự..." />
-        </div>
-        <div class="input-group-xianxia">
-          <label>🔑 Khẩu Quyết Mới</label>
-          <input v-model="resetForm.new_password" type="password" placeholder="Tối thiểu 4 ký tự..." @keyup.enter="doResetPassword" />
-        </div>
-        <button class="btn-jade" @click="doResetPassword" :disabled="loading || !resetForm.token || !resetForm.new_password">
-          {{ loading ? '⏳ Đang đổi...' : '✨ Đổi Khẩu Quyết Mới' }}
-        </button>
-        <p class="auth-switch" @click="authMode = 'login'">Trở về <span>Đăng nhập</span></p>
-      </div>
-      <div v-if="errorMsg" class="error-banner">🔥 {{ errorMsg }}</div>
-    </div>
-  </div>
+    <!-- AUTHENTICATION REALM (STITCH CELESTIAL TREASURY) -->
+    <AuthShell
+      v-if="!isLoggedIn"
+      :current-theme="currentTheme"
+      @switch-theme="switchTheme"
+    >
+      <LoginCard
+        v-if="authMode === 'login'"
+        :form="authForm"
+        :loading="loading"
+        :error-msg="errorMsg"
+        @submit="doLogin"
+        @switch-mode="handleSwitchAuthMode"
+      />
+      <RegisterCard
+        v-else-if="authMode === 'register'"
+        :form="authForm"
+        :loading="loading"
+        :error-msg="errorMsg"
+        @submit="doRegister"
+        @switch-mode="handleSwitchAuthMode"
+      />
+      <ForgotPasswordCard
+        v-else-if="authMode === 'forgot'"
+        :form="forgotForm"
+        :loading="loading"
+        :error-msg="errorMsg"
+        @submit="doForgotPassword"
+        @switch-mode="handleSwitchAuthMode"
+      />
+      <ResetPasswordCard
+        v-else-if="authMode === 'reset'"
+        :form="resetForm"
+        :loading="loading"
+        :error-msg="errorMsg"
+        @submit="doResetPassword"
+        @switch-mode="handleSwitchAuthMode"
+      />
+    </AuthShell>
 
   <!-- MAIN APP -->
-  <div v-else class="app-realm">
+  <div v-else class="app-realm" :class="{ 'app-realm-behind-overlay': isKhiLinhOpen }">
     <!-- ═══ APP HEADER & NAVIGATION (STITCH CELESTIAL DESIGN) ═══ -->
     <AppHeader
       :active-tab="activeTab"
@@ -246,194 +179,56 @@
         />
       </section>
 
-      <!-- ═══════ TAB 4: CATEGORIES ═══════ -->
+      <!-- ═══════ TAB 4: CATEGORIES (CÀN KHÔN BÁCH KHOA ẤN — CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'categories'" class="tab-panel">
-        <h2 class="section-title">🏷️ Danh Mục Thu Chi</h2>
-
-        <div class="form-card">
-          <h3 class="sub-title">➕ Thêm Danh Mục Mới</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Tên Danh Mục</label>
-              <input v-model="catForm.category_name" type="text" placeholder="VD: Linh Dược Y Tế" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Loại</label>
-              <select v-model="catForm.category_type">
-                <option value="EXPENSE">🔥 Tiêu Hao (Chi)</option>
-                <option value="INCOME">💎 Thu Hoạch (Thu)</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Icon</label>
-              <select v-model="catForm.icon">
-                <option v-for="ic in iconOptions" :key="ic" :value="ic">{{ ic }}</option>
-              </select>
-            </div>
-          </div>
-          <button class="btn-jade" @click="createCategory" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '✨ Khai Mở Danh Mục' }}
-          </button>
-        </div>
-
-        <div class="categories-split">
-          <div class="cat-col">
-            <h3 class="sub-title">💎 Thu Hoạch (INCOME)</h3>
-            <div v-for="c in incomeCategories" :key="c.id" class="cat-item income">
-              <span>{{ c.icon }} {{ c.category_name }}</span>
-              <div class="cat-actions">
-                <button class="btn-sm-edit" @click="openEditCategory(c)" title="Sửa">✏️</button>
-                <button class="btn-sm-danger" @click="deleteCategory(c.id)" title="Xóa">✕</button>
-              </div>
-            </div>
-            <div v-if="!incomeCategories.length" class="empty-state">Chưa có danh mục thu...</div>
-          </div>
-          <div class="cat-col">
-            <h3 class="sub-title">🔥 Tiêu Hao (EXPENSE)</h3>
-            <div v-for="c in expenseCategories" :key="c.id" class="cat-item expense">
-              <span>{{ c.icon }} {{ c.category_name }}</span>
-              <div class="cat-actions">
-                <button class="btn-sm-edit" @click="openEditCategory(c)" title="Sửa">✏️</button>
-                <button class="btn-sm-danger" @click="deleteCategory(c.id)" title="Xóa">✕</button>
-              </div>
-            </div>
-            <div v-if="!expenseCategories.length" class="empty-state">Chưa có danh mục chi...</div>
-          </div>
-        </div>
+        <CategoriesView
+          :categories="categories"
+          :income-categories="incomeCategories"
+          :expense-categories="expenseCategories"
+          :cat-form="catForm"
+          :icon-options="iconOptions"
+          :loading="loading"
+          @create-category="createCategory"
+          @delete-category="deleteCategory"
+          @open-edit-category="openEditCategory"
+          @load-categories="loadCategories"
+        />
       </section>
 
-      <!-- ═══════ TAB 5: OCR INVOICE ═══════ -->
+      <!-- ═══════ TAB 5: OCR INVOICE (LINH NHÃN TẦM BẢO — CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'ocr'" class="tab-panel">
-        <h2 class="section-title">🧾 Linh Nhãn Tầm Bảo — Quét Hóa Đơn AI</h2>
-
-        <div class="form-card">
-          <h3 class="sub-title">📸 Tải Lên Hóa Đơn</h3>
-          <p class="hint-text">Linh Nhãn AI sẽ tự động trích xuất thông tin từ ảnh hóa đơn / receipt</p>
-          <div class="upload-zone" @click="$refs.ocrInput.click()"
-               @dragover.prevent @drop.prevent="handleOCRDrop">
-            <input ref="ocrInput" type="file" accept="image/*" @change="handleOCRUpload" hidden />
-            <div v-if="!ocrPreview" class="upload-placeholder">
-              <span class="upload-icon">📷</span>
-              <span>Kéo thả hoặc nhấn để chọn ảnh hóa đơn</span>
-            </div>
-            <img v-else :src="ocrPreview" class="ocr-preview-img" alt="Preview" />
-          </div>
-          <button class="btn-jade" @click="scanInvoice" :disabled="loading || !ocrFile" style="margin-top: 16px;">
-            {{ loading ? '🔮 Linh Nhãn đang phân tích...' : '👁️ Kích Hoạt Linh Nhãn OCR' }}
-          </button>
-        </div>
-
-        <div v-if="ocrResult" class="ocr-result-card">
-          <h3 class="sub-title">✅ Kết Quả Linh Nhãn — Xác Nhận Giao Dịch</h3>
-          <p class="hint-text" style="margin-bottom: 16px;">Vui lòng kiểm tra và chỉnh sửa thông tin nếu cần trước khi thêm vào lịch sử thu chi:</p>
-
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>🏪 Cửa Hàng / Nội Dung Giao Dịch</label>
-              <input v-model="ocrConfirmForm.note" type="text" placeholder="Tên cửa hàng..." />
-            </div>
-            <div class="input-group-xianxia">
-              <label>💰 Số Tiền (VNĐ)</label>
-              <input v-model.number="ocrConfirmForm.amount" type="number" placeholder="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>📅 Ngày Giao Dịch</label>
-              <input v-model="ocrConfirmForm.transaction_date" type="date" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>💳 Túi Càn Khôn (Ví)</label>
-              <select v-model="ocrConfirmForm.wallet_id">
-                <option v-for="w in wallets" :key="w.id" :value="w.id">{{ w.wallet_name }} ({{ formatVND(w.balance) }})</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>🏷️ Danh Mục Chi</label>
-              <select v-model="ocrConfirmForm.category_id">
-                <option v-for="c in expenseCategories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.category_name }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div v-if="ocrResult.items && ocrResult.items.length" class="ocr-items" style="margin-top: 16px;">
-            <h4>📋 Chi Tiết Sản Phẩm Trích Xuất</h4>
-            <table class="xianxia-table">
-              <thead><tr><th>Sản Phẩm</th><th>SL</th><th>Đơn Giá</th></tr></thead>
-              <tbody>
-                <tr v-for="(item, i) in ocrResult.items" :key="i">
-                  <td>{{ item.name }}</td>
-                  <td>{{ item.quantity || 1 }}</td>
-                  <td>{{ formatVND(item.price || 0) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <button class="btn-jade" @click="confirmOCRTransaction" :disabled="loading" style="margin-top: 20px;">
-            {{ loading ? '⏳ Đang lưu giao dịch...' : '⚡ Xác Nhận & Thêm Vào Lịch Sử Giao Dịch' }}
-          </button>
-        </div>
+        <OcrView
+          :ocr-file="ocrFile"
+          :ocr-preview="ocrPreview"
+          :ocr-result="ocrResult"
+          :ocr-confirm-form="ocrConfirmForm"
+          :wallets="wallets"
+          :expense-categories="expenseCategories"
+          :loading="loading"
+          :formatVND="formatVND"
+          @ocr-upload="handleOCRUpload"
+          @ocr-drop="handleOCRDrop"
+          @scan-invoice="scanInvoice"
+          @confirm-ocr-transaction="confirmOCRTransaction"
+          @reset-ocr="resetOCR"
+        />
       </section>
 
-      <!-- ═══════ TAB 6: BUDGETS ═══════ -->
+      <!-- ═══════ TAB 6: BUDGETS (HẠN MỨC TU LUYỆN — CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'budgets'" class="tab-panel">
-        <div class="tab-header" style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-          <h2 class="section-title" style="margin:0;">🎯 Hạn Mức Tu Luyện — Ngân Sách</h2>
-          <div class="input-group-xianxia" style="width: auto; margin-bottom: 0;">
-            <input type="month" v-model="budgetMonth" @input="loadBudgets" @change="loadBudgets" style="padding: 6px 12px;" />
-          </div>
-        </div>
-
-        <div class="form-card">
-          <h3 class="sub-title">➕ Thiết Lập Hạn Mức</h3>
-          <div class="form-grid">
-            <div class="input-group-xianxia">
-              <label>Danh Mục Chi</label>
-              <select v-model="budgetForm.category_id">
-                <option v-for="c in expenseCategories" :key="c.id" :value="c.id">{{ c.icon }} {{ c.category_name }}</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Hạn Mức (VNĐ)</label>
-              <input v-model.number="budgetForm.limit_amount" type="number" placeholder="0" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Tháng</label>
-              <input v-model="budgetForm.month_year" type="month" />
-            </div>
-          </div>
-          <button class="btn-jade" @click="createBudget" :disabled="loading" style="margin-top: 16px;">
-            {{ loading ? '⏳...' : '🎯 Thiết Lập Hạn Mức' }}
-          </button>
-        </div>
-
-        <div class="budget-list">
-          <div v-for="b in budgets" :key="b.id" class="budget-card">
-            <div class="budget-header">
-              <span>{{ b.category_icon }} {{ b.category_name }}</span>
-              <div class="card-action-btns">
-                <button class="btn-sm-edit" @click="openEditBudget(b)" title="Sửa hạn mức">✏️</button>
-                <button class="btn-sm-danger" @click="deleteBudget(b.id)" title="Xóa hạn mức">✕</button>
-              </div>
-            </div>
-            <div style="font-size: 0.85rem; color: #a3a3a3; margin-bottom: 8px;">Áp dụng: Tháng {{ b.month_year }}</div>
-            <div class="budget-amounts">
-              <span>Đã chi: <strong>{{ formatVND(b.spent) }}</strong></span>
-              <span>Hạn mức: <strong>{{ formatVND(b.limit_amount) }}</strong></span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-fill"
-                   :class="budgetPct(b) >= 100 ? 'danger' : budgetPct(b) >= 80 ? 'warning' : 'safe'"
-                   :style="{ width: Math.min(100, budgetPct(b)) + '%' }">
-              </div>
-            </div>
-            <span class="budget-pct" :class="budgetPct(b) >= 100 ? 'pct-danger' : budgetPct(b) >= 80 ? 'pct-warning' : 'pct-safe'">
-              {{ budgetPct(b).toFixed(1) }}%
-              <span v-if="budgetPct(b) >= 100"> — 🔥 TẨU HỎA NHẬP MA!</span>
-              <span v-else-if="budgetPct(b) >= 80"> — ⚠️ Cảnh Báo Tâm Ma</span>
-            </span>
-          </div>
-          <div v-if="!budgets.length" class="empty-state">Chưa thiết lập hạn mức tu luyện nào...</div>
-        </div>
+        <BudgetsView
+          :budgets="budgets"
+          :budget-month="budgetMonth"
+          :expense-categories="expenseCategories"
+          :budget-form="budgetForm"
+          :loading="loading"
+          :formatVND="formatVND"
+          @update:budget-month="onBudgetMonthChange"
+          @create-budget="createBudget"
+          @open-edit-budget="openEditBudget"
+          @delete-budget="deleteBudget"
+          @load-budgets="loadBudgets"
+        />
       </section>
 
       <!-- ═══════ TAB: SAVING GOALS (MỤC TIÊU TIẾT KIỆM — CELESTIAL TREASURY) ═══════ -->
@@ -452,328 +247,105 @@
         />
       </section>
 
-      <!-- ═══════ TAB 7: STATISTICS ═══════ -->
+      <!-- ═══════ TAB 7: STATISTICS (THIÊN CƠ THỐNG KÊ — CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'stats'" class="tab-panel">
-        <div class="tab-header" style="display:flex; justify-content: space-between; align-items:center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
-          <h2 class="section-title" style="margin:0;">📈 Thiên Cơ Thống Kê — Phân Tích Nâng Cao</h2>
-          <div class="export-actions" style="display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
-            <div class="stats-datepicker-wrapper" style="width: 280px; max-width: 100%;">
-              <VueDatePicker
-                v-model="statsDateRange"
-                range
-                :preset-ranges="presetRanges"
-                format="dd/MM/yyyy"
-                :enable-time-picker="false"
-                :auto-apply="true"
-                :locale="viLocale"
-                :format-locale="viLocale"
-                :select-text="'Áp dụng'"
-                :cancel-text="'Hủy'"
-                :now-button-label="'Hôm nay'"
-                :action-row="{ selectBtnLabel: 'Áp dụng', cancelBtnLabel: 'Hủy', nowBtnLabel: 'Hôm nay' }"
-                placeholder="Chọn khoảng thời gian"
-                @update:model-value="onStatsDateChange"
-                :dark="currentTheme === 'xianxia'"
-              />
-            </div>
-            <button class="btn-jade-sm" @click="doExport('csv')">CSV</button>
-            <button class="btn-jade-sm" @click="doExport('excel')">Excel</button>
-          </div>
-        </div>
-
-        <!-- Trend Chart -->
-        <div class="stats-chart-card" v-if="trendData.trend && trendData.trend.length">
-          <ChartComponent
-            type="bar"
-            :chart-data="trendBarData"
-            title="📊 Xu Hướng Thu/Chi 6 Tháng"
-          />
-        </div>
-
-        <!-- Weekly Chart -->
-        <div class="stats-chart-card" v-if="weeklyData.data && weeklyData.data.length">
-          <ChartComponent
-            type="line"
-            :chart-data="weeklyLineData"
-            title="📉 Chi Tiêu Theo Tuần (4 Tuần Gần Đây)"
-          />
-        </div>
-
-        <!-- Doughnut -->
-        <div class="stats-chart-card" v-if="summary.expense_by_category && summary.expense_by_category.length">
-          <ChartComponent
-            type="doughnut"
-            :chart-data="statsDoughnutData"
-            title="🥧 Tỷ Trọng Chi Tiêu Theo Danh Mục"
-          />
-        </div>
-
-        <!-- Month Comparison -->
-        <div class="compare-section">
-          <h3 class="sub-title">🔀 So Sánh Chi Tiêu Hai Tháng</h3>
-          <div class="compare-controls">
-            <div class="input-group-xianxia">
-              <label>Tháng 1</label>
-              <input v-model="compareMonth1" type="month" @change="loadCompare" />
-            </div>
-            <span class="compare-vs">VS</span>
-            <div class="input-group-xianxia">
-              <label>Tháng 2</label>
-              <input v-model="compareMonth2" type="month" @change="loadCompare" />
-            </div>
-          </div>
-          <div v-if="compareData" class="compare-grid">
-            <div class="compare-card">
-              <h4>📅 {{ compareData.month1.month }}</h4>
-              <div class="compare-stat">
-                <span>Thu: <strong class="positive">{{ formatVND(compareData.month1.income) }}</strong></span>
-                <span>Chi: <strong class="negative">{{ formatVND(compareData.month1.expense) }}</strong></span>
-                <span>Tiết kiệm: <strong :class="compareData.month1.savings >= 0 ? 'positive' : 'negative'">{{ formatVND(compareData.month1.savings) }}</strong></span>
-              </div>
-            </div>
-            <div class="compare-delta">
-              <div class="delta-item" :class="compareData.delta_income >= 0 ? 'delta-up' : 'delta-down'">
-                <span class="delta-arrow">{{ compareData.delta_income >= 0 ? '▲' : '▼' }}</span>
-                <span>Thu: {{ formatVND(Math.abs(compareData.delta_income)) }}</span>
-              </div>
-              <div class="delta-item" :class="compareData.delta_expense <= 0 ? 'delta-up' : 'delta-down'">
-                <span class="delta-arrow">{{ compareData.delta_expense >= 0 ? '▲' : '▼' }}</span>
-                <span>Chi: {{ formatVND(Math.abs(compareData.delta_expense)) }}</span>
-              </div>
-              <div class="delta-item" :class="compareData.delta_savings >= 0 ? 'delta-up' : 'delta-down'">
-                <span class="delta-arrow">{{ compareData.delta_savings >= 0 ? '▲' : '▼' }}</span>
-                <span>Tiết kiệm: {{ formatVND(Math.abs(compareData.delta_savings)) }}</span>
-              </div>
-            </div>
-            <div class="compare-card">
-              <h4>📅 {{ compareData.month2.month }}</h4>
-              <div class="compare-stat">
-                <span>Thu: <strong class="positive">{{ formatVND(compareData.month2.income) }}</strong></span>
-                <span>Chi: <strong class="negative">{{ formatVND(compareData.month2.expense) }}</strong></span>
-                <span>Tiết kiệm: <strong :class="compareData.month2.savings >= 0 ? 'positive' : 'negative'">{{ formatVND(compareData.month2.savings) }}</strong></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="!trendData.trend?.length && !weeklyData.data?.length" class="empty-state">
-          Chưa có đủ dữ liệu để hiển thị thống kê. Hãy thêm giao dịch!
-        </div>
+        <StatisticsView
+          :trend-data="trendData"
+          :weekly-data="weeklyData"
+          :summary="summary"
+          :trend-bar-data="trendBarData"
+          :weekly-line-data="weeklyLineData"
+          :stats-doughnut-data="statsDoughnutData"
+          :stats-date-range="statsDateRange"
+          :preset-ranges="presetRanges"
+          :compare-month1="compareMonth1"
+          :compare-month2="compareMonth2"
+          :compare-data="compareData"
+          :saving-tips="savingTips"
+          :loading="loading"
+          :loading-tips="loadingTips"
+          :current-theme="currentTheme"
+          :vi-locale="viLocale"
+          :formatVND="formatVND"
+          :formatChatText="formatChatText"
+          @update:stats-date-range="statsDateRange = $event"
+          @stats-date-change="onStatsDateChange"
+          @do-export="doExport"
+          @update:compare-month1="compareMonth1 = $event"
+          @update:compare-month2="compareMonth2 = $event"
+          @load-compare="loadCompare"
+          @load-saving-tips="loadSavingTips"
+        />
       </section>
 
-      <!-- ═══════ TAB 8: AI CHAT ═══════ -->
+      <!-- ═══════ TAB 8: KHÍ LINH KNOWLEDGE (CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'chat'" class="tab-panel">
-        <h2 class="section-title">💬 Khấu Bái Khí Linh — Trợ Lý AI Tiên Trí</h2>
-
-        <div class="chat-container">
-          <div class="chat-messages" ref="chatMessagesEl">
-            <div class="chat-welcome">
-              <div class="chat-ai-avatar">🔮</div>
-              <p>Kính chào Ký Chủ! Ta là <strong>Khí Linh Tiên Trí</strong>, trợ lý tài chính AI phong cách tu tiên. Hãy hỏi ta bất cứ điều gì về tài chính của đạo hữu!</p>
-            </div>
-            <div v-for="(msg, idx) in chatMessages" :key="idx"
-                 :class="['chat-bubble', msg.role === 'user' ? 'user-bubble' : 'ai-bubble']">
-              <div class="bubble-avatar">{{ msg.role === 'user' ? '🧙' : '🔮' }}</div>
-              <div class="bubble-content" v-html="formatChatText(msg.text)"></div>
-            </div>
-            <div v-if="chatLoading && activeTab === 'chat'" class="chat-bubble ai-bubble">
-              <div class="bubble-avatar">🔮</div>
-              <div class="bubble-content typing-indicator">
-                <span></span><span></span><span></span>
-              </div>
-            </div>
-          </div>
-          <div v-if="suggestedQuestions.length > 0" class="suggested-questions-container">
-            <span class="suggested-chip" v-for="q in suggestedQuestions" :key="q" @click="chatInput = q">
-              {{ q }}
-            </span>
-          </div>
-          <div class="chat-input-area">
-            <input v-model="chatInput" type="text"
-                   placeholder="Hỏi Tiên Trí về tài chính..."
-                   @keyup.enter="sendChat" />
-            <button class="btn-jade-sm" @click="sendChat" :disabled="chatLoading || !chatInput.trim()">
-              ⚡ Gửi
-            </button>
-          </div>
-        </div>
+        <KnowledgePanel
+          :chat-messages="chatMessages"
+          :chat-loading="chatLoading"
+          :suggested-questions="suggestedQuestions"
+          :user-name="userName"
+          @send-message="sendChat($event)"
+          @clear-history="chatMessages = []"
+        />
       </section>
 
-      <!-- ═══════ TAB: ADMIN & ROLE MANAGEMENT (PHÂN QUYỀN & QUẢN TRỊ) ═══════ -->
+      <!-- ═══════ TAB: ADMIN & ROLE MANAGEMENT (CELESTIAL TREASURY) ═══════ -->
       <section v-if="activeTab === 'admin' && isUserAdmin" class="tab-panel">
-        <h2 class="section-title">🛡️ Phân Quyền & Quản Trị Hệ Thống</h2>
+        <AdminPanel
+          :admin-stats="adminStats"
+          :admin-users="adminUsers"
+          :current-user-id="currentUserId"
+          :loading="loading"
+          @toggle-user-active="toggleUserActive"
+          @change-user-role="changeUserRole($event.user, $event.newRole)"
+          @refresh-users="loadAdminUsers(); loadAdminStats()"
+        />
+      </section>
 
-        <!-- Admin System Metrics -->
-        <div class="metrics-grid">
-          <div class="metric-card jade">
-            <div class="metric-icon">👥</div>
-            <div class="metric-info">
-              <span class="metric-label">Tổng Đạo Hữu</span>
-              <span class="metric-value">{{ adminStats.total_users || 0 }}</span>
-              <span class="metric-sub">Tổng số tài khoản hệ thống</span>
-            </div>
-          </div>
-          <div class="metric-card gold">
-            <div class="metric-icon">🟢</div>
-            <div class="metric-info">
-              <span class="metric-label">Đang Hoạt Động</span>
-              <span class="metric-value">{{ adminStats.active_users || 0 }}</span>
-              <span class="metric-sub">Tài khoản bình thường</span>
-            </div>
-          </div>
-          <div class="metric-card crimson">
-            <div class="metric-icon">🔴</div>
-            <div class="metric-info">
-              <span class="metric-label">Bị Phong Ấn</span>
-              <span class="metric-value">{{ adminStats.locked_users || 0 }}</span>
-              <span class="metric-sub">Tài khoản bị khóa</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- User Management Table Filter & Search -->
-        <div class="filter-card" style="margin-top: 24px;">
-          <div class="filter-grid">
-            <div class="input-group-xianxia">
-              <label>🔍 Tìm Kiếm Đạo Hữu</label>
-              <input v-model="adminFilter.search" type="text" placeholder="Tên hoặc Email..." />
-            </div>
-            <div class="input-group-xianxia">
-              <label>Vai Trò</label>
-              <select v-model="adminFilter.role">
-                <option value="">— Tất Cả —</option>
-                <option value="admin">🛡️ Chưởng Môn (Admin)</option>
-                <option value="user">🧙 Đệ Tử (User)</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia">
-              <label>Trạng Thái</label>
-              <select v-model="adminFilter.status">
-                <option value="">— Tất Cả —</option>
-                <option value="active">🟢 Đang Hoạt Động</option>
-                <option value="locked">🔴 Đã Bị Khóa</option>
-              </select>
-            </div>
-            <div class="input-group-xianxia" style="display: flex; align-items: flex-end;">
-              <button class="btn-secondary" @click="loadAdminUsers" :disabled="loading" style="width: 100%;">
-                🔄 Làm Mới
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Users Table -->
-        <div class="table-header-flex" style="margin-top: 20px;">
-          <h3 class="sub-title">👥 Danh Sách Đạo Hữu Trong Tông Môn ({{ filteredAdminUsers.length }})</h3>
-        </div>
-
-        <div class="table-scroll">
-          <table class="xianxia-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Đạo Hiệu / Họ Tên</th>
-                <th>Email</th>
-                <th>Vai Trò</th>
-                <th>Trạng Thái</th>
-                <th>Ngày Gia Nhập</th>
-                <th>Thao Tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="u in filteredAdminUsers" :key="u.id" :class="{ 'row-locked': u.is_active === 0 }">
-                <td>#{{ u.id }}</td>
-                <td><strong>{{ u.full_name }}</strong></td>
-                <td>{{ u.email }}</td>
-                <td>
-                  <span :class="['role-badge', u.role === 'admin' ? 'admin' : 'user']">
-                    {{ u.role === 'admin' ? '🛡️ Chưởng Môn' : '🧙 Đệ Tử' }}
-                  </span>
-                </td>
-                <td>
-                  <span :class="['status-badge', u.is_active === 1 ? 'active' : 'locked']">
-                    {{ u.is_active === 1 ? '🟢 Bình Thường' : '🔴 Bị Phong Ấn' }}
-                  </span>
-                </td>
-                <td>{{ (u.created_at || '').slice(0, 10) }}</td>
-                <td>
-                  <div class="actions-cell">
-                    <button v-if="u.id !== currentUserId"
-                            :class="u.is_active === 1 ? 'btn-sm-danger' : 'btn-sm-edit'"
-                            @click="toggleUserActive(u)"
-                            :title="u.is_active === 1 ? 'Phong ấn tài khoản' : 'Mở phong ấn'">
-                      {{ u.is_active === 1 ? '🔒 Khóa' : '🔓 Mở' }}
-                    </button>
-                    <button v-if="u.id !== currentUserId"
-                            class="btn-sm-secondary"
-                            @click="changeUserRole(u, u.role === 'admin' ? 'user' : 'admin')"
-                            :title="u.role === 'admin' ? 'Giáng xuống Đệ Tử' : 'Thăng cấp Chưởng Môn'">
-                      {{ u.role === 'admin' ? '⬇️ Giáng' : '⬆️ Thăng' }}
-                    </button>
-                    <span v-else class="text-dim">(Chính bạn)</span>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="!filteredAdminUsers.length">
-                <td colspan="7" class="empty-row">Không tìm thấy đệ tử nào...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <!-- ═══════ TAB: PROFILE (HỒ SƠ BẢO MẬT — CELESTIAL TREASURY) ═══════ -->
+      <section v-if="activeTab === 'profile'" class="tab-panel">
+        <ProfileView
+          :is-modal="false"
+          :user-name="userName"
+          :user-email="userEmail"
+          :user-role="userRole"
+          :is-user-admin="isUserAdmin"
+          :total-balance="summary?.total_balance || 0"
+          :loading-profile="loadingProfile"
+          :loading-soul-lamp="loadingSoulLamp"
+          :loading-password="loadingPassword"
+          :format-v-n-d="formatVND"
+          @save-profile="saveProfile"
+          @save-soul-lamp="saveSoulLamp"
+          @change-password="changePassword"
+          @logout="doLogout"
+        />
       </section>
     </main>
 
     <!-- ═══ APP FOOTER (STITCH CELESTIAL DESIGN) ═══ -->
     <AppFooter />
 
-    <!-- REQUIREMENT 5: ACCOUNT MANAGEMENT MODAL -->
-    <div v-if="showProfileModal" class="modal-backdrop" @click.self="showProfileModal = false">
-      <div class="modal-card modal-card-wide" style="max-width: 520px;">
-        <div class="modal-header">
-          <h3 class="modal-title">🧘 Quản Lý Đạo Tâm (Tài Khoản)</h3>
-          <button class="modal-close" @click="showProfileModal = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="profile-section">
-            <h4 class="sub-title-sm" style="font-size: 1rem; color: #48bb78; margin-bottom: 12px;">👤 Thông Tin Cá Nhân</h4>
-            <div class="input-group-xianxia">
-              <label>📧 Linh Bưu (Email)</label>
-              <input :value="userEmail" type="email" disabled class="disabled-input" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>👤 Đạo Hiệu Hiển Thị</label>
-              <input v-model="profileForm.full_name" type="text" placeholder="Nhập đạo hiệu mới..." @keyup.enter="saveProfile" />
-            </div>
-            <button class="btn-jade-sm" @click="saveProfile" :disabled="loadingProfile" style="margin-top: 8px;">
-              {{ loadingProfile ? '⏳ Đang lưu...' : '✨ Lưu Đạo Hiệu' }}
-            </button>
-          </div>
-
-          <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.12); margin: 20px 0;" />
-
-          <div class="profile-section">
-            <h4 class="sub-title-sm" style="font-size: 1rem; color: #ecc94b; margin-bottom: 6px;">🪔 Bản Mệnh Hồn Đăng (Xác Thực Khôi Phục Mật Khẩu)</h4>
-            <p class="hint-text-small" style="font-size: 0.8rem; opacity: 0.75; margin-bottom: 12px; line-height: 1.3;">
-              Đặt lại hoặc đổi giá trị bí mật dùng để xác thực danh tính khi quên mật khẩu. Yêu cầu nhập mật khẩu hiện tại để bảo mật.
-            </p>
-            <div class="input-group-xianxia">
-              <label>🔑 Khẩu Quyết (Mật khẩu) Hiện Tại</label>
-              <input v-model="soulLampForm.current_password" type="password" placeholder="••••••" />
-            </div>
-            <div class="input-group-xianxia">
-              <label>🪔 Bản Mệnh Hồn Đăng Mới</label>
-              <input v-model="soulLampForm.new_soul_lamp" type="text" placeholder="Nhập giá trị bí mật mới (tối thiểu 3 ký tự)..." @keyup.enter="saveSoulLamp" />
-            </div>
-            <button class="btn-jade-sm" @click="saveSoulLamp" :disabled="loadingSoulLamp || !soulLampForm.current_password || !soulLampForm.new_soul_lamp" style="margin-top: 8px; background: linear-gradient(135deg, #d69e2e, #b7791f);">
-              {{ loadingSoulLamp ? '⏳ Đang lưu...' : '⚡ Cập Nhật Bản Mệnh Hồn Đăng' }}
-            </button>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-secondary" @click="showProfileModal = false">Đóng</button>
-        </div>
-      </div>
-    </div>
+    <!-- REQUIREMENT 5: ACCOUNT MANAGEMENT MODAL (STITCH CELESTIAL DESIGN) -->
+    <ProfileView
+      v-if="showProfileModal"
+      :is-modal="true"
+      :user-name="userName"
+      :user-email="userEmail"
+      :user-role="userRole"
+      :is-user-admin="isUserAdmin"
+      :total-balance="summary?.total_balance || 0"
+      :loading-profile="loadingProfile"
+      :loading-soul-lamp="loadingSoulLamp"
+      :loading-password="loadingPassword"
+      :format-v-n-d="formatVND"
+      @close="showProfileModal = false"
+      @save-profile="saveProfile"
+      @save-soul-lamp="saveSoulLamp"
+      @change-password="changePassword"
+      @logout="doLogout"
+    />
 
     <!-- EDIT WALLET MODAL -->
     <div v-if="showEditWalletModal" class="modal-backdrop" @click.self="showEditWalletModal = false">
@@ -1043,6 +615,39 @@
       </div>
     </div>
 
+    <!-- EDIT BUDGET MODAL -->
+    <div v-if="showEditBudgetModal" class="modal-backdrop" @click.self="showEditBudgetModal = false">
+      <div class="modal-card" style="max-width: 480px;">
+        <div class="modal-header">
+          <h3 class="modal-title">✏️ Chỉnh Sửa Hạn Mức Tu Luyện</h3>
+          <button class="modal-close" @click="showEditBudgetModal = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="editBudgetForm.category_name" style="margin-bottom: 16px; padding: 12px; border-radius: 8px; background: rgba(125,214,204,0.08); border: 1px solid rgba(125,214,204,0.2);">
+            <div style="font-weight: 600; color: #7dd6cc; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+              <span>{{ editBudgetForm.category_icon || '🎯' }}</span>
+              <span>{{ editBudgetForm.category_name }}</span>
+            </div>
+            <div style="font-size: 0.85rem; color: #a3a3a3; margin-top: 4px;">
+              Chu kỳ áp dụng: Tháng {{ editBudgetForm.month_year }}
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="input-group-xianxia">
+              <label>Mức Giới Hạn Mới (VNĐ)</label>
+              <input v-model.number="editBudgetForm.limit_amount" type="number" min="1" step="1000" placeholder="0" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" @click="showEditBudgetModal = false">Hủy</button>
+          <button class="btn-jade-sm" @click="updateBudget" :disabled="loading || !editBudgetForm.limit_amount || editBudgetForm.limit_amount <= 0">
+            {{ loading ? '⏳...' : '💾 Lưu Thay Đổi' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- TOAST -->
     <div v-if="toast" class="toast-notification" :class="toast.type">
       {{ toast.message }}
@@ -1073,13 +678,48 @@ import TransactionsView from './components/transactions/TransactionsView.vue'
 import WalletsView from './components/wallets/WalletsView.vue'
 import DebtsView from './components/debts/DebtsView.vue'
 import SavingGoalsView from './components/goals/SavingGoalsView.vue'
+import BudgetsView from './components/budgets/BudgetsView.vue'
+import CategoriesView from './components/categories/CategoriesView.vue'
+import OcrView from './components/ocr/OcrView.vue'
+import StatisticsView from './components/statistics/StatisticsView.vue'
+import AuthShell from './components/auth/AuthShell.vue'
+import LoginCard from './components/auth/LoginCard.vue'
+import RegisterCard from './components/auth/RegisterCard.vue'
+import ForgotPasswordCard from './components/auth/ForgotPasswordCard.vue'
+import ResetPasswordCard from './components/auth/ResetPasswordCard.vue'
+import ProfileView from './components/profile/ProfileView.vue'
+import AdminPanel from './components/admin/AdminPanel.vue'
+import KnowledgePanel from './components/khi-linh/KnowledgePanel.vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
 
 export default {
   name: 'CankKhonApp',
-  components: { ChartComponent, VueDatePicker, KhiLinhAssistant, AppHeader, AppFooter, DashboardView, TransactionsView, WalletsView, DebtsView, SavingGoalsView },
+  components: {
+    ChartComponent,
+    VueDatePicker,
+    KhiLinhAssistant,
+    AppHeader,
+    AppFooter,
+    DashboardView,
+    TransactionsView,
+    WalletsView,
+    DebtsView,
+    SavingGoalsView,
+    BudgetsView,
+    CategoriesView,
+    OcrView,
+    StatisticsView,
+    AuthShell,
+    LoginCard,
+    RegisterCard,
+    ForgotPasswordCard,
+    ResetPasswordCard,
+    ProfileView,
+    AdminPanel,
+    KnowledgePanel
+  },
   setup() {
     // ─── STATE ────────────────────
     const isLoggedIn = ref(false)
@@ -1088,7 +728,6 @@ export default {
     const currentTheme = ref(localStorage.getItem('app_theme') || 'xianxia')
     const forgotForm = ref({ email: '', soul_lamp: '' })
     const resetForm = ref({ email: '', token: '', new_password: '' })
-    const devResetToken = ref('')
     const token = ref('')
     const userName = ref('Ký Chủ')
     const userEmail = ref('')
@@ -1096,6 +735,7 @@ export default {
     const loadingTips = ref(false)
     const loadingProfile = ref(false)
     const loadingSoulLamp = ref(false)
+    const loadingPassword = ref(false)
     const errorMsg = ref('')
     const toast = ref(null)
     const activeTab = ref('dashboard')
@@ -1114,7 +754,7 @@ export default {
     const editCatForm = ref({ id: null, category_name: '', icon: '📦' })
 
     const showEditBudgetModal = ref(false)
-    const editBudgetForm = ref({ id: null, limit_amount: 0 })
+    const editBudgetForm = ref({ id: null, limit_amount: 0, category_name: '', category_icon: '🎯', month_year: '' })
 
     const showEditRecurringModal = ref(false)
     const editRecurringForm = ref({
@@ -1541,12 +1181,25 @@ export default {
       loading.value = false
     }
 
-    function openForgotPassword() {
-      forgotForm.value.email = authForm.value.email || ''
-      forgotForm.value.soul_lamp = ''
-      devResetToken.value = ''
-      authMode.value = 'forgot'
+    function handleSwitchAuthMode(mode) {
       errorMsg.value = ''
+      if (mode === 'forgot') {
+        forgotForm.value.email = authForm.value.email || ''
+        forgotForm.value.soul_lamp = ''
+      } else if (mode === 'reset') {
+        resetForm.value.email = forgotForm.value.email || authForm.value.email || ''
+        resetForm.value.token = ''
+        resetForm.value.new_password = ''
+      } else if (mode === 'login') {
+        if (resetForm.value.email) {
+          authForm.value.email = resetForm.value.email
+        }
+      }
+      authMode.value = mode
+    }
+
+    function openForgotPassword() {
+      handleSwitchAuthMode('forgot')
     }
 
     async function doForgotPassword() {
@@ -1561,12 +1214,11 @@ export default {
           email: forgotForm.value.email,
           soul_lamp: forgotForm.value.soul_lamp.trim()
         })
-        devResetToken.value = data.reset_token || ''
         resetForm.value.email = forgotForm.value.email
-        resetForm.value.token = data.reset_token || ''
+        resetForm.value.token = ''
         resetForm.value.new_password = ''
         authMode.value = 'reset'
-        showToast('🔑 Đã tạo mã xác thực khôi phục!')
+        showToast('🔑 ' + (data?.message || 'Đã tạo mã xác thực khôi phục mật khẩu!'))
       } catch (err) {
         errorMsg.value = err.response?.data?.detail || 'Thông tin xác thực không chính xác, vui lòng kiểm tra lại'
       }
@@ -1586,7 +1238,6 @@ export default {
         authForm.value.email = resetForm.value.email
         authForm.value.password = ''
         authMode.value = 'login'
-        devResetToken.value = ''
       } catch (err) {
         errorMsg.value = err.response?.data?.detail || 'Lỗi đặt lại mật khẩu!'
       }
@@ -1617,8 +1268,16 @@ export default {
       showProfileModal.value = true
     }
 
-    async function saveProfile() {
-      const newName = profileForm.value.full_name.trim()
+    async function saveProfile(payload) {
+      let newName = ''
+      if (typeof payload === 'string') {
+        newName = payload.trim()
+      } else if (payload && payload.full_name) {
+        newName = payload.full_name.trim()
+      } else {
+        newName = profileForm.value.full_name.trim()
+      }
+
       if (!newName) {
         showToast('Vui lòng nhập đạo hiệu!', 'error')
         return
@@ -1627,36 +1286,71 @@ export default {
       try {
         await api.put('/api/user/profile', { full_name: newName })
         userName.value = newName
+        profileForm.value.full_name = newName
         localStorage.setItem('xianxia_user', newName)
         showToast('✨ Đạo hiệu đã được cập nhật!')
-        showProfileModal.value = false
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi cập nhật tên!', 'error')
+      } finally {
+        loadingProfile.value = false
       }
-      loadingProfile.value = false
     }
 
-    async function saveSoulLamp() {
-      if (!soulLampForm.value.current_password) {
+    async function saveSoulLamp(payload) {
+      const curPwd = payload?.current_password || soulLampForm.value.current_password
+      const newPhrase = (payload?.new_soul_lamp || soulLampForm.value.new_soul_lamp || '').trim()
+
+      if (!curPwd) {
         showToast('Vui lòng nhập khẩu quyết (mật khẩu) hiện tại!', 'error')
         return
       }
-      if (!soulLampForm.value.new_soul_lamp || soulLampForm.value.new_soul_lamp.trim().length < 3) {
+      if (!newPhrase || newPhrase.length < 3) {
         showToast('Bản Mệnh Hồn Đăng mới phải có ít nhất 3 ký tự!', 'error')
         return
       }
       loadingSoulLamp.value = true
       try {
         const { data } = await api.put('/api/user/soul-lamp', {
-          current_password: soulLampForm.value.current_password,
-          new_soul_lamp: soulLampForm.value.new_soul_lamp.trim()
+          current_password: curPwd,
+          new_soul_lamp: newPhrase
         })
         showToast(data.message || '✨ Đã cập nhật Bản Mệnh Hồn Đăng thành công!')
         soulLampForm.value = { current_password: '', new_soul_lamp: '' }
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi khi cập nhật Bản Mệnh Hồn Đăng!', 'error')
+      } finally {
+        loadingSoulLamp.value = false
       }
-      loadingSoulLamp.value = false
+    }
+
+    async function changePassword(payload) {
+      const curPwd = payload?.current_password || ''
+      const newPwd = payload?.new_password || ''
+
+      if (!curPwd) {
+        showToast('Vui lòng nhập mật khẩu hiện tại!', 'error')
+        return
+      }
+      if (!newPwd || newPwd.length < 4) {
+        showToast('Mật khẩu mới phải có ít nhất 4 ký tự!', 'error')
+        return
+      }
+      loadingPassword.value = true
+      try {
+        const { data } = await api.put('/api/user/password', {
+          current_password: curPwd,
+          new_password: newPwd
+        })
+        showToast(data.message || 'Đổi mật khẩu thành công! Các phiên cũ đã hủy, vui lòng đăng nhập lại.')
+        setTimeout(() => {
+          showProfileModal.value = false
+          doLogout()
+        }, 1500)
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi khi đổi mật khẩu!', 'error')
+      } finally {
+        loadingPassword.value = false
+      }
     }
 
     async function fetchUserProfile() {
@@ -2037,12 +1731,20 @@ export default {
     }
 
     function openEditBudget(b) {
-      editBudgetForm.value = { id: b.id, limit_amount: b.limit_amount }
+      editBudgetForm.value = {
+        id: b.id,
+        limit_amount: b.limit_amount,
+        category_name: b.category_name || '',
+        category_icon: b.category_icon || '🎯',
+        month_year: b.month_year || budgetMonth.value
+      }
       showEditBudgetModal.value = true
     }
 
     async function updateBudget() {
-      if (!editBudgetForm.value.limit_amount) return showToast('Vui lòng nhập số tiền!', 'error')
+      if (!editBudgetForm.value.limit_amount || editBudgetForm.value.limit_amount <= 0) {
+        return showToast('Vui lòng nhập số tiền hợp lệ!', 'error')
+      }
       loading.value = true
       try {
         await api.put(`/api/budgets/${editBudgetForm.value.id}`, { limit_amount: editBudgetForm.value.limit_amount })
@@ -2051,9 +1753,14 @@ export default {
         await loadBudgets()
         await checkBudgetAlerts()
       } catch (err) {
-        showToast('Lỗi cập nhật!', 'error')
+        showToast(err.response?.data?.detail || 'Lỗi cập nhật!', 'error')
       }
       loading.value = false
+    }
+
+    function onBudgetMonthChange(newMonth) {
+      budgetMonth.value = newMonth
+      budgetForm.value.month_year = newMonth
     }
 
     async function doExport(format) {
@@ -2391,7 +2098,9 @@ export default {
         await api.delete(`/api/categories/${id}`)
         showToast('Danh mục đã xóa!')
         await loadCategories()
-      } catch {}
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Không thể xóa danh mục!', 'error')
+      }
     }
 
     async function createBudget() {
@@ -2421,9 +2130,31 @@ export default {
     }
 
     // ─── OCR ──────────────────────
+    function resetOCR() {
+      ocrFile.value = null
+      if (ocrPreview.value) {
+        try { URL.revokeObjectURL(ocrPreview.value) } catch {}
+      }
+      ocrPreview.value = null
+      ocrResult.value = null
+      const defaultWallet = wallets.value.length ? wallets.value[0].id : null
+      const defaultCat = expenseCategories.value.length ? expenseCategories.value[0].id : null
+      ocrConfirmForm.value = {
+        note: '',
+        amount: 0,
+        transaction_date: new Date().toISOString().slice(0, 10),
+        wallet_id: defaultWallet,
+        category_id: defaultCat,
+        transaction_type: 'EXPENSE'
+      }
+    }
+
     function handleOCRUpload(e) {
       const file = e.target.files[0]
       if (file) {
+        if (ocrPreview.value) {
+          try { URL.revokeObjectURL(ocrPreview.value) } catch {}
+        }
         ocrFile.value = file
         ocrPreview.value = URL.createObjectURL(file)
         ocrResult.value = null
@@ -2433,6 +2164,9 @@ export default {
     function handleOCRDrop(e) {
       const file = e.dataTransfer.files[0]
       if (file && file.type.startsWith('image/')) {
+        if (ocrPreview.value) {
+          try { URL.revokeObjectURL(ocrPreview.value) } catch {}
+        }
         ocrFile.value = file
         ocrPreview.value = URL.createObjectURL(file)
         ocrResult.value = null
@@ -2480,6 +2214,9 @@ export default {
         showToast('⚡ Giao dịch từ hóa đơn đã được thêm vào lịch sử!')
         ocrResult.value = null
         ocrFile.value = null
+        if (ocrPreview.value) {
+          try { URL.revokeObjectURL(ocrPreview.value) } catch {}
+        }
         ocrPreview.value = null
         await loadAllData()
         activeTab.value = 'transactions'
@@ -2490,12 +2227,12 @@ export default {
     }
 
     // ─── AI CHAT ──────────────────
-    async function sendChat() {
-      if (!chatInput.value.trim() || chatLoading.value) return
+    async function sendChat(customMsg = null) {
+      const msg = (typeof customMsg === 'string' && customMsg.trim()) ? customMsg.trim() : chatInput.value.trim()
+      if (!msg || chatLoading.value) return
       if (!Array.isArray(chatMessages.value)) {
         chatMessages.value = []
       }
-      const msg = chatInput.value.trim()
       chatMessages.value.push({ role: 'user', text: msg })
       chatInput.value = ''
       await nextTick()
@@ -2579,6 +2316,13 @@ export default {
         loadCompare()
       } else if (tabId === 'budgets') {
         loadBudgets()
+      } else if (tabId === 'admin') {
+        loadAdminStats()
+        loadAdminUsers()
+      } else if (tabId === 'chat') {
+        if (!suggestedQuestions.value.length) {
+          loadSuggestedQuestions()
+        }
       }
       nextTick(() => {
         const activeBtn = tabNavEl.value?.querySelector('.tab-btn.active')
@@ -2620,11 +2364,11 @@ export default {
 
     return {
       api,
-      isLoggedIn, authMode, authForm, forgotForm, resetForm, devResetToken,
-      loading, loadingTips, loadingProfile, loadingSoulLamp, errorMsg, toast,
+      isLoggedIn, authMode, authForm, forgotForm, resetForm,
+      loading, loadingTips, loadingProfile, loadingSoulLamp, loadingPassword, errorMsg, toast,
       activeTab, tabs, displayTabs, userName, userEmail, userRole, currentUserId, currentTheme, isUserAdmin,
       tabNavEl, canScrollNavLeft, canScrollNavRight, checkNavScroll, scrollNav, handleNavWheel,
-      showProfileModal, profileForm, soulLampForm, saveSoulLamp,
+      showProfileModal, profileForm, soulLampForm, saveSoulLamp, changePassword,
       showEditWalletModal, editWalletForm,
       showEditCatModal, editCatForm,
       showEditRecurringModal, editRecurringForm,
@@ -2653,7 +2397,7 @@ export default {
       trendBarData, weeklyLineData, statsDoughnutData,
       // methods
       formatVND, showToast, budgetPct, formatChatText, walletTypeIcon,
-      doLogin, doRegister, doLogout, openForgotPassword, doForgotPassword, doResetPassword,
+      handleSwitchAuthMode, doLogin, doRegister, doLogout, openForgotPassword, doForgotPassword, doResetPassword,
       openProfileModal, saveProfile,
       openEditWallet, updateWallet, openEditCategory, updateCategory,
       openEditRecurring, updateRecurring,
@@ -2662,11 +2406,11 @@ export default {
       switchTab, switchTheme, loadAllData, loadCompare, loadSavingTips,
       createTransaction, deleteTransaction,
       budgetMonth, statsDateRange, presetRanges, onStatsDateChange, viLocale, doExport,
-      showEditBudgetModal, editBudgetForm, openEditBudget, updateBudget,
+      showEditBudgetModal, editBudgetForm, openEditBudget, updateBudget, onBudgetMonthChange,
       createWallet, deleteWallet, doTransfer,
-      createCategory, deleteCategory,
-      createBudget, deleteBudget,
-      handleOCRUpload, handleOCRDrop, scanInvoice, confirmOCRTransaction,
+      loadCategories, createCategory, deleteCategory,
+      loadBudgets, createBudget, deleteBudget,
+      handleOCRUpload, handleOCRDrop, scanInvoice, confirmOCRTransaction, resetOCR,
       sendChat,
       isKhiLinhOpen, onKhiLinhTransactionCompleted,
     }
@@ -2681,6 +2425,14 @@ export default {
 
 /* ─── RESET & BASE ─────────────────────── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ─── KHÍ LINH SYSTEM WINDOW BACKDROP BLUR ─── */
+.app-realm.app-realm-behind-overlay {
+  filter: blur(8px) brightness(0.55);
+  pointer-events: none;
+  user-select: none;
+  transition: filter 0.3s ease, brightness 0.3s ease;
+}
 
 :root {
   --bg-primary: #1a3a5c;
@@ -2730,9 +2482,9 @@ export default {
   --font-calligraphy: 'Lora', 'Cormorant Garamond', 'Georgia', serif;
   --font-body: 'Inter', -apple-system, sans-serif;
 
-  /* Custom Cursor: Embedded Sword SVG với Hotspot chính xác tại ĐẦU MŨI KIẾM (22 2) */
-  --cursor-sword: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%234fa8a0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m14.5 17.5-5-5'/><path d='m10 13-6.5 6.5a1 1 0 0 0 1.4 1.4L11.4 14'/><path d='m12.5 8.5 7-7a2.12 2.12 0 0 1 3 3l-7 7'/><path d='M9 11 3 5'/><path d='M15 17l6 6'/></svg>") 22 2, auto;
-  --cursor-pointer: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23e8c874' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m14.5 17.5-5-5'/><path d='m10 13-6.5 6.5a1 1 0 0 0 1.4 1.4L11.4 14'/><path d='m12.5 8.5 7-7a2.12 2.12 0 0 1 3 3l-7 7'/><path d='M9 11 3 5'/><path d='M15 17l6 6'/></svg>") 22 2, pointer;
+  /* Custom Cursor: Embedded Sword SVG với Hotspot chính xác tại ĐẦU MŨI KIẾM (4 4) */
+  --cursor-sword: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' width='48' height='48' fill='none'> <defs> <linearGradient id='blade_lei' x1='4' y1='4' x2='28' y2='28' gradientUnits='userSpaceOnUse'> <stop offset='0%' stop-color='%23F5D0FE'/> <stop offset='30%' stop-color='%23C084FC'/> <stop offset='70%' stop-color='%237E22CE'/> <stop offset='100%' stop-color='%233B0764'/> </linearGradient> <linearGradient id='blade_lei_edge' x1='4' y1='4' x2='25' y2='25' gradientUnits='userSpaceOnUse'> <stop offset='0%' stop-color='%23FFFFFF'/> <stop offset='40%' stop-color='%23E879F9'/> <stop offset='100%' stop-color='%239333EA'/> </linearGradient> <linearGradient id='guard_lei' x1='18' y1='18' x2='38' y2='38' gradientUnits='userSpaceOnUse'> <stop offset='0%' stop-color='%23F8FAFC'/> <stop offset='50%' stop-color='%2394A3B8'/> <stop offset='100%' stop-color='%23334155'/> </linearGradient> <filter id='cursor_glow_v2' x='-25%' y='-25%' width='150%' height='150%'> <feDropShadow dx='0' dy='2' stdDeviation='2' flood-color='%23090514' flood-opacity='0.95'/> <feDropShadow dx='0' dy='0' stdDeviation='1.5' flood-color='%23C084FC' flood-opacity='0.85'/> </filter> </defs> <g filter='url(%23cursor_glow_v2)'> <path d='M 4 4 L 13 8 L 22 22 L 25 25 L 22 27 L 20 25 L 8 13 Z' fill='%23090514' stroke='%23090514' stroke-width='2.6' stroke-linejoin='round'/> <path d='M 18 16 L 31 13 L 26 21 L 34 29 L 26 31 L 25 41 L 19 28 L 14 20 Z' fill='%23090514' stroke='%23090514' stroke-width='2.2' stroke-linejoin='round'/> <path d='M 4 4 L 13 8 L 23 24 Z' fill='url(%23blade_lei_edge)'/> <path d='M 4 4 L 8 13 L 23 24 Z' fill='url(%23blade_lei)'/> <path d='M 5 5 L 11 11 L 9 13 L 17 19 L 15 21 L 22 24' stroke='%23FFFFFF' stroke-width='0.85' stroke-linecap='round' stroke-linejoin='bevel'/> <path d='M 17 18 L 28 14 L 24 21 L 30 25 L 24 27 L 19 32 L 18 25 Z' fill='url(%23guard_lei)' stroke='%23E2E8F0' stroke-width='0.5'/> <polygon points='24,21 27,24 24,27 21,24' fill='%2338BDF8' stroke='%23FFFFFF' stroke-width='0.6'/> <path d='M 25 25 L 35 35' stroke='%231E1B4B' stroke-width='2.8' stroke-linecap='round'/> <line x1='27' y1='26' x2='26' y2='27' stroke='%2338BDF8' stroke-width='0.8'/> <line x1='30' y1='29' x2='29' y2='30' stroke='%2338BDF8' stroke-width='0.8'/> <line x1='33' y1='32' x2='32' y2='33' stroke='%2338BDF8' stroke-width='0.8'/> <polygon points='36,33 39,36 36,39 33,36' fill='url(%23guard_lei)' stroke='%23090514' stroke-width='1'/> <circle cx='36' cy='36' r='1.1' fill='%23C084FC'/> <path d='M 38 38 Q 43 40 43 45' stroke='%2338BDF8' stroke-width='1.2' stroke-linecap='round'/> <path d='M 37 39 Q 40 43 39 46' stroke='%23C084FC' stroke-width='1' stroke-linecap='round'/> <circle cx='4' cy='4' r='0.9' fill='%23FFFFFF'/> </g> </svg>") 4 4, auto;
+  --cursor-pointer: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' width='48' height='48' fill='none'> <defs> <linearGradient id='blade_lei' x1='4' y1='4' x2='28' y2='28' gradientUnits='userSpaceOnUse'> <stop offset='0%' stop-color='%23F5D0FE'/> <stop offset='30%' stop-color='%23C084FC'/> <stop offset='70%' stop-color='%237E22CE'/> <stop offset='100%' stop-color='%233B0764'/> </linearGradient> <linearGradient id='blade_lei_edge' x1='4' y1='4' x2='25' y2='25' gradientUnits='userSpaceOnUse'> <stop offset='0%' stop-color='%23FFFFFF'/> <stop offset='40%' stop-color='%23E879F9'/> <stop offset='100%' stop-color='%239333EA'/> </linearGradient> <linearGradient id='guard_lei' x1='18' y1='18' x2='38' y2='38' gradientUnits='userSpaceOnUse'> <stop offset='0%' stop-color='%23F8FAFC'/> <stop offset='50%' stop-color='%2394A3B8'/> <stop offset='100%' stop-color='%23334155'/> </linearGradient> <filter id='cursor_glow_v2' x='-25%' y='-25%' width='150%' height='150%'> <feDropShadow dx='0' dy='2' stdDeviation='2' flood-color='%23090514' flood-opacity='0.95'/> <feDropShadow dx='0' dy='0' stdDeviation='1.5' flood-color='%23C084FC' flood-opacity='0.85'/> </filter> </defs> <g filter='url(%23cursor_glow_v2)'> <path d='M 4 4 L 13 8 L 22 22 L 25 25 L 22 27 L 20 25 L 8 13 Z' fill='%23090514' stroke='%23090514' stroke-width='2.6' stroke-linejoin='round'/> <path d='M 18 16 L 31 13 L 26 21 L 34 29 L 26 31 L 25 41 L 19 28 L 14 20 Z' fill='%23090514' stroke='%23090514' stroke-width='2.2' stroke-linejoin='round'/> <path d='M 4 4 L 13 8 L 23 24 Z' fill='url(%23blade_lei_edge)'/> <path d='M 4 4 L 8 13 L 23 24 Z' fill='url(%23blade_lei)'/> <path d='M 5 5 L 11 11 L 9 13 L 17 19 L 15 21 L 22 24' stroke='%23FFFFFF' stroke-width='0.85' stroke-linecap='round' stroke-linejoin='bevel'/> <path d='M 17 18 L 28 14 L 24 21 L 30 25 L 24 27 L 19 32 L 18 25 Z' fill='url(%23guard_lei)' stroke='%23E2E8F0' stroke-width='0.5'/> <polygon points='24,21 27,24 24,27 21,24' fill='%2338BDF8' stroke='%23FFFFFF' stroke-width='0.6'/> <path d='M 25 25 L 35 35' stroke='%231E1B4B' stroke-width='2.8' stroke-linecap='round'/> <line x1='27' y1='26' x2='26' y2='27' stroke='%2338BDF8' stroke-width='0.8'/> <line x1='30' y1='29' x2='29' y2='30' stroke='%2338BDF8' stroke-width='0.8'/> <line x1='33' y1='32' x2='32' y2='33' stroke='%2338BDF8' stroke-width='0.8'/> <polygon points='36,33 39,36 36,39 33,36' fill='url(%23guard_lei)' stroke='%23090514' stroke-width='1'/> <circle cx='36' cy='36' r='1.1' fill='%23C084FC'/> <path d='M 38 38 Q 43 40 43 45' stroke='%2338BDF8' stroke-width='1.2' stroke-linecap='round'/> <path d='M 37 39 Q 40 43 39 46' stroke='%23C084FC' stroke-width='1' stroke-linecap='round'/> <circle cx='4' cy='4' r='0.9' fill='%23FFFFFF'/> </g> </svg>") 4 4, pointer;
 }
 
 /* ─── MODERN THEME (THEME 2 — GIAO DIỆN THƯỜNG / SÁNG) ─────── */
@@ -4931,32 +4683,32 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
   box-shadow: 0 4px 10px rgba(14, 165, 233, 0.3);
 }
 
-/* VueDatePicker Customization */
+/* VueDatePicker Customization — Celestial Treasury System */
 .dp--theme-dark,
 .dp__theme_dark {
-  --dp-background-color: var(--card-bg, #1a3a5c);
-  --dp-text-color: var(--text-color, #eef4f8);
-  --dp-hover-color: rgba(232, 200, 116, 0.2);
+  --dp-background-color: #131b2e;
+  --dp-text-color: #dae2fd;
+  --dp-hover-color: rgba(125, 214, 204, 0.15);
   --dp-hover-text-color: #ffffff;
-  --dp-hover-icon-color: var(--gold, #b38217);
-  --dp-primary-color: var(--jade, #2b8a82);
-  --dp-primary-disabled-color: rgba(43, 138, 130, 0.5);
-  --dp-primary-text-color: #ffffff;
-  --dp-secondary-color: var(--bg-card, rgba(255, 255, 255, 0.78));
-  --dp-border-color: rgba(232, 200, 116, 0.4);
-  --dp-menu-border-color: rgba(232, 200, 116, 0.4);
-  --dp-border-color-hover: var(--gold, #b38217);
-  --dp-border-color-focus: var(--gold, #b38217);
-  --dp-disabled-color: rgba(255, 255, 255, 0.2);
-  --dp-disabled-color-text: rgba(255, 255, 255, 0.4);
-  --dp-scroll-bar-background: var(--bg-primary, #1a3a5c);
-  --dp-scroll-bar-color: var(--gold, #b38217);
-  --dp-success-color: var(--jade, #2b8a82);
-  --dp-icon-color: var(--gold, #b38217);
-  --dp-danger-color: #e53935;
-  --dp-range-between-dates-background-color: rgba(43, 138, 130, 0.25);
+  --dp-hover-icon-color: #7dd6cc;
+  --dp-primary-color: #7dd6cc;
+  --dp-primary-disabled-color: rgba(125, 214, 204, 0.3);
+  --dp-primary-text-color: #003733;
+  --dp-secondary-color: #1b2337;
+  --dp-border-color: rgba(125, 214, 204, 0.25);
+  --dp-menu-border-color: rgba(125, 214, 204, 0.25);
+  --dp-border-color-hover: #7dd6cc;
+  --dp-border-color-focus: #7dd6cc;
+  --dp-disabled-color: rgba(255, 255, 255, 0.08);
+  --dp-disabled-color-text: rgba(255, 255, 255, 0.3);
+  --dp-scroll-bar-background: #0b1326;
+  --dp-scroll-bar-color: #7dd6cc;
+  --dp-success-color: #7dd6cc;
+  --dp-icon-color: #7dd6cc;
+  --dp-danger-color: #ffb4ab;
+  --dp-range-between-dates-background-color: rgba(125, 214, 204, 0.18);
   --dp-range-between-dates-text-color: #ffffff;
-  --dp-range-between-border-color: rgba(43, 138, 130, 0.35);
+  --dp-range-between-border-color: rgba(125, 214, 204, 0.35);
 }
 
 body[data-theme='modern'] .dp--theme-light,
@@ -4989,17 +4741,21 @@ body[data-theme='modern'] .dp__theme_light,
 }
 
 .dp__menu {
-  border-radius: 12px !important;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35) !important;
-  backdrop-filter: blur(12px) !important;
+  background: #131b2e !important;
+  border: 1px solid rgba(125, 214, 204, 0.3) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 20px rgba(125, 214, 204, 0.12) !important;
+  backdrop-filter: blur(16px) !important;
   overflow: hidden;
 }
 body[data-theme='modern'] .dp__menu {
+  background: #ffffff !important;
+  border: 1px solid #E2E8F0 !important;
   box-shadow: 0 12px 36px rgba(15, 23, 42, 0.15) !important;
 }
 .dp__input {
-  border-radius: 8px !important;
-  font-size: 13.5px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
 }
 
 /* Ensure dropdown is above everything */

@@ -56,6 +56,10 @@ class GroundedAuditAIProvider(AIProvider):
         prompt_lower = prompt.lower()
         if "câu hỏi của đạo hữu:" in prompt_lower:
             q_part = prompt_lower.split("câu hỏi của đạo hữu:")[-1].strip()
+        elif "câu hỏi của ký chủ:" in prompt_lower:
+            q_part = prompt_lower.split("câu hỏi của ký chủ:")[-1].strip()
+        elif "câu hỏi:" in prompt_lower:
+            q_part = prompt_lower.split("câu hỏi:")[-1].strip()
         else:
             q_part = prompt_lower.strip()
 

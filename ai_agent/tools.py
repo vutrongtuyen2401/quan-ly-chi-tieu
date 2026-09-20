@@ -31,17 +31,72 @@ def _resolve_period_range(period: Optional[str] = None) -> Tuple[str, str, str]:
         y_str = (today - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
         return y_str, y_str, "hôm qua"
 
+    if p in ("last_week", "tuần trước", "tuan truoc", "tuần vừa rồi", "tuan vua roi"):
+        start_curr_week = today - datetime.timedelta(days=today.weekday())
+        start_last_week = start_curr_week - datetime.timedelta(days=7)
+        end_last_week = start_curr_week - datetime.timedelta(days=1)
+        return start_last_week.strftime("%Y-%m-%d"), end_last_week.strftime("%Y-%m-%d"), f"tuần trước ({start_last_week.strftime('%d/%m')} - {end_last_week.strftime('%d/%m')})"
+
     if p in ("this_week", "tuần này", "tuan nay", "tuần", "tuan"):
         start_week = today - datetime.timedelta(days=today.weekday())
         return start_week.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "tuần này"
 
-    if p in ("last_month", "tháng trước", "thang truoc"):
+    if p in ("last_7_days", "7 ngày qua", "7 ngày gần đây", "7 ngay qua"):
+        start_7d = today - datetime.timedelta(days=6)
+        return start_7d.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "7 ngày qua"
+
+    if p in ("last_30_days", "30 ngày qua", "30 ngày gần đây", "30 ngay qua"):
+        start_30d = today - datetime.timedelta(days=29)
+        return start_30d.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), "30 ngày qua"
+
+    if p in ("month_to_date", "từ đầu tháng đến giờ", "đầu tháng", "tu dau thang den gio", "dau thang"):
+        first_day = today.replace(day=1)
+        return first_day.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), f"từ đầu tháng đến nay ({today.strftime('%m/%Y')})"
+
+    if p in ("month_end", "cuối tháng", "cuoi thang"):
+        _, last_day = calendar.monthrange(today.year, today.month)
+        start_end_phase = today.replace(day=max(1, last_day - 7))
+        return start_end_phase.strftime("%Y-%m-%d"), f"{today.year:04d}-{today.month:02d}-{last_day:02d}", f"cuối tháng ({today.strftime('%m/%Y')})"
+
+    if p in ("last_month", "tháng trước", "thang truoc", "tháng vừa rồi", "thang vua roi", "tháng đó", "thang do"):
         first_this_month = today.replace(day=1)
         last_day_prev = first_this_month - datetime.timedelta(days=1)
         start_prev = last_day_prev.replace(day=1)
         return start_prev.strftime("%Y-%m-%d"), last_day_prev.strftime("%Y-%m-%d"), f"tháng trước ({last_day_prev.strftime('%m/%Y')})"
 
-    if p in ("next_month", "tháng sau", "thang sau", "tháng tới", "thang toi"):
+    if p in ("last_3_months", "3 tháng gần đây", "3 thang gan day", "ba tháng gần đây"):
+        m_start = today.month - 2
+        y_start = today.year
+        if m_start <= 0:
+            m_start += 12
+            y_start -= 1
+        start_3m = datetime.date(y_start, m_start, 1)
+        return start_3m.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), f"3 tháng gần đây ({m_start:02d}/{y_start} - {today.strftime('%m/%Y')})"
+
+    if p in ("this_quarter", "quý này", "quy nay"):
+        curr_q = (today.month - 1) // 3 + 1
+        start_m = (curr_q - 1) * 3 + 1
+        end_m = start_m + 2
+        _, last_d = calendar.monthrange(today.year, end_m)
+        return f"{today.year:04d}-{start_m:02d}-01", f"{today.year:04d}-{end_m:02d}-{last_d:02d}", f"quý {curr_q}/{today.year}"
+
+    if p in ("last_quarter", "quý trước", "quy truoc"):
+        curr_q = (today.month - 1) // 3 + 1
+        prev_q = curr_q - 1 if curr_q > 1 else 4
+        prev_y = today.year if curr_q > 1 else today.year - 1
+        start_m = (prev_q - 1) * 3 + 1
+        end_m = start_m + 2
+        _, last_d = calendar.monthrange(prev_y, end_m)
+        return f"{prev_y:04d}-{start_m:02d}-01", f"{prev_y:04d}-{end_m:02d}-{last_d:02d}", f"quý {prev_q}/{prev_y}"
+
+    if p in ("this_year", "năm nay", "nam nay"):
+        return f"{today.year:04d}-01-01", f"{today.year:04d}-12-31", f"năm {today.year}"
+
+    if p in ("last_year", "năm ngoái", "nam ngoai", "năm trước", "nam truoc"):
+        prev_y = today.year - 1
+        return f"{prev_y:04d}-01-01", f"{prev_y:04d}-12-31", f"năm ngoái ({prev_y})"
+
+    if p in ("next_month", "tháng sau", "thang sau", "tháng tới", "thang toi", "tháng tiếp", "thang tiep"):
         if today.month == 12:
             next_y, next_m = today.year + 1, 1
         else:
@@ -275,7 +330,7 @@ async def handle_get_wallets(user_id: int, wallet_name: Optional[str] = None, **
                 return ToolResult(
                     success=True,
                     data={"wallets": [target], "total_balance": total_balance, "target_wallet": target},
-                    message=f"Số dư trong '{target['wallet_name']}' của đạo hữu hiện còn {target['balance']:,.0f} VNĐ."
+                    message=f"Số dư trong '{target['wallet_name']}' của Ký Chủ hiện còn {target['balance']:,.0f} VNĐ."
                 )
 
         top_wallet = max(wallets, key=lambda w: w["balance"]) if wallets else None
@@ -284,7 +339,7 @@ async def handle_get_wallets(user_id: int, wallet_name: Optional[str] = None, **
         return ToolResult(
             success=True,
             data={"wallets": wallets, "total_balance": total_balance, "top_wallet": top_wallet},
-            message=f"Đạo hữu hiện có {len(wallets)} Túi Càn Khôn, tổng số dư là {total_balance:,.0f} VNĐ.{top_msg}"
+            message=f"Ký Chủ hiện có {len(wallets)} Túi Càn Khôn, tổng số dư là {total_balance:,.0f} VNĐ.{top_msg}"
         )
 
 
@@ -308,7 +363,7 @@ async def handle_create_wallet(user_id: int, wallet_name: str, balance: float = 
             (user_id, clean_name)
         ).fetchone()
         if existing:
-            return ToolResult(success=False, error=f"Túi Càn Khôn '{clean_name}' đã tồn tại trong sổ của đạo hữu.")
+            return ToolResult(success=False, error=f"Túi Càn Khôn '{clean_name}' đã tồn tại trong sổ của Ký Chủ.")
 
         conn.execute(
             "INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, ?, ?, ?)",
@@ -374,7 +429,7 @@ async def handle_delete_wallet(user_id: int, wallet_id: Optional[int] = None, wa
     with main.get_db() as conn:
         all_w = conn.execute("SELECT id, wallet_name, balance FROM wallets WHERE user_id = ?", (user_id,)).fetchall()
         if len(all_w) <= 1:
-            return ToolResult(success=False, error="Đạo hữu chỉ còn lại 1 Túi Càn Khôn duy nhất, không thể xóa bỏ.")
+            return ToolResult(success=False, error="Ký Chủ chỉ còn lại 1 Túi Càn Khôn duy nhất, không thể xóa bỏ.")
 
         target = None
         if wallet_id:
@@ -400,10 +455,18 @@ async def handle_delete_wallet(user_id: int, wallet_id: Optional[int] = None, wa
 
         conn.execute("DELETE FROM wallets WHERE id = ? AND user_id = ?", (target["id"], user_id))
 
+        # Post-action DB verification
+        verify_del = conn.execute("SELECT id FROM wallets WHERE id = ? AND user_id = ?", (target["id"], user_id)).fetchone()
+        if verify_del:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Túi Càn Khôn #{target['id']} vẫn còn tồn tại."
+            )
+
     return ToolResult(
         success=True,
         data={"deleted_wallet_id": target["id"], "deleted_wallet_name": target["wallet_name"]},
-        message=f"Đã xóa vĩnh viễn Túi Càn Khôn '{target['wallet_name']}' khỏi tiên phủ của đạo hữu."
+        message=f"Đã xóa vĩnh viễn Túi Càn Khôn '{target['wallet_name']}' khỏi tiên phủ của Ký Chủ."
     )
 
 
@@ -425,7 +488,7 @@ async def handle_transfer_money(
     with main.get_db() as conn:
         all_wallets = conn.execute("SELECT id, wallet_name, balance FROM wallets WHERE user_id = ?", (user_id,)).fetchall()
         if len(all_wallets) < 2:
-            return ToolResult(success=False, error="Đạo hữu cần có ít nhất 2 Túi Càn Khôn để thực hiện chuyển tiền.")
+            return ToolResult(success=False, error="Ký Chủ cần có ít nhất 2 Túi Càn Khôn để thực hiện chuyển tiền.")
 
         # Tìm from_wallet
         w_from = None
@@ -460,7 +523,7 @@ async def handle_transfer_money(
         if w_from["balance"] < amount:
             return ToolResult(
                 success=False,
-                error=f"Số dư {w_from['wallet_name']} không đủ (Còn {w_from['balance']:,.0f} VNĐ). Đạo hữu có muốn thử lại với số tiền tối đa {w_from['balance']:,.0f} VNĐ không?"
+                error=f"Số dư {w_from['wallet_name']} không đủ (Còn {w_from['balance']:,.0f} VNĐ). Ký Chủ có muốn thử lại với số tiền tối đa {w_from['balance']:,.0f} VNĐ không?"
             )
 
         body = main.TransferBody(
@@ -496,7 +559,7 @@ async def handle_get_categories(user_id: int, **kwargs) -> ToolResult:
         return ToolResult(
             success=True,
             data={"categories": cats, "expense_categories": exp_cats, "income_categories": inc_cats, "count": len(cats)},
-            message=f"Đạo hữu có {len(cats)} danh mục thu chi ({len(exp_cats)} khoản chi, {len(inc_cats)} khoản thu)."
+            message=f"Ký Chủ có {len(cats)} danh mục thu chi ({len(exp_cats)} khoản chi, {len(inc_cats)} khoản thu)."
         )
 
 
@@ -601,6 +664,14 @@ async def handle_delete_category(
         # Xóa hoặc chuyển giao dịch sang danh mục khác
         conn.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat["id"], user_id))
 
+        # Post-action DB verification
+        verify_del = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?", (cat["id"], user_id)).fetchone()
+        if verify_del:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Danh mục #{cat['id']} vẫn còn tồn tại."
+            )
+
     return ToolResult(
         success=True,
         data={"deleted_category_id": cat["id"], "deleted_category_name": cat["category_name"]},
@@ -631,7 +702,7 @@ async def handle_get_recent_transactions(user_id: int, limit: int = 5, **kwargs)
         return ToolResult(
             success=True,
             data={"transactions": txns, "count": len(txns)},
-            message=f"Tìm thấy {len(txns)} giao dịch gần nhất của đạo hữu."
+            message=f"Tìm thấy {len(txns)} giao dịch gần nhất của Ký Chủ."
         )
 
 
@@ -672,6 +743,10 @@ async def handle_search_transactions(
         if max_amount is not None and float(max_amount) > 0:
             where_clauses.append("t.amount <= ?")
             params.append(float(max_amount))
+        if not txn_type and kwargs.get("transaction_type"):
+            txn_type = str(kwargs.get("transaction_type")).upper()
+        elif txn_type:
+            txn_type = str(txn_type).upper()
         if txn_type in ("INCOME", "EXPENSE"):
             where_clauses.append("t.transaction_type = ?")
             params.append(txn_type)
@@ -693,7 +768,7 @@ async def handle_search_transactions(
         if not txns:
             return ToolResult(
                 success=True,
-                data={"results": [], "count": 0, "time_frame": time_frame},
+                data={"results": [], "transactions": [], "count": 0, "time_frame": time_frame},
                 message="Khí Linh đã tra soát sổ sách nhưng không tìm thấy giao dịch nào phù hợp với yêu cầu."
             )
 
@@ -702,7 +777,7 @@ async def handle_search_transactions(
         sample_str = "; ".join([f"{t['transaction_date']}: {t['note']} ({t['amount']:,.0f}đ)" for t in sample])
         return ToolResult(
             success=True,
-            data={"results": txns, "count": len(txns), "total_amount": total_val, "time_frame": time_frame},
+            data={"results": txns, "transactions": txns, "count": len(txns), "total_amount": total_val, "time_frame": time_frame},
             message=f"Tìm thấy {len(txns)} giao dịch phù hợp (Tổng số tiền: {total_val:,.0f} VNĐ). Tiêu biểu: {sample_str}."
         )
 
@@ -941,6 +1016,14 @@ async def handle_delete_transaction(user_id: int, transaction_id: int, **kwargs)
 
         conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (transaction_id, user_id))
 
+        # Post-action DB verification
+        verify_del = conn.execute("SELECT id FROM transactions WHERE id = ? AND user_id = ?", (transaction_id, user_id)).fetchone()
+        if verify_del:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Giao dịch #{transaction_id} vẫn còn tồn tại."
+            )
+
     return ToolResult(
         success=True,
         data={"deleted_transaction_id": transaction_id, "amount": amt, "note": txn["note"]},
@@ -1007,7 +1090,7 @@ async def handle_get_budget_status(
                 warn = " ⚠️ ĐÃ VƯỢT HẠN MỨC!" if target["is_exceeded"] else f" (Còn lại {target['remaining']:,.0f} VNĐ, đạt {target['percent']}%)"
                 return ToolResult(
                     success=True,
-                    data={"month_year": month_year, "category_budget": target, "budgets": items},
+                    data={"category_name": target["category_name"], "month_year": month_year, "category_budget": target, "budgets": items},
                     message=f"Ngân sách '{target['category_name']}' tháng {month_year}: Hạn mức {target['limit_amount']:,.0f} VNĐ, Đã chi {target['spent']:,.0f} VNĐ{warn}."
                 )
 
@@ -1017,7 +1100,7 @@ async def handle_get_budget_status(
         return ToolResult(
             success=True,
             data={"month_year": month_year, "budgets": items, "exceeded_count": exceeded_cnt},
-            message=f"Đạo hữu đã thiết lập {len(items)} hạn mức chi tiêu trong tháng {month_year}{details}{exceeded_note}." if items else f"Đạo hữu chưa thiết lập hạn mức chi tiêu nào trong tháng {month_year}."
+            message=f"Ký Chủ đã thiết lập {len(items)} hạn mức chi tiêu trong tháng {month_year}{details}{exceeded_note}." if items else f"Ký Chủ chưa thiết lập hạn mức chi tiêu nào trong tháng {month_year}."
         )
 
 
@@ -1046,16 +1129,16 @@ async def handle_create_budget(
 
     with main.get_db() as conn:
         cat_id = None
-        target_cat_name = category_name or "Ăn Uống"
+        target_cat_name = (category_name or "Ăn Uống").strip()
         if category_id:
-            cat_row = conn.execute("SELECT id, category_name FROM categories WHERE id = ? AND user_id = ?", (category_id, user_id)).fetchone()
+            cat_row = conn.execute("SELECT id, category_name FROM categories WHERE id = ? AND (user_id = ? OR user_id IS NULL)", (category_id, user_id)).fetchone()
             if cat_row:
                 cat_id = cat_row["id"]
                 target_cat_name = cat_row["category_name"]
 
         if not cat_id:
             cat_row = conn.execute(
-                "SELECT id, category_name FROM categories WHERE user_id = ? AND category_type = 'EXPENSE' AND LOWER(category_name) = LOWER(?)",
+                "SELECT id, category_name FROM categories WHERE (user_id = ? OR user_id IS NULL) AND category_type = 'EXPENSE' AND LOWER(category_name) = LOWER(?)",
                 (user_id, target_cat_name)
             ).fetchone()
             if cat_row:
@@ -1063,14 +1146,18 @@ async def handle_create_budget(
                 target_cat_name = cat_row["category_name"]
             else:
                 like_row = conn.execute(
-                    "SELECT id, category_name FROM categories WHERE user_id = ? AND category_type = 'EXPENSE' AND category_name LIKE ?",
+                    "SELECT id, category_name FROM categories WHERE (user_id = ? OR user_id IS NULL) AND category_type = 'EXPENSE' AND LOWER(category_name) LIKE LOWER(?)",
                     (user_id, f"%{target_cat_name}%")
                 ).fetchone()
                 if like_row:
                     cat_id = like_row["id"]
                     target_cat_name = like_row["category_name"]
                 else:
-                    cat_id = main.get_or_create_system_category(conn, user_id, target_cat_name, "EXPENSE", "🍕")
+                    # Principle 9: Nếu entity không tồn tại: báo không tìm thấy. KHÔNG tự tạo entity thay thế.
+                    return ToolResult(
+                        success=False,
+                        error=f"Không tìm thấy danh mục '{target_cat_name}' trong hệ thống. Ký Chủ vui lòng tạo danh mục trước hoặc chọn danh mục đã có."
+                    )
 
         existing = conn.execute(
             "SELECT id FROM budgets WHERE user_id = ? AND category_id = ? AND month_year = ?",
@@ -1089,6 +1176,17 @@ async def handle_create_budget(
                 (user_id, cat_id, limit_amount, month_year)
             )
             b_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Post-action DB verification
+        verify_row = conn.execute(
+            "SELECT id, limit_amount, month_year FROM budgets WHERE id = ? AND user_id = ?",
+            (b_id, user_id)
+        ).fetchone()
+        if not verify_row or verify_row["limit_amount"] != limit_amount:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Hạn mức #{b_id} chưa được lưu thành công vào Càn Khôn Các."
+            )
 
     return ToolResult(
         success=True,
@@ -1144,6 +1242,14 @@ async def handle_delete_budget(
 
         conn.execute("DELETE FROM budgets WHERE id = ? AND user_id = ?", (target["id"], user_id))
 
+        # Post-action DB verification
+        verify_del = conn.execute("SELECT id FROM budgets WHERE id = ? AND user_id = ?", (target["id"], user_id)).fetchone()
+        if verify_del:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Hạn mức #{target['id']} vẫn còn tồn tại trong hệ thống."
+            )
+
     return ToolResult(
         success=True,
         data={"deleted_budget_id": target["id"], "category_name": target["category_name"], "month_year": target["month_year"]},
@@ -1172,7 +1278,7 @@ async def handle_get_recurring_transactions(user_id: int, **kwargs) -> ToolResul
         return ToolResult(
             success=True,
             data={"recurring": items, "count": len(items)},
-            message=f"Đạo hữu có {len(items)} giao dịch định kỳ đang hoạt động{details}." if items else "Đạo hữu chưa có giao dịch định kỳ nào."
+            message=f"Ký Chủ có {len(items)} giao dịch định kỳ đang hoạt động{details}." if items else "Ký Chủ chưa có giao dịch định kỳ nào."
         )
 
 
@@ -1210,7 +1316,7 @@ async def handle_create_recurring_transaction(
         if not w:
             w = conn.execute("SELECT id, wallet_name FROM wallets WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,)).fetchone()
             if not w:
-                return ToolResult(success=False, error="Đạo hữu chưa có Túi Càn Khôn nào.")
+                return ToolResult(success=False, error="Ký Chủ chưa có Túi Càn Khôn nào.")
 
         # Chọn danh mục
         cat_name = category_name or ("Chi Phí Cố Định" if txn_type == "EXPENSE" else "Thu Nhập Định Kỳ")
@@ -1306,13 +1412,13 @@ async def handle_get_debts(user_id: int, debt_type: Optional[str] = None, **kwar
             return ToolResult(
                 success=True,
                 data={"debts": unsettled_borrow, "total_borrowing": i_owe},
-                message=f"Đạo hữu hiện đang nợ người khác tổng cộng {i_owe:,.0f} VNĐ qua {len(unsettled_borrow)} khoản chưa thanh toán."
+                message=f"Ký Chủ hiện đang nợ người khác tổng cộng {i_owe:,.0f} VNĐ qua {len(unsettled_borrow)} khoản chưa thanh toán."
             )
         if debt_type == "LEND":
             return ToolResult(
                 success=True,
                 data={"debts": unsettled_lend, "total_lending": they_owe},
-                message=f"Người khác hiện đang nợ đạo hữu tổng cộng {they_owe:,.0f} VNĐ qua {len(unsettled_lend)} khoản chưa thu hồi."
+                message=f"Người khác hiện đang nợ Ký Chủ tổng cộng {they_owe:,.0f} VNĐ qua {len(unsettled_lend)} khoản chưa thu hồi."
             )
 
         return ToolResult(
@@ -1325,7 +1431,7 @@ async def handle_get_debts(user_id: int, debt_type: Optional[str] = None, **kwar
                 "unsettled_borrow_count": len(unsettled_borrow),
                 "unsettled_lend_count": len(unsettled_lend)
             },
-            message=f"Sổ nợ: Đạo hữu đang nợ {i_owe:,.0f} VNĐ ({len(unsettled_borrow)} khoản) và được người khác nợ {they_owe:,.0f} VNĐ ({len(unsettled_lend)} khoản). Chênh lệch thực tế là {net:+,.0f} VNĐ."
+            message=f"Sổ nợ: Ký Chủ đang nợ {i_owe:,.0f} VNĐ ({len(unsettled_borrow)} khoản) và được người khác nợ {they_owe:,.0f} VNĐ ({len(unsettled_lend)} khoản). Chênh lệch thực tế là {net:+,.0f} VNĐ."
         )
 
 
@@ -1369,6 +1475,14 @@ async def handle_create_debt(
         """, (user_id, w_id, d_type, clean_person, amount, due_date or "", note or ""))
         debt_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
+        # Post-action DB verification
+        verify_row = conn.execute("SELECT id, amount, is_settled FROM debts WHERE id = ? AND user_id = ?", (debt_id, user_id)).fetchone()
+        if not verify_row:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Khoản nợ #{debt_id} chưa được ghi nhận vào sổ nợ."
+            )
+
     label = "cho vay" if d_type == "LEND" else "đi vay"
     return ToolResult(
         success=True,
@@ -1407,6 +1521,14 @@ async def handle_update_debt(
             (new_amt, new_due, new_note, d["id"], user_id)
         )
 
+        # Post-action DB verification
+        verify_row = conn.execute("SELECT amount FROM debts WHERE id = ? AND user_id = ?", (d["id"], user_id)).fetchone()
+        if not verify_row or verify_row["amount"] != new_amt:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Khoản nợ #{d['id']} chưa được cập nhật trong sổ nợ."
+            )
+
     return ToolResult(
         success=True,
         data={"debt_id": d["id"], "person_name": d["person_name"], "amount": new_amt, "due_date": new_due},
@@ -1439,6 +1561,14 @@ async def handle_settle_debt(
 
         conn.execute("UPDATE debts SET is_settled = 1 WHERE id = ? AND user_id = ?", (d["id"], user_id))
 
+        # Post-action DB verification
+        verify_row = conn.execute("SELECT is_settled FROM debts WHERE id = ? AND user_id = ?", (d["id"], user_id)).fetchone()
+        if not verify_row or not verify_row["is_settled"]:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Khoản nợ #{d['id']} chưa được chuyển sang trạng thái tất toán."
+            )
+
     action_label = "thu hồi nợ từ" if d["debt_type"] == "LEND" else "hoàn trả nợ cho"
     return ToolResult(
         success=True,
@@ -1461,6 +1591,14 @@ async def handle_delete_debt(user_id: int, debt_id: Optional[int] = None, person
             return ToolResult(success=False, error=f"Không tìm thấy khoản nợ của '{person_name or debt_id}' để xóa.")
 
         conn.execute("DELETE FROM debts WHERE id = ? AND user_id = ?", (d["id"], user_id))
+
+        # Post-action DB verification
+        verify_del = conn.execute("SELECT id FROM debts WHERE id = ? AND user_id = ?", (d["id"], user_id)).fetchone()
+        if verify_del:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Khoản nợ #{d['id']} vẫn còn tồn tại trong sổ nợ."
+            )
 
     return ToolResult(
         success=True,
@@ -1508,7 +1646,7 @@ async def handle_get_saving_goals(user_id: int, goal_name: Optional[str] = None,
                 "total_saved": total_saved,
                 "overall_percent": overall_pct
             },
-            message=f"Đạo hữu có {len(goals)} mục tiêu tiết kiệm, đã tích lũy {total_saved:,.0f} / {total_target:,.0f} VNĐ ({overall_pct}%)."
+            message=f"Ký Chủ có {len(goals)} mục tiêu tiết kiệm, đã tích lũy {total_saved:,.0f} / {total_target:,.0f} VNĐ ({overall_pct}%)."
         )
 
 
@@ -1596,7 +1734,7 @@ async def handle_saving_goal_deposit(
     with main.get_db() as conn:
         goals = conn.execute("SELECT id, target_name, target_amount, current_amount, is_completed FROM saving_goals WHERE user_id = ?", (user_id,)).fetchall()
         if not goals:
-            return ToolResult(success=False, error="Đạo hữu chưa có mục tiêu tiết kiệm nào. Hãy tạo mục tiêu trước.")
+            return ToolResult(success=False, error="Ký Chủ chưa có mục tiêu tiết kiệm nào. Hãy tạo mục tiêu trước.")
 
         target_goal = None
         if goal_id:
@@ -1631,7 +1769,7 @@ async def handle_saving_goal_deposit(
         if w["balance"] < amount:
             return ToolResult(
                 success=False,
-                error=f"Số dư trong {w['wallet_name']} không đủ (Còn {w['balance']:,.0f} VNĐ). Đạo hữu có muốn thử lại với số tiền tối đa {w['balance']:,.0f} VNĐ không?"
+                error=f"Số dư trong {w['wallet_name']} không đủ (Còn {w['balance']:,.0f} VNĐ). Ký Chủ có muốn thử lại với số tiền tối đa {w['balance']:,.0f} VNĐ không?"
             )
 
         body = main.SavingGoalDepositBody(
@@ -1721,6 +1859,14 @@ async def handle_delete_saving_goal(user_id: int, goal_id: Optional[int] = None,
             return ToolResult(success=False, error=f"Không tìm thấy mục tiêu tiết kiệm '{goal_name or goal_id}' để xóa.")
 
         conn.execute("DELETE FROM saving_goals WHERE id = ? AND user_id = ?", (g["id"], user_id))
+
+        # Post-action DB verification
+        verify_del = conn.execute("SELECT id FROM saving_goals WHERE id = ? AND user_id = ?", (g["id"], user_id)).fetchone()
+        if verify_del:
+            return ToolResult(
+                success=False,
+                error=f"Xác minh cơ sở dữ liệu thất bại: Mục tiêu #{g['id']} vẫn còn tồn tại."
+            )
 
     return ToolResult(
         success=True,
@@ -1820,7 +1966,7 @@ async def handle_spending_summary(user_id: int, period: Optional[str] = None, **
         """, (user_id, start_date, end_date)).fetchall()
         top_list = [dict(r) for r in top_txns]
 
-        msg = f"Trong {period_label}, đạo hữu đã chi tổng cộng {total_spent:,.0f} VNĐ qua {tx_count} giao dịch (Trung bình khoảng {daily_avg:,.0f} VNĐ/ngày)."
+        msg = f"Trong {period_label}, Ký Chủ đã chi tổng cộng {total_spent:,.0f} VNĐ qua {tx_count} giao dịch (Trung bình khoảng {daily_avg:,.0f} VNĐ/ngày)."
         if top_list:
             biggest = top_list[0]
             cat_str = f" [{biggest['category_name']}]" if biggest['category_name'] else ""
@@ -1875,7 +2021,7 @@ async def handle_spending_by_category(user_id: int, category_name: Optional[str]
                 return ToolResult(
                     success=True,
                     data={"category_name": clean_cat, "total_spent": spent, "count": cnt, "period": period_label},
-                    message=f"Trong {period_label}, đạo hữu đã chi {spent:,.0f} VNĐ cho các khoản liên quan đến '{clean_cat}' ({cnt} giao dịch)."
+                    message=f"Trong {period_label}, Ký Chủ đã chi {spent:,.0f} VNĐ cho các khoản liên quan đến '{clean_cat}' ({cnt} giao dịch)."
                 )
 
             return ToolResult(
@@ -1913,7 +2059,7 @@ async def handle_spending_by_category(user_id: int, category_name: Optional[str]
         top_msg = f" Chi nhiều nhất vào '{top['category_name']}' {top['icon']} chiếm {top['percent']}% ({top['total_spent']:,.0f} VNĐ)." if top else " Chưa phát sinh chi tiêu trong kỳ."
         return ToolResult(
             success=True,
-            data={"breakdown": items, "total_spent": total_all, "period": period_label, "top_category": top},
+            data={"categories": items, "breakdown": items, "total_spent": total_all, "period": period_label, "top_category": top},
             message=f"Cơ cấu chi tiêu {period_label}:{top_msg}"
         )
 
@@ -1971,7 +2117,7 @@ async def handle_export_reports(user_id: int, format: str = "excel", month_year:
     return ToolResult(
         success=True,
         data={"format": fmt, "month_year": m_y, "download_url": f"/api/reports/export?format={fmt}&month_year={m_y}"},
-        message=f"Đạo hữu có thể tải về sổ sách sao kê định dạng {fmt.upper()} cho tháng {m_y} tại mục Thiên Cơ Thống Kê."
+        message=f"Ký Chủ có thể tải về sổ sách sao kê định dạng {fmt.upper()} cho tháng {m_y} tại mục Thiên Cơ Thống Kê."
     )
 
 
@@ -2005,7 +2151,7 @@ async def handle_get_user_profile(user_id: int, **kwargs) -> ToolResult:
     with main.get_db() as conn:
         u = conn.execute("SELECT id, email, full_name, role, is_active, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
         if not u:
-            return ToolResult(success=False, error="Không tìm thấy thông tin đạo hữu.")
+            return ToolResult(success=False, error="Không tìm thấy thông tin Ký Chủ.")
 
         stats = conn.execute("""
             SELECT
@@ -2069,7 +2215,7 @@ async def handle_navigate_to(user_id: int, target_tab: str, **kwargs) -> ToolRes
     return ToolResult(
         success=True,
         data={"target_tab": target[0], "tab_name": target[1]},
-        message=f"Đã mở giao diện '{target[1]}' cho đạo hữu."
+        message=f"Đã mở giao diện '{target[1]}' cho Ký Chủ."
     )
 
 
@@ -2161,7 +2307,7 @@ def build_default_tool_registry() -> ToolRegistry:
     # 1. WALLET DOMAIN
     reg.register(Tool(
         name="get_wallets",
-        description="Lấy danh sách các Túi Càn Khôn (ví) và số dư hiện có của đạo hữu.",
+        description="Lấy danh sách các Túi Càn Khôn (ví) và số dư hiện có của Ký Chủ.",
         domain="wallet",
         parameters={
             "type": "object",
@@ -2265,7 +2411,7 @@ def build_default_tool_registry() -> ToolRegistry:
     # 2. CATEGORY DOMAIN
     reg.register(Tool(
         name="get_categories",
-        description="Lấy danh sách các danh mục thu chi của đạo hữu.",
+        description="Lấy danh sách các danh mục thu chi của Ký Chủ.",
         domain="category",
         parameters={"type": "object", "properties": {}},
         action_type=ToolActionType.READ,
@@ -2645,6 +2791,16 @@ def build_default_tool_registry() -> ToolRegistry:
     reg.register(Tool(
         name="get_debts",
         description="Xem sổ nợ: các khoản nợ phải trả và nợ người khác nợ mình.",
+        domain="debt",
+        parameters=debt_tool.parameters,
+        action_type=debt_tool.action_type,
+        risk_level=debt_tool.risk_level,
+        requires_confirmation=debt_tool.requires_confirmation,
+        handler=handle_get_debts
+    ))
+    reg.register(Tool(
+        name="debt_list",
+        description="Xem danh sách các khoản nợ phải trả và nợ người khác nợ mình.",
         domain="debt",
         parameters=debt_tool.parameters,
         action_type=debt_tool.action_type,

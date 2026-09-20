@@ -584,7 +584,7 @@ class TestFullSystemAgent(unittest.TestCase):
         resp_text = data.get("response") or data.get("text", "")
         self.assertIn("Momo Cá Nhân", resp_text)
         self.assertIn("Momo Công Việc", resp_text)
-        self.assertIn("Ký chủ muốn thao tác với ví nào?", resp_text)
+        self.assertTrue(any(k in resp_text for k in ["muốn thao tác với ví nào?", "Tiêu Dao muốn thao tác với ví nào?", "Ký chủ muốn thao tác với ví nào?"]))
 
         # Đảm bảo KHÔNG có ví nào bị xóa trong database
         with main.get_db() as conn:
