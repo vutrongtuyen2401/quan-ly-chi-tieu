@@ -8,7 +8,7 @@ env/
 
 # Database
 # Un-comment if you don't want to upload test database
-# app.db
+app.db
 
 # Environment variables
 .env
