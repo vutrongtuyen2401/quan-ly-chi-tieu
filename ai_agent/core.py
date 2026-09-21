@@ -19,7 +19,7 @@ import re
 import uuid
 
 from .provider import AIProvider
-from .tools import ToolRegistry, Tool, ToolResult, RiskLevel, ToolActionType, OperationType, AgentMode, _match_wallet_name
+from .tools import ToolRegistry, Tool, ToolResult, RiskLevel, ToolActionType, OperationType, AgentMode, _match_wallet_name, resolve_category_icon
 from .parser import VietnameseFinancialParser
 from .knowledge.rag import KnowledgeRAG
 from .knowledge.builder import remove_accents
@@ -1535,8 +1535,23 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
                             prompt_text = f"{user_name} muốn chuyển tiền từ ví nào?"
                         elif next_miss == "to_wallet_name":
                             prompt_text = f"{user_name} muốn chuyển tiền sang ví nào?"
+                        elif next_miss == "category_type":
+                            c_n = pending['args'].get('category_name')
+                            if c_n:
+                                prompt_text = f"Danh mục '{c_n}' thuộc Thu hay Chi?"
+                            else:
+                                prompt_text = f"{user_name} muốn thêm danh mục Thu hay Chi?"
                         elif next_miss == "category_name":
-                            prompt_text = f"{user_name} muốn đặt hạn mức chi tiêu cho danh mục nào (ví dụ: Ăn Uống, Mua Sắm, Di Chuyển...)?"
+                            if tool_n == "create_category":
+                                prompt_text = f"{user_name} muốn đặt tên danh mục là gì?"
+                            elif tool_n == "delete_category":
+                                prompt_text = f"{user_name} muốn xóa danh mục nào?"
+                            elif tool_n == "create_budget":
+                                prompt_text = f"{user_name} muốn đặt hạn mức chi tiêu cho danh mục nào (ví dụ: Ăn Uống, Mua Sắm, Di Chuyển...)?"
+                            else:
+                                prompt_text = f"{user_name} muốn thao tác với danh mục nào?"
+                        elif next_miss == "category_selection":
+                            prompt_text = f"{user_name} muốn chọn danh mục nào để xóa?"
                         elif next_miss == "limit_amount":
                             prompt_text = f"{user_name} muốn đặt hạn mức cho danh mục '{pending['args'].get('category_name', '')}' là bao nhiêu Linh Thạch?"
                         elif next_miss == "debt_selection":
@@ -1604,6 +1619,7 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
                     "args": tool_args,
                     "status": "AWAITING_PARAM",
                     "missing_param": planned_action.get("missing_param"),
+                    "ambiguous_candidates": planned_action.get("ambiguous_candidates"),
                     "created_at": datetime.datetime.now().isoformat()
                 }
                 self.set_pending_action(user_id, pending_act)
@@ -1718,6 +1734,105 @@ Câu hỏi của {user_name}: {clean_msg}"""
         # 3. THAO TÁC CÓ RỦI RO / BIẾN ĐỘNG DỮ LIỆU -> BẮT BUỘC XÁC NHẬN
         # ─────────────────────────────────────────────────────────────
         if tool.requires_confirmation:
+            # Kiểm tra thiếu tham số cho create_category
+            if tool.name == "create_category":
+                c_name = tool_args.get("category_name")
+                c_type = tool_args.get("category_type")
+
+                # Case 1: Thiếu cả Thu/Chi và Tên danh mục (e.g. "thêm cho tôi 1 mục thu chi")
+                if not c_type and not c_name:
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "category_type",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    return AgentResponse(
+                        text=f"{user_name} muốn thêm danh mục Thu hay Chi?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
+                # Case 2: Đã có Tên nhưng thiếu Thu/Chi (e.g. "thêm danh mục Ăn uống")
+                if not c_type:
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "category_type",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    return AgentResponse(
+                        text=f"Danh mục '{c_name}' thuộc Thu hay Chi?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
+                # Case 3: Đã có Thu/Chi nhưng thiếu Tên (e.g. "thêm cho ta một danh mục Chi")
+                if not c_name:
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "category_name",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    return AgentResponse(
+                        text=f"{user_name} muốn đặt tên danh mục là gì?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
+                # Case 4: Đủ thông tin -> tự động gán icon nếu chưa có hoặc mặc định
+                if not tool_args.get("icon") or tool_args["icon"] == "📦":
+                    tool_args["icon"] = resolve_category_icon(c_name, c_type)
+
+            # Kiểm tra thiếu tham số cho delete_category
+            if tool.name == "delete_category":
+                if planned_action and planned_action.get("missing_param") == "category_selection":
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "category_selection",
+                        "ambiguous_candidates": planned_action.get("ambiguous_candidates"),
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    return AgentResponse(
+                        text=planned_action.get("clarification_message", f"{user_name} muốn xóa danh mục nào?"),
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+                if not tool_args.get("category_name") and not tool_args.get("category_id"):
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "category_name",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    return AgentResponse(
+                        text=f"{user_name} muốn xóa danh mục nào?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
             # Kiểm tra thiếu tham số cho create_budget
             if tool.name == "create_budget":
                 if not tool_args.get("category_name"):
@@ -1812,7 +1927,12 @@ Câu hỏi của {user_name}: {clean_msg}"""
 
             # Kiểm tra nếu thiếu tham số ghi khoản chi (amount, note/category)
             if tool.name == "create_expense":
-                if not tool_args.get("amount") or float(tool_args.get("amount", 0)) <= 0:
+                if tool_args.get("amount") is not None and float(tool_args.get("amount", 0)) <= 0:
+                    return AgentResponse(
+                        text="Số tiền phải lớn hơn 0!",
+                        state=AgentState.IDLE
+                    )
+                if not tool_args.get("amount"):
                     pending_act = {
                         "tool_name": tool_name,
                         "args": tool_args,
@@ -1849,7 +1969,12 @@ Câu hỏi của {user_name}: {clean_msg}"""
 
             # Kiểm tra nếu thiếu tham số ghi khoản thu (amount, note/category)
             if tool.name == "create_income":
-                if not tool_args.get("amount") or float(tool_args.get("amount", 0)) <= 0:
+                if tool_args.get("amount") is not None and float(tool_args.get("amount", 0)) <= 0:
+                    return AgentResponse(
+                        text="Số tiền phải lớn hơn 0!",
+                        state=AgentState.IDLE
+                    )
+                if not tool_args.get("amount"):
                     pending_act = {
                         "tool_name": tool_name,
                         "args": tool_args,
@@ -2314,20 +2439,88 @@ Câu hỏi của {user_name}: {clean_msg}"""
             }
 
         # C. CATEGORY DOMAIN
-        if any(kw in raw for kw in ["thêm danh mục", "tạo danh mục", "mở danh mục"]):
-            clean_c_name = message
-            for kw in ["thêm danh mục", "tạo danh mục", "mở danh mục", "danh mục", "mục"]:
-                clean_c_name = re.sub(rf"\b{re.escape(kw)}\b", "", clean_c_name, flags=re.IGNORECASE)
-            clean_c_name = clean_c_name.strip(" .,-") or "Danh Mục Mới"
-            c_type = "INCOME" if any(kw in raw for kw in ["thu", "lương", "thưởng"]) else "EXPENSE"
-            return {"tool": "create_category", "arguments": {"category_name": clean_c_name, "category_type": c_type}}
+        if VietnameseFinancialParser.is_category_create_intent(message):
+            cat_args = VietnameseFinancialParser.extract_category_creation_args(message)
+            c_name = cat_args.get("category_name")
+            c_type = cat_args.get("category_type")
+            c_icon = resolve_category_icon(c_name, c_type) if (c_name or c_type) else "📦"
 
-        if any(kw in raw for kw in ["xóa danh mục", "hủy danh mục"]):
-            clean_c_name = message
-            for kw in ["xóa danh mục", "xoa danh muc", "hủy danh mục", "huy danh muc", "danh mục", "mục"]:
-                clean_c_name = re.sub(rf"\b{re.escape(kw)}\b", "", clean_c_name, flags=re.IGNORECASE)
-            clean_c_name = clean_c_name.strip(" .,-")
-            return {"tool": "delete_category", "arguments": {"category_name": cat or clean_c_name}}
+            if not c_type and not c_name:
+                return {
+                    "tool": "create_category",
+                    "arguments": {"category_name": None, "category_type": None, "icon": "📦"},
+                    "missing_param": "category_type",
+                    "clarification_message": f"{user_name} muốn thêm danh mục Thu hay Chi?"
+                }
+            elif c_name and not c_type:
+                return {
+                    "tool": "create_category",
+                    "arguments": {"category_name": c_name, "category_type": None, "icon": c_icon},
+                    "missing_param": "category_type",
+                    "clarification_message": f"Danh mục '{c_name}' thuộc Thu hay Chi?"
+                }
+            elif c_type and not c_name:
+                return {
+                    "tool": "create_category",
+                    "arguments": {"category_name": None, "category_type": c_type, "icon": c_icon},
+                    "missing_param": "category_name",
+                    "clarification_message": f"{user_name} muốn đặt tên danh mục là gì?"
+                }
+            else:
+                return {
+                    "tool": "create_category",
+                    "arguments": {"category_name": c_name, "category_type": c_type, "icon": c_icon}
+                }
+
+        if VietnameseFinancialParser.is_category_delete_intent(message) or any(kw in raw for kw in ["xóa danh mục", "hủy danh mục"]):
+            del_args = VietnameseFinancialParser.extract_category_delete_args(message)
+            del_name = del_args.get("category_name") or cat
+            if not del_name:
+                return {
+                    "tool": "delete_category",
+                    "arguments": {"category_name": None},
+                    "missing_param": "category_name",
+                    "clarification_message": f"{user_name} muốn xóa danh mục nào?"
+                }
+
+            import main
+            with main.get_db() as conn:
+                user_cats = [dict(r) for r in conn.execute(
+                    "SELECT id, category_name, category_type, icon FROM categories WHERE user_id = ?",
+                    (user_id,)
+                ).fetchall()]
+
+            clean_del = del_name.strip().lower()
+            exact = [c for c in user_cats if c["category_name"].lower() == clean_del]
+            if exact:
+                matched_cats = exact
+            else:
+                matched_cats = [c for c in user_cats if clean_del in c["category_name"].lower()]
+
+            if not matched_cats:
+                return {
+                    "intent": "CLARIFICATION_NEEDED",
+                    "clarification_message": f"Khí Linh không tìm thấy danh mục nào tên '{del_name}' trong tiên phủ để xóa."
+                }
+            elif len(matched_cats) == 1:
+                cat_item = matched_cats[0]
+                return {
+                    "tool": "delete_category",
+                    "arguments": {
+                        "category_id": cat_item["id"],
+                        "category_name": cat_item["category_name"],
+                        "category_type": cat_item["category_type"]
+                    }
+                }
+            else:
+                options_str = "\n".join(f"{i+1}. {c['category_name']} ({'Khoản Thu' if c['category_type'] == 'INCOME' else 'Khoản Chi'})" for i, c in enumerate(matched_cats))
+                return {
+                    "tool": "delete_category",
+                    "arguments": {"category_name": del_name},
+                    "missing_param": "category_selection",
+                    "ambiguous_candidates": matched_cats,
+                    "clarification_message": f"Có {len(matched_cats)} danh mục phù hợp với '{del_name}':\n{options_str}\n\n{user_name} muốn xóa danh mục nào?"
+                }
 
         # D. BUDGET DOMAIN
         if VietnameseFinancialParser.is_budget_delete_intent(message) or any(kw in raw for kw in ["xóa ngân sách", "hủy ngân sách", "xóa hạn mức"]):
@@ -2599,8 +2792,8 @@ Câu hỏi của {user_name}: {clean_msg}"""
             is_income_trigger = True
             is_expense_trigger = False
 
-        # QUAN TRỌNG: Các hành động Xóa, Hủy, Gỡ, Bỏ, Sửa, Đổi Tuyệt đối KHÔNG biến thành Create Expense hay Create Income!
-        if has_destructive_verb or has_update_verb:
+        # QUAN TRỌNG: Các hành động Xóa, Hủy, Gỡ, Bỏ, Sửa, Đổi hoặc Tạo/Xóa Danh Mục Tuyệt đối KHÔNG biến thành Create Expense hay Create Income!
+        if has_destructive_verb or has_update_verb or VietnameseFinancialParser.is_category_create_intent(message) or VietnameseFinancialParser.is_category_delete_intent(message):
             is_expense_trigger = False
             is_income_trigger = False
 
@@ -2783,6 +2976,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
             "limit_amount": ["amount", "limit", "budget", "han_muc", "so_tien"],
             "target_amount": ["amount", "target", "muc_tieu", "so_tien", "goal_amount"],
             "category_name": ["category", "cat", "danh_muc", "ten_danh_muc", "loai"],
+            "category_type": ["type", "cat_type", "kind", "loai_danh_muc"],
             "goal_name": ["target_name", "goal", "muc_tieu", "ten_muc_tieu"],
             "target_name": ["goal_name", "goal", "muc_tieu", "ten_muc_tieu", "name"],
             "from_wallet_name": ["from_wallet", "source_wallet", "from", "vi_nguon", "nguon"],
@@ -2896,6 +3090,23 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                     args["to_wallet_name"] = tw
             if not args.get("note"):
                 args["note"] = raw_message.strip()
+
+        elif tool.name == "create_category":
+            if raw_message:
+                ext = VietnameseFinancialParser.extract_category_creation_args(raw_message)
+                if not args.get("category_name") and ext.get("category_name"):
+                    args["category_name"] = ext["category_name"]
+                if not args.get("category_type") and ext.get("category_type"):
+                    args["category_type"] = ext["category_type"]
+            if args.get("category_name") and args.get("category_type"):
+                if not args.get("icon") or args.get("icon") == "📦":
+                    args["icon"] = resolve_category_icon(args["category_name"], args["category_type"])
+
+        elif tool.name == "delete_category":
+            if not args.get("category_name") and raw_message:
+                ext = VietnameseFinancialParser.extract_category_delete_args(raw_message)
+                if ext.get("category_name"):
+                    args["category_name"] = ext["category_name"]
 
         return args
 
@@ -3199,6 +3410,22 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
         elif tool_name in ("delete_budget", "update_budget"):
             if not args.get("budget_id") and not args.get("category_name"):
                 return False, "budget_selection"
+            return True, None
+
+        elif tool_name == "create_category":
+            c_type = args.get("category_type")
+            c_name = args.get("category_name")
+            if not c_type:
+                return False, "category_type"
+            if not c_name or not str(c_name).strip():
+                return False, "category_name"
+            if not args.get("icon") or args.get("icon") == "📦":
+                args["icon"] = resolve_category_icon(c_name, c_type)
+            return True, None
+
+        elif tool_name == "delete_category":
+            if not args.get("category_id") and not args.get("category_name"):
+                return False, "category_name"
             return True, None
 
         return True, None
@@ -3506,6 +3733,81 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                 cat = clean_c.title() if clean_c else None
             if cat:
                 args["category_name"] = cat
+        # Category creation follow-up
+        if tool_name == "create_category":
+            raw_t = text.strip()
+            lower_t = raw_t.lower()
+
+            is_chi = any(w in lower_t for w in ["chi", "chi tiêu", "khoản chi", "khoan chi", "expense"]) and not any(w in lower_t for w in ["thu chi", "thu/chi", "thu và chi"])
+            is_thu = any(w in lower_t for w in ["thu", "thu nhập", "khoản thu", "khoan thu", "income"]) and not any(w in lower_t for w in ["thu chi", "thu/chi", "thu và chi"])
+
+            updated = False
+            if is_chi:
+                args["category_type"] = "EXPENSE"
+                if missing == "category_type":
+                    pending["missing_param"] = None
+                updated = True
+            elif is_thu:
+                args["category_type"] = "INCOME"
+                if missing == "category_type":
+                    pending["missing_param"] = None
+                updated = True
+
+            name_cand = raw_t
+            for stop in [
+                "danh mục", "danh muc", "mục", "muc", "tên là", "ten la", "đặt là", "dat la",
+                "tên", "ten", "loại chi", "loai chi", "loại thu", "loai thu", "khoản chi", "khoan chi",
+                "khoản thu", "khoan thu", "chi tiêu", "chi tieu", "thu nhập", "thu nhap"
+            ]:
+                name_cand = re.sub(rf"\b{re.escape(stop)}\b", "", name_cand, flags=re.IGNORECASE).strip(" .,-")
+
+            if name_cand and name_cand.lower() not in ["thu", "chi", "thu chi", "có", "xác nhận", "hủy", "thì", "mới", "nào"]:
+                args["category_name"] = name_cand.title()
+                if missing == "category_name":
+                    pending["missing_param"] = None
+                updated = True
+
+            if updated:
+                if args.get("category_name") and args.get("category_type"):
+                    if not args.get("icon") or args.get("icon") == "📦":
+                        args["icon"] = resolve_category_icon(args["category_name"], args["category_type"])
+                    pending["missing_param"] = None
+                elif not args.get("category_type"):
+                    pending["missing_param"] = "category_type"
+                elif not args.get("category_name"):
+                    pending["missing_param"] = "category_name"
+                return True, ""
+
+        # Category delete follow-up
+        if tool_name == "delete_category":
+            idx = VietnameseFinancialParser.extract_selection_index(text)
+            amb_list = pending.get("ambiguous_candidates")
+            if idx is not None and amb_list and 1 <= idx <= len(amb_list):
+                selected = amb_list[idx - 1]
+                args["category_id"] = selected["id"]
+                args["category_name"] = selected["category_name"]
+                args["category_type"] = selected.get("category_type")
+                pending["missing_param"] = None
+                pending["ambiguous_candidates"] = None
+                return True, ""
+
+            if amb_list:
+                is_chi = "chi" in text.lower()
+                is_thu = "thu" in text.lower()
+                filtered = [c for c in amb_list if (is_chi and c["category_type"] == "EXPENSE") or (is_thu and c["category_type"] == "INCOME")]
+                if len(filtered) == 1:
+                    args["category_id"] = filtered[0]["id"]
+                    args["category_name"] = filtered[0]["category_name"]
+                    args["category_type"] = filtered[0]["category_type"]
+                    pending["missing_param"] = None
+                    pending["ambiguous_candidates"] = None
+                    return True, ""
+
+            clean_name = text.strip()
+            for stop in ["danh mục", "mục", "xóa", "hủy", "bỏ"]:
+                clean_name = re.sub(rf"\b{re.escape(stop)}\b", "", clean_name, flags=re.IGNORECASE).strip(" .,-")
+            if clean_name and len(clean_name) >= 2:
+                args["category_name"] = clean_name
                 pending["missing_param"] = None
                 return True, ""
 
@@ -3762,5 +4064,85 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                         args["note"] = target_txn.get("note") or "Khoản chi tiêu / Thu nhập"
                 else:
                     return f"Khí Linh không tìm thấy giao dịch nào gần đây của {user_name} để thao tác."
+
+        # G. CATEGORY RESOLUTION (CREATE_CATEGORY & DELETE_CATEGORY)
+        elif tool_name == "create_category":
+            c_name = args.get("category_name")
+            c_type = args.get("category_type")
+            if c_name and c_type:
+                if not args.get("icon") or args.get("icon") == "📦":
+                    args["icon"] = resolve_category_icon(c_name, c_type)
+                with main.get_db() as conn:
+                    existing = conn.execute(
+                        "SELECT id, category_name, category_type FROM categories WHERE (user_id = ? OR user_id IS NULL) AND LOWER(category_name) = LOWER(?) AND category_type = ?",
+                        (user_id, c_name.strip(), c_type)
+                    ).fetchone()
+                    if existing:
+                        type_label = "Chi tiêu" if c_type == "EXPENSE" else "Thu nhập"
+                        return f"Danh mục '{existing['category_name']}' ({type_label}) đã tồn tại trong hệ thống của {user_name}."
+
+        elif tool_name == "delete_category":
+            c_name = args.get("category_name")
+            c_id = args.get("category_id")
+            with main.get_db() as conn:
+                rows = conn.execute(
+                    "SELECT id, category_name, category_type, icon FROM categories WHERE user_id = ?",
+                    (user_id,)
+                ).fetchall()
+                user_cats = [dict(r) for r in rows]
+
+            if not user_cats and not c_id:
+                with main.get_db() as conn:
+                    global_cats = conn.execute(
+                        "SELECT id, category_name, category_type FROM categories WHERE user_id IS NULL"
+                    ).fetchall()
+                matching_global = [gc for gc in global_cats if c_name and c_name.strip().lower() in gc["category_name"].lower()]
+                if matching_global:
+                    return f"Danh mục '{matching_global[0]['category_name']}' là danh mục mặc định của hệ thống, không thể xóa."
+                return f"{user_name} chưa tạo danh mục tùy chỉnh nào trong hệ thống để xóa."
+
+            if c_id:
+                target = next((c for c in user_cats if c["id"] == c_id), None)
+                if not target:
+                    return f"Không tìm thấy danh mục #{c_id} trong các danh mục tùy chỉnh của {user_name}."
+                args["category_id"] = target["id"]
+                args["category_name"] = target["category_name"]
+                args["category_type"] = target["category_type"]
+                return None
+
+            if c_name and str(c_name).strip():
+                clean_n = c_name.strip().lower()
+                exact = [c for c in user_cats if c["category_name"].lower() == clean_n]
+                if len(exact) == 1:
+                    matched = exact
+                elif len(exact) > 1:
+                    matched = exact
+                else:
+                    matched = [c for c in user_cats if clean_n in c["category_name"].lower()]
+            else:
+                matched = user_cats
+
+            if len(matched) == 0:
+                with main.get_db() as conn:
+                    global_cats = conn.execute(
+                        "SELECT id, category_name, category_type FROM categories WHERE user_id IS NULL"
+                    ).fetchall()
+                matching_global = [gc for gc in global_cats if c_name and c_name.strip().lower() in gc["category_name"].lower()]
+                if matching_global:
+                    return f"Danh mục '{matching_global[0]['category_name']}' là danh mục mặc định của hệ thống, không thể xóa."
+                return f"Không tìm thấy danh mục nào có tên '{c_name}' trong danh sách danh mục của {user_name}."
+            elif len(matched) == 1:
+                args["category_id"] = matched[0]["id"]
+                args["category_name"] = matched[0]["category_name"]
+                args["category_type"] = matched[0]["category_type"]
+                return None
+            else:
+                args["_ambiguous_categories"] = matched
+                list_str = "\n".join(f"{i+1}. {c['category_name']} ({'Chi tiêu' if c['category_type'] == 'EXPENSE' else 'Thu nhập'})" for i, c in enumerate(matched))
+                return (
+                    f"Có {len(matched)} danh mục phù hợp với '{c_name}':\n"
+                    f"{list_str}\n\n"
+                    f"{user_name} muốn xóa danh mục nào? (Vui lòng chọn số thứ tự hoặc nêu rõ loại Thu/Chi)"
+                )
 
         return None

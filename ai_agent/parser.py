@@ -875,6 +875,150 @@ class VietnameseFinancialParser:
         return None
 
     @classmethod
+    def is_category_create_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định tạo/thêm danh mục phân loại thu chi mới.
+        Ví dụ:
+        - 'thêm danh mục Ăn uống'
+        - 'tạo mục thu Chi tên Ăn uống'
+        - 'thêm cho tôi một mục thu chi'
+        - 'thêm cho tôi 1 mục thu chi'
+        - 'tạo thêm một danh mục'
+        - 'thêm cho ta một danh mục Chi'
+        - 'thêm danh mục mới'
+        """
+        raw = text.lower().strip()
+
+        # Không phải category nếu là mục tiêu tiết kiệm hoặc ngân sách
+        if any(w in raw for w in ["mục tiêu", "muc tieu", "tiết kiệm", "tiet kiem", "tích lũy", "tich luy"]):
+            return False
+        if any(w in raw for w in ["ngân sách", "ngan sach", "hạn mức", "han muc"]):
+            return False
+
+        # Phân biệt transaction vs category:
+        # Nếu câu có nói về khoản tiền thực tế kèm số tiền thì là giao dịch
+        amt = cls.parse_amount(text)
+        if amt and amt > 0:
+            if any(w in raw for w in ["khoản chi", "khoan chi", "khoản thu", "khoan thu", "tiền ăn", "tiền lương", "hết", "tiêu", "mua", "chi hết", "tiêu hết"]):
+                return False
+
+        # "mục chi tiêu", "khoản chi tiêu" -> giao dịch chi tiêu (expense line item), không phải danh mục
+        if any(w in raw for w in ["mục chi tiêu", "muc chi tieu", "khoản chi tiêu", "khoan chi tieu"]):
+            if "danh mục" not in raw and "danh muc" not in raw:
+                return False
+
+        # Các danh từ chỉ danh mục / mục phân loại thu chi
+        has_category_noun = any(w in raw for w in [
+            "danh mục", "danh muc", "mục thu chi", "muc thu chi",
+            "phân loại", "phan loai", "loại thu chi", "loai thu chi"
+        ])
+        if not has_category_noun:
+            if re.search(r"\b(?:danh\s*mục|mục)\s*(?:thu|chi)\b(?!\s*tiêu)", raw):
+                has_category_noun = True
+            elif re.search(r"\b(?:1|một|mot)\s*mục\s*(?:thu|chi)\b(?!\s*tiêu)", raw):
+                has_category_noun = True
+
+        has_create_verb = any(w in raw for w in [
+            "thêm", "them", "tạo", "tao", "mở", "mo", "lập", "lap", "khai mở", "khai mo"
+        ])
+
+        return has_category_noun and has_create_verb
+
+    @classmethod
+    def is_category_delete_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định xóa / hủy danh mục thu chi.
+        Ví dụ: 'xóa danh mục Ăn uống', 'hủy mục thu chi Giải trí'
+        """
+        raw = text.lower().strip()
+        if any(w in raw for w in ["mục tiêu", "muc tieu", "tiết kiệm", "ngân sách", "hạn mức", "giao dịch", "khoản chi", "khoản thu", "khoản nợ", "ví"]):
+            return False
+        has_cat_noun = any(w in raw for w in ["danh mục", "danh muc", "mục thu chi", "muc thu chi", "phân loại", "phan loai"])
+        has_del_verb = any(w in raw for w in ["xóa", "xoa", "hủy", "huy", "gỡ", "go", "bỏ", "bo", "xóa bỏ", "xoa bo"])
+        return has_cat_noun and has_del_verb
+
+    @classmethod
+    def extract_category_creation_args(cls, text: str) -> Dict[str, Any]:
+        """Trích xuất tham số tạo danh mục: category_name, category_type"""
+        raw = text.lower().strip()
+
+        # 1. Phân loại Loại danh mục (EXPENSE / INCOME)
+        # Chú ý: nếu câu chứa cụm 'thu chi', 'thu/chi' -> người dùng chưa chốt loại cụ thể -> None
+        cat_type = None
+        has_generic_thu_chi = any(w in raw for w in ["thu chi", "thu - chi", "thu/chi", "thu và chi", "thu va chi"])
+
+        explicit_chi = bool(re.search(r"\b(?:loại|thuộc|là|danh mục|mục)?\s*chi(?:\s*tiêu)?\b", raw)) and not has_generic_thu_chi
+        explicit_thu = bool(re.search(r"\b(?:loại|thuộc|là|danh mục|mục)?\s*thu(?:\s*nhập)?\b", raw)) and not has_generic_thu_chi
+
+        if explicit_chi and not explicit_thu:
+            cat_type = "EXPENSE"
+        elif explicit_thu and not explicit_chi:
+            cat_type = "INCOME"
+
+        # 2. Trích xuất tên danh mục (category_name)
+        # Cách A: Có tiền tố 'tên', 'tên là', 'đặt tên là'
+        name_match = re.search(r"(?:tên\s*(?:là)?|đặt\s*tên\s*(?:là)?)\s*[:\s]*([^\n,\.?!]+)", text, flags=re.IGNORECASE)
+        cat_name = None
+        if name_match:
+            cand = name_match.group(1).strip()
+            cand = re.sub(r"\b(?:nhé|nha|đi|giúp|hộ)\b", "", cand, flags=re.IGNORECASE).strip(" .,-")
+            if cand and len(cand) >= 2:
+                cat_name = cand
+
+        if not cat_name:
+            # Cách B: Lấy phần tên sau các stop words danh mục
+            clean_t = text
+            prefixes = [
+                "thêm cho tôi một", "them cho toi mot", "thêm cho tôi 1", "them cho toi 1",
+                "thêm cho ta một", "them cho ta mot", "thêm cho ta 1", "them cho ta 1",
+                "tạo cho tôi một", "tao cho toi mot", "tạo cho ta một", "tao cho ta mot",
+                "thêm cho tôi", "them cho toi", "thêm cho ta", "them cho ta", "thêm cho mình",
+                "tạo cho tôi", "tạo cho ta", "tạo giúp ta", "thêm giúp ta",
+                "thêm một", "them mot", "thêm 1", "tạo một", "tao mot", "tạo 1", "tạo thêm một", "thêm thêm một",
+                "thêm", "them", "tạo", "tao", "mở", "mo", "lập", "lap"
+            ]
+            for p in prefixes:
+                clean_t = re.sub(rf"^\s*{re.escape(p)}\b", "", clean_t, flags=re.IGNORECASE).strip()
+
+            cat_stops = [
+                "mục thu chi mới", "muc thu chi moi", "mục thu chi", "muc thu chi",
+                "danh mục mới", "danh muc moi", "danh mục", "danh muc",
+                "loại thu chi", "phân loại mới", "phân loại", "mục", "muc"
+            ]
+            for s in cat_stops:
+                clean_t = re.sub(rf"\b{re.escape(s)}\b", "", clean_t, flags=re.IGNORECASE).strip()
+
+            if cat_type == "EXPENSE":
+                clean_t = re.sub(r"\b(?:loại\s*)?(?:chi(?:\s*tiêu)?)\b", "", clean_t, flags=re.IGNORECASE).strip()
+            elif cat_type == "INCOME":
+                clean_t = re.sub(r"\b(?:loại\s*)?(?:thu(?:\s*nhập)?)\b", "", clean_t, flags=re.IGNORECASE).strip()
+
+            clean_t = re.sub(r"\b(?:một|mot|1|vài|vai|mới|moi|nhé|nha|đi|giúp|hộ|cho|của|loại)\b", "", clean_t, flags=re.IGNORECASE).strip(" .,-")
+
+            if clean_t and len(clean_t) >= 2 and clean_t.lower() not in ["thu", "chi", "thu chi", "mới", "một", "mot", "1", "hai", "2", "nào", "gì"]:
+                cat_name = clean_t.title()
+
+        if name_match and cat_name:
+            cat_name = cat_name.title()
+
+        return {
+            "category_name": cat_name,
+            "category_type": cat_type
+        }
+
+    @classmethod
+    def extract_category_delete_args(cls, text: str) -> Dict[str, Any]:
+        """Trích xuất tên danh mục cần xóa"""
+        clean_t = text
+        del_stops = [
+            "xóa bỏ", "xoa bo", "xóa", "xoa", "hủy", "huy", "gỡ", "go", "bỏ", "bo",
+            "danh mục", "danh muc", "mục thu chi", "muc thu chi", "mục", "muc",
+            "phân loại", "phan loai", "khoản", "khoan"
+        ]
+        for s in del_stops:
+            clean_t = re.sub(rf"\b{re.escape(s)}\b", "", clean_t, flags=re.IGNORECASE).strip()
+        clean_t = re.sub(r"\b(?:nhé|nha|đi|giúp|hộ|cho ta|cho tôi)\b", "", clean_t, flags=re.IGNORECASE).strip(" .,-")
+        return {"category_name": clean_t if len(clean_t) >= 2 else None}
+
+    @classmethod
     def parse_period(cls, text: str) -> Optional[str]:
         """Trích xuất khoảng thời gian từ văn bản tự nhiên"""
         raw = text.lower()
@@ -1443,9 +1587,11 @@ class VietnameseFinancialParser:
                 if not any(w in raw for w in ["vay", "nợ", "chuyển"]):
                     return False
 
-            # Nếu là follow-up cho create_expense, create_income, create_saving_goal, create_budget
-            if pending_tool in ("create_expense", "create_income", "create_saving_goal", "create_budget", "create_debt"):
-                # Các câu trả lời nội dung ngắn (ví dụ 'ăn sáng', 'mua cafe', 'tiền xăng', 'mua iphone', 'du lịch')
+            # Nếu là follow-up cho create_expense, create_income, create_saving_goal, create_budget, create_category
+            if pending_tool in ("create_expense", "create_income", "create_saving_goal", "create_budget", "create_debt", "create_category", "delete_category"):
+                # Các câu trả lời nội dung ngắn (ví dụ 'ăn sáng', 'mua cafe', 'tiền xăng', 'mua iphone', 'du lịch', 'chi', 'thu')
+                if pending_tool == "create_category" and any(w in raw for w in ["chi", "thu", "khoản chi", "khoản thu", "chi tiêu", "thu nhập"]):
+                    return False
                 if not any(kw in raw for kw in ["xem", "kiểm tra", "báo cáo", "hủy", "xóa", "chuyển tiền", "tạo ví"]):
                     return False
 
@@ -1463,12 +1609,16 @@ class VietnameseFinancialParser:
         if cls.is_budget_write(clean) and pending_tool != "create_budget":
             return True
 
-        if any(kw in raw for kw in ["thêm danh mục", "tạo danh mục"]) and pending_tool != "create_category":
+        if (cls.is_category_create_intent(clean) or any(kw in raw for kw in ["thêm danh mục", "tạo danh mục"])) and pending_tool != "create_category":
+            return True
+
+        if (cls.is_category_delete_intent(clean) or any(kw in raw for kw in ["xóa danh mục", "hủy danh mục"])) and pending_tool != "delete_category":
             return True
 
         # Chi tiêu độc lập (ví dụ: 'hôm nay tôi ăn sáng 50 nghìn', 'mua cafe 35k', 'đổ xăng 50k')
         if any(kw in raw for kw in ["ăn sáng", "ăn trưa", "ăn tối", "uống cafe", "mua sắm", "đổ xăng", "chi tiêu", "tiêu hết", "chi hết"]) and pending_tool != "create_expense":
-            return True
+            if not cls.is_category_create_intent(clean) and not cls.is_category_delete_intent(clean):
+                return True
 
         # Thu nhập độc lập (ví dụ: 'vừa nhận lương', 'thưởng tết', 'bán đồ được')
         if any(kw in raw for kw in ["nhận lương", "thưởng", "thu nhập", "nhận được tiền"]) and pending_tool != "create_income":

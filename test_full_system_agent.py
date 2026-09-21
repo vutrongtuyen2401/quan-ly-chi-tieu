@@ -161,9 +161,14 @@ class TestFullSystemAgent(unittest.TestCase):
     # 2. CATEGORY CAPABILITIES
     # ─────────────────────────────────────────────────────────
     def test_02_category_capabilities(self):
-        """Kiểm thử: Tạo danh mục, tra cứu, xóa danh mục"""
-        # A. Tạo danh mục: "Thêm danh mục Quà Biếu"
+        # A. Tạo danh mục: "Thêm danh mục Quà Biếu" -> hỏi Thu hay Chi -> "Chi" -> xác nhận
         res = self.client.post("/api/ai/chat", json={"message": "Thêm danh mục Quà Biếu"}, headers=self.user_headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["state"], "IDLE")
+        self.assertIn("Thu hay Chi", data["response"])
+
+        res = self.client.post("/api/ai/chat", json={"message": "Chi"}, headers=self.user_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["state"], "CONFIRMING")

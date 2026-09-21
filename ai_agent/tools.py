@@ -568,12 +568,42 @@ async def handle_get_categories(user_id: int, **kwargs) -> ToolResult:
         )
 
 
+def resolve_category_icon(name: Optional[str], cat_type: Optional[str] = None) -> str:
+    """Tự động chọn biểu tượng emoji phù hợp với tên danh mục."""
+    if not name:
+        return "💰" if (cat_type or "").upper() == "INCOME" else "📦"
+
+    clean = name.lower()
+    mapping = [
+        (["ăn", "uống", "cơm", "phở", "bún", "lẩu", "nhậu", "tiệc", "buffet", "cafe", "cà phê", "trà", "bánh", "nước"], "🍽️"),
+        (["di chuyển", "xe", "xăng", "grab", "taxi", "bus", "xe buýt", "tàu", "đi lại", "vé máy bay", "vé tàu"], "🚗"),
+        (["mua sắm", "shopping", "quần áo", "giày", "dép", "mỹ phẩm", "đồ đạc", "siêu thị", "chợ"], "🛍️"),
+        (["lương", "thưởng", "thu nhập", "tiền lương", "hoa hồng", "tiền thưởng", "lãi", "bán đồ"], "💰"),
+        (["du lịch", "máy bay", "vé máy bay", "khách sạn", "resort", "tour", "nghỉ dưỡng"], "✈️"),
+        (["điện", "tiền điện", "hóa đơn điện", "hóa đơn nước"], "💡"),
+        (["nhà", "tiền nhà", "phòng", "nước", "internet", "wifi", "thuê nhà", "chung cư"], "🏠"),
+        (["học", "học phí", "sách", "vở", "khóa học", "đào tạo", "giáo dục"], "📚"),
+        (["sức khỏe", "y tế", "thuốc", "bệnh viện", "khám", "bác sĩ", "nha khoa"], "💊"),
+        (["giải trí", "game", "phim", "ca nhạc", "karaoke", "dã ngoại", "chơi"], "🎮"),
+        (["quà", "tặng", "biếu", "mừng", "đám cưới", "sinh nhật"], "🎁"),
+        (["đầu tư", "tiết kiệm", "chứng khoán", "vàng", "bất động sản", "coin", "crypto"], "📈"),
+        (["gia đình", "con cái", "bố mẹ", "vợ chồng", "hiếu hỉ"], "👨‍👩‍👦"),
+        (["thú cưng", "chó", "mèo", "pet"], "🐾"),
+        (["từ thiện", "quyên góp", "công đức", "giúp đỡ"], "❤️"),
+    ]
+    for kws, icon in mapping:
+        if any(kw in clean for kw in kws):
+            return icon
+
+    return "💰" if (cat_type or "").upper() == "INCOME" else "📦"
+
+
 # WRITE: create_category
 async def handle_create_category(
     user_id: int,
     category_name: str,
     category_type: str = "EXPENSE",
-    icon: str = "📦",
+    icon: Optional[str] = None,
     **kwargs
 ) -> ToolResult:
     import main
@@ -585,6 +615,8 @@ async def handle_create_category(
     if c_type not in ("EXPENSE", "INCOME"):
         c_type = "EXPENSE"
 
+    final_icon = icon if icon and icon != "📦" else resolve_category_icon(clean_name, c_type)
+
     with main.get_db() as conn:
         existing = conn.execute(
             "SELECT id FROM categories WHERE user_id = ? AND category_type = ? AND LOWER(category_name) = LOWER(?)",
@@ -595,15 +627,15 @@ async def handle_create_category(
 
         conn.execute(
             "INSERT INTO categories (user_id, category_name, category_type, icon) VALUES (?, ?, ?, ?)",
-            (user_id, clean_name, c_type, icon or "📦")
+            (user_id, clean_name, c_type, final_icon)
         )
         new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     label = "Chi tiêu" if c_type == "EXPENSE" else "Thu nhập"
     return ToolResult(
         success=True,
-        data={"category_id": new_id, "category_name": clean_name, "category_type": c_type, "icon": icon},
-        message=f"Đã tạo danh mục {label} mới: '{clean_name}' {icon} thành công!"
+        data={"category_id": new_id, "category_name": clean_name, "category_type": c_type, "icon": final_icon},
+        message=f"Đã tạo danh mục {label} mới: '{clean_name}' {final_icon} thành công!"
     )
 
 
@@ -653,6 +685,7 @@ async def handle_delete_category(
     **kwargs
 ) -> ToolResult:
     import main
+    import sqlite3
     with main.get_db() as conn:
         cat = None
         if category_id:
@@ -666,15 +699,34 @@ async def handle_delete_category(
         if not cat:
             return ToolResult(success=False, error=f"Không tìm thấy danh mục '{category_name or category_id}' để xóa.")
 
-        # Xóa hoặc chuyển giao dịch sang danh mục khác
-        conn.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat["id"], user_id))
+        # Kiểm tra ràng buộc phụ thuộc (giao dịch, ngân sách, giao dịch định kỳ)
+        cat_id = cat["id"]
+        txn_count = conn.execute("SELECT COUNT(*) FROM transactions WHERE category_id = ? AND user_id = ?", (cat_id, user_id)).fetchone()[0]
+        budget_count = conn.execute("SELECT COUNT(*) FROM budgets WHERE category_id = ? AND user_id = ?", (cat_id, user_id)).fetchone()[0]
+        rec_count = conn.execute("SELECT COUNT(*) FROM recurring_transactions WHERE category_id = ? AND user_id = ?", (cat_id, user_id)).fetchone()[0]
+
+        if txn_count > 0 or budget_count > 0 or rec_count > 0:
+            reasons = []
+            if txn_count > 0:
+                reasons.append(f"{txn_count} giao dịch")
+            if budget_count > 0:
+                reasons.append(f"{budget_count} hạn mức tu luyện")
+            if rec_count > 0:
+                reasons.append(f"{rec_count} giao dịch định kỳ")
+            detail_msg = f"Không thể xóa Danh mục '{cat['category_name']}' vì vẫn còn dữ liệu liên kết ({', '.join(reasons)}). Vui lòng chuyển hoặc xóa các dữ liệu này trước."
+            return ToolResult(success=False, error=detail_msg)
+
+        try:
+            conn.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, user_id))
+        except sqlite3.IntegrityError:
+            return ToolResult(success=False, error=f"Không thể xóa Danh mục '{cat['category_name']}' do ràng buộc toàn vẹn dữ liệu.")
 
         # Post-action DB verification
-        verify_del = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?", (cat["id"], user_id)).fetchone()
+        verify_del = conn.execute("SELECT id FROM categories WHERE id = ? AND user_id = ?", (cat_id, user_id)).fetchone()
         if verify_del:
             return ToolResult(
                 success=False,
-                error=f"Xác minh cơ sở dữ liệu thất bại: Danh mục #{cat['id']} vẫn còn tồn tại."
+                error=f"Xác minh cơ sở dữ liệu thất bại: Danh mục #{cat_id} vẫn còn tồn tại."
             )
 
     return ToolResult(
@@ -2440,7 +2492,7 @@ def build_default_tool_registry() -> ToolRegistry:
         action_type=ToolActionType.WRITE,
         risk_level=RiskLevel.LOW,
         requires_confirmation=True,
-        summary_generator=lambda a: f"👉 **Tạo Danh Mục mới**: '{a.get('category_name')}' ({'Khoản Thu' if a.get('category_type') == 'INCOME' else 'Khoản Chi'}) {a.get('icon', '📦')}",
+        summary_generator=lambda a: f"👉 **Tạo Danh Mục mới**: '{a.get('category_name')}' ({'Khoản Thu' if a.get('category_type') == 'INCOME' else 'Khoản Chi'}) {a.get('icon') if a.get('icon') and a.get('icon') != '📦' else resolve_category_icon(a.get('category_name'), a.get('category_type'))}",
         handler=handle_create_category
     ))
     reg.register(Tool(

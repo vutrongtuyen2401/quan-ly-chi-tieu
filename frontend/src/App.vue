@@ -2180,14 +2180,20 @@ export default {
         const formData = new FormData()
         formData.append('file', ocrFile.value)
         const { data } = await api.post('/api/ai/scan-invoice', formData)
-        ocrResult.value = data.data
+        const extracted = data.data || {}
+        ocrResult.value = extracted
 
         const defaultWallet = wallets.value.length ? wallets.value[0].id : null
         const defaultCat = expenseCategories.value.length ? expenseCategories.value[0].id : null
+        const totalVal = (extracted.total !== undefined && extracted.total !== null)
+          ? extracted.total
+          : (extracted.total_amount || 0)
+        const dateVal = extracted.receipt_date || extracted.date || new Date().toISOString().slice(0, 10)
+
         ocrConfirmForm.value = {
-          note: data.data.store_name || 'Chi tiêu từ hóa đơn',
-          amount: data.data.total_amount || 0,
-          transaction_date: data.data.date || new Date().toISOString().slice(0, 10),
+          note: extracted.store_name || 'Chi tiêu từ hóa đơn',
+          amount: Number(totalVal) || 0,
+          transaction_date: dateVal,
           wallet_id: defaultWallet,
           category_id: defaultCat,
           transaction_type: 'EXPENSE'
@@ -2200,7 +2206,7 @@ export default {
     }
 
     async function confirmOCRTransaction() {
-      if (!ocrConfirmForm.value.amount || ocrConfirmForm.value.amount <= 0) {
+      if (!ocrConfirmForm.value.amount || Number(ocrConfirmForm.value.amount) <= 0) {
         showToast('Vui lòng nhập số tiền hợp lệ!', 'error')
         return
       }
@@ -2210,7 +2216,15 @@ export default {
       }
       loading.value = true
       try {
-        await api.post('/api/transactions', ocrConfirmForm.value)
+        const payload = {
+          amount: Number(ocrConfirmForm.value.amount),
+          wallet_id: ocrConfirmForm.value.wallet_id,
+          category_id: ocrConfirmForm.value.category_id,
+          transaction_date: ocrConfirmForm.value.transaction_date,
+          note: ocrConfirmForm.value.note || 'Chi tiêu từ hóa đơn',
+          transaction_type: 'EXPENSE'
+        }
+        await api.post('/api/transactions', payload)
         showToast('⚡ Giao dịch từ hóa đơn đã được thêm vào lịch sử!')
         ocrResult.value = null
         ocrFile.value = null

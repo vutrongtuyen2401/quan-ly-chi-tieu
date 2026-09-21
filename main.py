@@ -1980,91 +1980,19 @@ ALLOWED_OCR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 def validate_ocr_response(data: Any) -> dict:
     """Xác thực nghiêm ngặt cấu trúc ngữ nghĩa (semantic schema) của kết quả OCR từ Gemini.
-    Finding 3.2:
+    Finding 3.2 & Linh Nhãn OCR Intelligence Upgrade:
     - Loại bỏ các trường hợp status không phải hóa đơn (ví dụ: {"status": "not a receipt"}).
-    - Yêu cầu bắt buộc các trường: store_name (str), total_amount (number >= 0), date (str), items (list).
+    - Yêu cầu bắt buộc các trường: store_name, total_amount/total > 0, date/receipt_date, items (list).
+    - Chuẩn hóa tiền tệ Việt Nam đa layout và giữ TOTAL làm nguồn sự thật.
     - Từ chối dữ liệu thiếu, sai kiểu hoặc không hợp lệ.
     """
-    if not isinstance(data, dict):
-        raise ValueError("Dữ liệu OCR không phải là đối tượng JSON hợp lệ.")
-
-    # 1. Kiểm tra các trạng thái từ chối ngữ nghĩa từ AI
-    raw_status = data.get("status")
-    if raw_status is not None:
-        status = str(raw_status).lower().strip()
-        invalid_statuses = (
-            "not a receipt", "not_receipt", "not_a_receipt", "no_receipt",
-            "not a bill", "invalid", "error", "failed", "unrecognized",
-            "rejected", "cannot parse", "no receipt", "unknown"
-        )
-        if status in invalid_statuses or status not in ("", "success", "ok", "valid", "completed"):
-            raise ValueError(f"Ảnh không phải là hóa đơn hợp lệ (AI status: {status}).")
-
-    if data.get("is_receipt") is False or data.get("is_invoice") is False:
-        raise ValueError("Ảnh không được nhận diện là hóa đơn.")
-
-    if data.get("error"):
-        raise ValueError(f"AI phản hồi lỗi phân tích: {data.get('error')}")
-
-    # 2. Kiểm tra store_name
-    store_name = data.get("store_name")
-    if not store_name or not isinstance(store_name, str) or not store_name.strip():
-        raise ValueError("Thiếu hoặc sai kiểu tên cửa hàng (store_name).")
-
-    # 3. Kiểm tra total_amount
-    total_amount = data.get("total_amount")
-    if total_amount is None or isinstance(total_amount, bool) or not isinstance(total_amount, (int, float)):
-        raise ValueError("Thiếu hoặc sai kiểu tổng số tiền (total_amount).")
-    if math.isnan(total_amount) or math.isinf(total_amount) or total_amount < 0:
-        raise ValueError("Tổng số tiền không được là số âm hoặc vô hạn.")
-
-    # 4. Kiểm tra date
-    date_val = data.get("date")
-    if not date_val or not isinstance(date_val, str):
-        raise ValueError("Thiếu hoặc sai kiểu ngày hóa đơn (date).")
-    try:
-        datetime.date.fromisoformat(date_val.strip()[:10])
-    except Exception:
-        raise ValueError("Định dạng ngày hóa đơn không hợp lệ (cần YYYY-MM-DD).")
-
-    # 5. Kiểm tra items
-    items = data.get("items")
-    if not isinstance(items, list):
-        raise ValueError("Danh sách sản phẩm (items) phải là một mảng.")
-
-    validated_items = []
-    for idx, it in enumerate(items):
-        if not isinstance(it, dict):
-            raise ValueError(f"Sản phẩm thứ {idx + 1} không hợp lệ.")
-        it_name = it.get("name")
-        if not it_name or not isinstance(it_name, str) or not it_name.strip():
-            raise ValueError(f"Sản phẩm thứ {idx + 1} thiếu tên hợp lệ.")
-        it_price = it.get("price", 0)
-        if it_price is None or isinstance(it_price, bool) or not isinstance(it_price, (int, float)) or it_price < 0 or math.isnan(it_price) or math.isinf(it_price):
-            raise ValueError(f"Sản phẩm thứ {idx + 1} có giá không hợp lệ.")
-        it_qty = it.get("quantity", 1)
-        if it_qty is None or isinstance(it_qty, bool) or not isinstance(it_qty, (int, float)) or it_qty <= 0 or math.isnan(it_qty) or math.isinf(it_qty):
-            it_qty = 1
-        validated_items.append({
-            "name": it_name.strip(),
-            "price": float(it_price),
-            "quantity": int(it_qty)
-        })
-
-    currency = str(data.get("currency", "VND")).strip() or "VND"
-
-    return {
-        "store_name": store_name.strip(),
-        "total_amount": float(total_amount),
-        "items": validated_items,
-        "date": date_val.strip()[:10],
-        "currency": currency
-    }
+    from ai_agent.ocr_engine import validate_and_normalize_receipt
+    return validate_and_normalize_receipt(data)
 
 
 @app.post("/api/ai/scan-invoice")
 async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    """Linh Nhãn AI OCR — quét hóa đơn từ ảnh (Finding 3.2: Giới hạn kích thước và kiểm thực schema nghiêm ngặt)"""
+    """Linh Nhãn AI OCR — quét hóa đơn từ ảnh (Finding 3.2 & Multi-layout OCR Intelligence Upgrade)"""
     # 1. Kiểm tra định dạng tệp (MIME type và extension)
     content_type = (file.content_type or "").lower().strip()
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -2102,46 +2030,15 @@ async def scan_invoice(file: UploadFile = File(...), user: dict = Depends(get_cu
         raise HTTPException(status_code=400, detail="Tệp tải lên không được rỗng.")
 
     contents = b"".join(chunks)
-    b64_data = base64.b64encode(contents).decode()
 
-    prompt = """Bạn là trợ lý AI tài chính. Hãy phân tích hóa đơn/receipt trong ảnh này.
-    Trả về JSON với format:
-    {
-        "store_name": "Tên cửa hàng",
-        "total_amount": 0,
-        "items": [{"name": "Tên sản phẩm", "price": 0, "quantity": 1}],
-        "date": "YYYY-MM-DD",
-        "currency": "VND"
-    }
-    Chỉ trả về JSON, không giải thích thêm."""
+    from ai_agent.ocr_engine import execute_multi_strategy_ocr
 
     try:
-        gemini_input = [
-            prompt,
-            {"mime_type": content_type or "image/jpeg", "data": b64_data}
-        ]
-        response_raw = await generate_gemini_content_async(gemini_input, vision=True)
-        response_text = (response_raw or "").strip()
-        
-        # Try to parse JSON from response
-        if response_text.startswith("```"):
-            parts = response_text.split("```")
-            if len(parts) > 1:
-                response_text = parts[1]
-                if response_text.startswith("json"):
-                    response_text = response_text[4:]
-            response_text = response_text.strip()
-
-        if not response_text:
-            raise ValueError("Phản hồi từ AI rỗng.")
-
-        try:
-            extracted = json.loads(response_text)
-        except Exception as json_err:
-            raise ValueError(f"Không thể giải mã JSON từ kết quả OCR: {json_err}")
-
-        # Kiểm thực ngữ nghĩa nghiêm ngặt trước khi ghi nhận
-        validated_data = validate_ocr_response(extracted)
+        validated_data = await execute_multi_strategy_ocr(
+            contents=contents,
+            mime_type=content_type,
+            call_ai_async_func=generate_gemini_content_async
+        )
 
         # Log OCR result CHỈ KHI dữ liệu đã được kiểm thực hợp lệ
         with get_db() as conn:

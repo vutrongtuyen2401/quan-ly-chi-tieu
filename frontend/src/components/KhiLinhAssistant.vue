@@ -204,22 +204,22 @@
                       </span>
                     </div>
 
-                    <!-- Flow Diagram (4 Variants: Transfer / Expense / Income / Goal) -->
+                    <!-- Flow Diagram (Variants: Transfer / Expense / Income / Goal / Category) -->
                     <div class="transaction-flow-grid">
                       <!-- SOURCE ENTITY -->
                       <div class="flow-box source-box">
                         <span class="flow-label">
-                          {{ currentConfirmation.tool_name === 'create_income' ? 'Nguồn Thu / Danh Mục' : 'Từ Nguồn Quỹ' }}
+                          {{ currentConfirmation.tool_name === 'create_category' || currentConfirmation.tool_name === 'delete_category' ? 'Phân Loại' : (currentConfirmation.tool_name === 'create_income' ? 'Nguồn Thu / Danh Mục' : 'Từ Nguồn Quỹ') }}
                         </span>
                         <div class="flow-content">
                           <div class="flow-icon-wrap source-icon">
-                            <span>{{ currentConfirmation.tool_name === 'create_income' ? '📥' : '💳' }}</span>
+                            <span>{{ currentConfirmation.tool_name === 'create_category' || currentConfirmation.tool_name === 'delete_category' ? (currentConfirmation.category_type === 'INCOME' ? '📥' : '📤') : (currentConfirmation.tool_name === 'create_income' ? '📥' : '💳') }}</span>
                           </div>
                           <div class="flow-meta">
                             <p class="flow-name truncate">
-                              {{ currentConfirmation.fromWallet || currentConfirmation.wallet || currentConfirmation.category || 'Mặc định' }}
+                              {{ currentConfirmation.tool_name === 'create_category' || currentConfirmation.tool_name === 'delete_category' ? (currentConfirmation.category_type === 'INCOME' ? 'Thu nhập' : 'Chi tiêu') : (currentConfirmation.fromWallet || currentConfirmation.wallet || currentConfirmation.category || 'Mặc định') }}
                             </p>
-                            <p class="flow-sub">Nguồn thực thi</p>
+                            <p class="flow-sub">{{ currentConfirmation.tool_name === 'create_category' || currentConfirmation.tool_name === 'delete_category' ? 'Loại danh mục' : 'Nguồn thực thi' }}</p>
                           </div>
                         </div>
                       </div>
@@ -232,17 +232,17 @@
                       <!-- TARGET ENTITY -->
                       <div class="flow-box target-box">
                         <span class="flow-label">
-                          {{ currentConfirmation.tool_name === 'create_expense' ? 'Danh Mục Chi' : (currentConfirmation.goal ? 'Mục Tiêu Tiết Kiệm' : 'Đến Đích Quỹ') }}
+                          {{ currentConfirmation.tool_name === 'create_category' || currentConfirmation.tool_name === 'delete_category' ? 'Tên Danh Mục' : (currentConfirmation.tool_name === 'create_expense' ? 'Danh Mục Chi' : (currentConfirmation.goal ? 'Mục Tiêu Tiết Kiệm' : 'Đến Đích Quỹ')) }}
                         </span>
                         <div class="flow-content">
                           <div class="flow-icon-wrap target-icon">
-                            <span>{{ currentConfirmation.goal ? '🎯' : (currentConfirmation.category ? '🏷️' : '💰') }}</span>
+                            <span>{{ currentConfirmation.icon || (currentConfirmation.goal ? '🎯' : (currentConfirmation.category ? '🏷️' : '💰')) }}</span>
                           </div>
                           <div class="flow-meta">
                             <p class="flow-name truncate">
-                              {{ currentConfirmation.toWallet || currentConfirmation.goal || currentConfirmation.category || currentConfirmation.wallet || 'Chung' }}
+                              {{ currentConfirmation.category || currentConfirmation.toWallet || currentConfirmation.goal || currentConfirmation.wallet || 'Chung' }}
                             </p>
-                            <p class="flow-sub">Đích luân chuyển</p>
+                            <p class="flow-sub">{{ currentConfirmation.tool_name === 'create_category' ? 'Danh mục mới' : (currentConfirmation.tool_name === 'delete_category' ? 'Xóa khỏi hệ thống' : 'Đích luân chuyển') }}</p>
                           </div>
                         </div>
                       </div>
@@ -439,6 +439,7 @@ export default {
     const isSpeakingTTS = ref(false)
     let synth = null
     let currentUtterance = null
+    let currentUtteranceId = 0
 
     // Sync with parent prop
     watch(() => props.isOpen, (newVal) => {
@@ -466,6 +467,19 @@ export default {
       window.addEventListener('khilinh-wake', handleWakeEvent)
       window.addEventListener('khilinh-voice', handleVoiceEvent)
       window.addEventListener('keydown', handleKeydown)
+
+      // 3. User gesture unlock for audio/mic if browser policies require initial click
+      const unlockMicOnFirstInteraction = () => {
+        window.removeEventListener('click', unlockMicOnFirstInteraction)
+        window.removeEventListener('keydown', unlockMicOnFirstInteraction)
+        window.removeEventListener('touchstart', unlockMicOnFirstInteraction)
+        if (!isRecognitionRunning && agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
+          startRecognition()
+        }
+      }
+      window.addEventListener('click', unlockMicOnFirstInteraction, { once: true, passive: true })
+      window.addEventListener('keydown', unlockMicOnFirstInteraction, { once: true, passive: true })
+      window.addEventListener('touchstart', unlockMicOnFirstInteraction, { once: true, passive: true })
 
       if (props.isOpen) {
         activateLiveMode()
@@ -613,23 +627,21 @@ export default {
     function deactivateLiveModeInternal() {
       isLiveActive.value = false
       emit('update:isOpen', false)
-      agentState.value = 'CLOSED'
+      agentState.value = 'SLEEPING'
 
       clearSilenceTimer()
       clearTTSWatchdog()
+      cancelCurrentTTS()
       stopRecognition()
-      if (synth) {
-        try { synth.cancel() } catch (e) {}
-      }
-      isSpeakingTTS.value = false
       clearDisplayTimeout()
       clearDisplayContent()
 
       // Transition to SLEEPING and restart listener
       setTimeout(() => {
-        agentState.value = 'SLEEPING'
-        startRecognition()
-      }, 300)
+        if (!isLiveActive.value && agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
+          startRecognition()
+        }
+      }, 350)
     }
 
     // ─── 10-SECOND SILENCE TIMEOUT ─────────────────
@@ -662,10 +674,7 @@ export default {
 
       agentState.value = 'TIMEOUT'
       stopRecognition()
-      if (synth) {
-        try { synth.cancel() } catch (e) {}
-      }
-      isSpeakingTTS.value = false
+      cancelCurrentTTS()
       clearDisplayTimeout()
       clearDisplayContent()
 
@@ -685,6 +694,7 @@ export default {
 
     function cancelCurrentTTS() {
       clearTTSWatchdog()
+      currentUtteranceId++
       if (synth) {
         try { synth.cancel() } catch (e) {}
       }
@@ -797,10 +807,15 @@ export default {
     function scheduleRestartRecognition() {
       clearTimeout(restartTimer)
       restartTimer = setTimeout(() => {
-        if (isLiveActive.value && agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
+        // Must restart in LIVE mode (continuous command listening)
+        // AND in SLEEPING mode (wake-word "Hệ thống" listening)
+        if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
+          if (agentState.value === 'CLOSED') {
+            agentState.value = 'SLEEPING'
+          }
           startRecognition()
         }
-      }, isLiveActive.value ? 300 : 800)
+      }, isLiveActive.value ? 250 : 600)
     }
 
     function startRecognition() {
@@ -811,7 +826,11 @@ export default {
         isRecognitionRunning = true
         recognitionInstance.start()
       } catch (e) {
-        isRecognitionRunning = false
+        if (e && (e.name === 'InvalidStateError' || e.message?.includes('already started'))) {
+          isRecognitionRunning = true
+        } else {
+          isRecognitionRunning = false
+        }
       }
     }
 
@@ -872,8 +891,10 @@ export default {
             tool_name: p.tool_name,
             title: getToolActionTitle(p.tool_name),
             amount: p.args?.amount || p.args?.limit_amount || p.args?.target_amount,
-            note: p.args?.note || (p.tool_name !== 'create_saving_goal' ? p.args?.target_name : '') || p.args?.wallet_name,
+            note: p.args?.note || (p.tool_name !== 'create_saving_goal' ? p.args?.target_name : '') || p.args?.wallet_name || (p.tool_name === 'create_category' ? `${p.args?.icon || '📁'} ${p.args?.category_name} (${p.args?.category_type === 'EXPENSE' ? 'Chi tiêu' : 'Thu nhập'})` : (p.tool_name === 'delete_category' ? `${p.args?.category_name}` : '')),
             category: p.args?.category_name,
+            category_type: p.args?.category_type,
+            icon: p.args?.icon,
             wallet: p.args?.wallet_name,
             fromWallet: p.args?.from_wallet_name,
             toWallet: p.args?.to_wallet_name,
@@ -945,12 +966,14 @@ export default {
       }
 
       try {
+        currentUtteranceId++
+        const myUtteranceId = currentUtteranceId
         synth.cancel()
 
         const cleanSpeech = text
           .replace(/\*\*(.*?)\*\*/g, '$1')
           .replace(/[#*`_~]/g, '')
-          .replace(/[👉✅⚠️❌🔮✨📜⚡🟢🔴💵📊🍜🎯📈🏷️💰📅]/g, '')
+          .replace(/[👉✅⚠️❌🔮✨📜⚡🟢🔴💵📊🍜🎯📈🏷️💰📅📁🍽️🛍️🚗🛵✈️🏠💡🎮💊📚🎁]/g, '')
           .replace(/VNĐ/gi, ' đồng')
           .replace(/đ\b/gi, ' đồng')
           .replace(/\b(\d+)\s*k\b/gi, '$1 nghìn')
@@ -972,6 +995,7 @@ export default {
         // Watchdog timer: If browser drops onend, guarantee recovery of STT
         const safetyDuration = Math.max(4000, cleanSpeech.length * 150 + 2500)
         ttsWatchdogTimer = setTimeout(() => {
+          if (myUtteranceId !== currentUtteranceId) return
           clearTTSWatchdog()
           currentUtterance = null
           isSpeakingTTS.value = false
@@ -980,6 +1004,7 @@ export default {
         }, safetyDuration)
 
         utter.onstart = () => {
+          if (myUtteranceId !== currentUtteranceId) return
           agentState.value = 'SPEAKING'
           isSpeakingTTS.value = true
           // Keep recognition active for user barge-in interruption
@@ -989,6 +1014,7 @@ export default {
         }
 
         utter.onend = () => {
+          if (myUtteranceId !== currentUtteranceId) return
           clearTTSWatchdog()
           currentUtterance = null
           isSpeakingTTS.value = false
@@ -997,6 +1023,7 @@ export default {
         }
 
         utter.onerror = () => {
+          if (myUtteranceId !== currentUtteranceId) return
           clearTTSWatchdog()
           currentUtterance = null
           isSpeakingTTS.value = false
@@ -1014,6 +1041,9 @@ export default {
     }
 
     function resumeListeningDirectly() {
+      if (agentState.value === 'PROCESSING' || agentState.value === 'EXECUTING') {
+        return
+      }
       if (agentState.value !== 'CONFIRMING') {
         agentState.value = 'LISTENING'
       }
@@ -1071,6 +1101,9 @@ export default {
         create_debt: 'Ghi Sổ Công Nợ Mới',
         settle_debt: 'Quyết Toán Tất Khoản Nợ',
         delete_debt: 'Xóa Khoản Nợ Khỏi Sổ',
+        create_category: 'Tạo Danh Mục Mới',
+        update_category: 'Cập Nhật Danh Mục',
+        delete_category: 'Xóa Danh Mục',
         create_recurring_transaction: 'Thiết Lập Giao Dịch Định Kỳ',
         delete_recurring_transaction: 'Hủy Giao Dịch Định Kỳ'
       }

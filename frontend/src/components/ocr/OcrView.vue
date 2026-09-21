@@ -311,10 +311,10 @@
               </div>
               <span class="result-subtitle">Trích xuất tự động qua mạng nơ-ron Thần Thức Càn Khôn</span>
             </div>
-            <!-- Trust Badge -->
-            <div class="trust-badge">
-              <span class="material-symbols-outlined icon-xs">verified</span>
-              <span class="font-semibold">Độ tin cậy 99.4%</span>
+            <!-- Trust / Verification Status Badge -->
+            <div class="trust-badge" :class="hasDiscrepancy ? 'trust-badge-warning' : 'trust-badge-success'">
+              <span class="material-symbols-outlined icon-xs">{{ hasDiscrepancy ? 'warning' : 'verified' }}</span>
+              <span class="font-semibold">{{ hasDiscrepancy ? 'Cần đối chiếu số liệu' : 'Chứng từ đã kiểm thực' }}</span>
             </div>
           </div>
 
@@ -322,9 +322,20 @@
           <div class="extraction-status-strip">
             <div class="status-strip-left">
               <span class="pulse-dot-jade"></span>
-              <span class="status-strip-text">Trạng thái: Trích xuất thành công — Chờ xác nhận lập sổ</span>
+              <span class="status-strip-text">Trạng thái: Trích xuất hoàn tất — Chờ xác nhận lập sổ</span>
             </div>
             <span class="status-strip-id font-mono">AI-OCR • READY</span>
+          </div>
+
+          <!-- Discrepancy / Validation Warning Alert Banner -->
+          <div v-if="ocrResult.warning || hasDiscrepancy" class="ocr-warning-banner">
+            <span class="material-symbols-outlined icon-sm text-gold">info</span>
+            <div class="ocr-warning-content">
+              <span class="ocr-warning-title">Lưu ý đối chiếu ngân lượng:</span>
+              <span class="ocr-warning-desc">
+                {{ ocrResult.warning || `Tổng từng món (${formatVND(computedItemsSum)}) khác với Tổng thanh toán hóa đơn (${formatVND(ocrConfirmForm.amount)}). Số tiền ghi nhận vào sổ sẽ lấy theo Tổng thanh toán.` }}
+              </span>
+            </div>
           </div>
 
           <!-- Structured Form Fields Grid -->
@@ -367,7 +378,7 @@
             </div>
           </div>
 
-          <!-- Prominent Highlight: Total Amount -->
+          <!-- Prominent Highlight: Total Amount (Source of Truth) -->
           <div class="total-amount-highlight-card">
             <div class="amount-card-left">
               <div class="amount-icon-box">
@@ -375,7 +386,7 @@
               </div>
               <div class="amount-text-col">
                 <span class="amount-title">Tổng Linh Thạch Thanh Toán (VNĐ)</span>
-                <span class="amount-subtitle">Số tiền chính thức ghi nhận vào sổ giao dịch</span>
+                <span class="amount-subtitle">Nguồn sự thật chính thức ghi nhận vào sổ (Một hóa đơn = 1 giao dịch)</span>
               </div>
             </div>
             <div class="amount-card-right">
@@ -387,7 +398,7 @@
                   min="0"
                   step="1000"
                   class="amount-editable-input font-bold tabular-num"
-                  title="Nhấn để chỉnh sửa số tiền nếu cần"
+                  title="Nhấn để chỉnh sửa số tiền nếu cần (không bị ghi đè)"
                 />
                 <span class="amount-currency-unit">₫</span>
               </div>
@@ -397,22 +408,23 @@
             </div>
           </div>
 
-          <!-- Items Table (If items were extracted by OCR) -->
-          <div v-if="ocrResult.items && ocrResult.items.length" class="items-section">
+          <!-- Items Table (Editable Line Items) -->
+          <div v-if="ocrResult.items" class="items-section">
             <div class="items-section-header">
               <span class="items-section-title">
-                📋 Chi Tiết Sản Phẩm Trích Xuất ({{ ocrResult.items.length }} Hạng Mục)
+                📋 Chi Tiết Hạng Mục Hóa Đơn ({{ ocrResult.items.length }} Mục)
               </span>
-              <span class="items-section-hint">Tự động đối chiếu đơn giá</span>
+              <span class="items-section-hint">Chỉnh sửa trực tiếp số lượng, đơn giá, thành tiền</span>
             </div>
             <div class="table-responsive-box">
               <table class="ocr-items-table">
                 <thead>
                   <tr>
-                    <th class="col-item-name">Sản Phẩm / Linh Vật</th>
-                    <th class="col-item-qty text-center">Số Lượng</th>
-                    <th class="col-item-price text-right">Đơn Giá</th>
-                    <th class="col-item-subtotal text-right">Thành Tiền</th>
+                    <th class="col-item-name">Sản Phẩm / Dịch Vụ</th>
+                    <th class="col-item-qty text-center" style="width: 80px;">SL</th>
+                    <th class="col-item-price text-right" style="width: 140px;">Đơn Giá</th>
+                    <th class="col-item-subtotal text-right" style="width: 155px;">Thành Tiền</th>
+                    <th class="col-item-actions text-center" style="width: 48px;"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -420,29 +432,93 @@
                     <td class="col-item-name">
                       <div class="item-name-cell">
                         <span class="item-bullet-dot" :class="'bullet-' + (i % 3)"></span>
-                        <span class="item-name-text font-medium">{{ item.name }}</span>
+                        <input
+                          v-model="item.name"
+                          type="text"
+                          class="ocr-cell-input ocr-cell-name font-medium"
+                          placeholder="Tên sản phẩm/dịch vụ..."
+                          required
+                        />
                       </div>
                     </td>
-                    <td class="col-item-qty text-center font-mono text-secondary">
-                      x{{ item.quantity || 1 }}
+                    <td class="col-item-qty text-center">
+                      <input
+                        v-model.number="item.quantity"
+                        type="number"
+                        min="1"
+                        step="1"
+                        class="ocr-cell-input ocr-cell-qty text-center font-mono"
+                      />
                     </td>
-                    <td class="col-item-price text-right tabular-num font-mono text-secondary">
-                      {{ formatVND(item.price || 0) }}
+                    <td class="col-item-price text-right">
+                      <div class="cell-number-wrap">
+                        <input
+                          v-model.number="item.unit_price"
+                          type="number"
+                          min="0"
+                          step="1000"
+                          class="ocr-cell-input ocr-cell-number text-right font-mono"
+                          placeholder="0"
+                        />
+                        <span class="cell-unit">₫</span>
+                      </div>
                     </td>
-                    <td class="col-item-subtotal text-right tabular-num font-mono text-white font-semibold">
-                      {{ formatVND((item.quantity || 1) * (item.price || 0)) }}
+                    <td class="col-item-subtotal text-right">
+                      <div class="cell-number-wrap">
+                        <input
+                          v-model.number="item.line_total"
+                          type="number"
+                          min="0"
+                          step="1000"
+                          class="ocr-cell-input ocr-cell-number ocr-cell-total text-right font-mono font-semibold"
+                          placeholder="0"
+                        />
+                        <span class="cell-unit text-jade">₫</span>
+                      </div>
+                    </td>
+                    <td class="col-item-actions text-center">
+                      <button
+                        type="button"
+                        class="btn-row-delete"
+                        title="Xóa hạng mục này"
+                        @click="removeItem(i)"
+                      >
+                        <span class="material-symbols-outlined icon-xs">delete</span>
+                      </button>
                     </td>
                   </tr>
+                  <tr v-if="!ocrResult.items.length">
+                    <td colspan="5" class="empty-items-cell text-center text-secondary">
+                      Chưa có hạng mục nào. Đạo hữu có thể nhấn "Thêm Hạng Mục" bên dưới.
+                    </td>
+                  </tr>
+                  <!-- Subtotal Reference Row -->
                   <tr class="table-subtotal-row">
                     <td colspan="3" class="subtotal-label font-semibold">
-                      Tổng tính theo từng hạng mục sản phẩm
+                      Tổng thành tiền các món (Đối chiếu tham khảo)
                     </td>
                     <td class="subtotal-value text-right font-mono text-jade font-bold">
                       {{ formatVND(computedItemsSum) }}
                     </td>
+                    <td></td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <!-- Add Row Action & Hint -->
+            <div class="items-actions-footer">
+              <button
+                type="button"
+                class="btn-add-item"
+                @click="addItem"
+              >
+                <span class="material-symbols-outlined icon-xs">add</span>
+                <span>Thêm Hạng Mục</span>
+              </button>
+              <span class="items-edit-note">
+                💡 Tự do chỉnh sửa số tiền từng món mà không làm thay đổi Tổng hóa đơn.
+              </span>
             </div>
           </div>
 
@@ -769,17 +845,47 @@ const statusBadgeClass = computed(() => {
   return 'status-badge-idle'
 })
 
-// Items subtotal
+// Items subtotal based on line_total (without auto-overwriting user input)
 const computedItemsSum = computed(() => {
   if (!props.ocrResult || !props.ocrResult.items || !props.ocrResult.items.length) {
     return props.ocrConfirmForm.amount || 0
   }
   return props.ocrResult.items.reduce((acc, item) => {
-    const qty = item.quantity || 1
-    const price = item.price || 0
-    return acc + (qty * price)
+    const lineTotal = (item.line_total !== undefined && item.line_total !== null && item.line_total !== '')
+      ? Number(item.line_total) || 0
+      : ((Number(item.quantity) || 1) * (Number(item.unit_price || item.price) || 0))
+    return acc + lineTotal
   }, 0)
 })
+
+// Check if items sum diverges from total
+const hasDiscrepancy = computed(() => {
+  if (!props.ocrResult || !props.ocrResult.items || !props.ocrResult.items.length) return false
+  const total = Number(props.ocrConfirmForm.amount || 0)
+  return Math.abs(computedItemsSum.value - total) > 1
+})
+
+// Remove line item
+function removeItem(index) {
+  if (props.ocrResult && Array.isArray(props.ocrResult.items)) {
+    props.ocrResult.items.splice(index, 1)
+  }
+}
+
+// Add new line item
+function addItem() {
+  if (!props.ocrResult) return
+  if (!Array.isArray(props.ocrResult.items)) {
+    props.ocrResult.items = []
+  }
+  props.ocrResult.items.push({
+    name: '',
+    quantity: 1,
+    unit_price: 0,
+    line_total: 0,
+    price: 0
+  })
+}
 </script>
 
 <style scoped>
@@ -2037,6 +2143,161 @@ const computedItemsSum = computed(() => {
 .table-subtotal-row td {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding: 10px 14px;
+}
+
+/* Editable cells & inputs */
+.ocr-cell-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #dae2fd;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.ocr-cell-input:focus {
+  outline: none;
+  border-color: #7dd6cc;
+  background: rgba(125, 214, 204, 0.08);
+  box-shadow: 0 0 8px rgba(125, 214, 204, 0.2);
+}
+
+.ocr-cell-name {
+  font-weight: 500;
+}
+
+.ocr-cell-qty {
+  width: 60px;
+  padding: 5px 4px;
+}
+
+.cell-number-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ocr-cell-number {
+  padding-right: 20px;
+}
+
+.ocr-cell-total {
+  color: #7dd6cc;
+  font-weight: 600;
+}
+
+.cell-unit {
+  position: absolute;
+  right: 6px;
+  color: #889391;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.btn-row-delete {
+  background: transparent;
+  border: none;
+  color: #ff8b8b;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+}
+
+.btn-row-delete:hover {
+  opacity: 1;
+  background: rgba(255, 139, 139, 0.15);
+  transform: scale(1.1);
+}
+
+.empty-items-cell {
+  padding: 24px 16px;
+  font-size: 13px;
+}
+
+/* Items actions footer */
+.items-actions-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.btn-add-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(125, 214, 204, 0.1);
+  border: 1px dashed rgba(125, 214, 204, 0.35);
+  color: #7dd6cc;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-add-item:hover {
+  background: rgba(125, 214, 204, 0.2);
+  border-color: #7dd6cc;
+  transform: translateY(-1px);
+}
+
+.items-edit-note {
+  font-size: 11.5px;
+  color: #889391;
+}
+
+/* Warning alert banner */
+.ocr-warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(227, 195, 112, 0.08);
+  border: 1px solid rgba(227, 195, 112, 0.3);
+  border-radius: 8px;
+  margin-top: 10px;
+  margin-bottom: 6px;
+}
+
+.ocr-warning-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ocr-warning-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: #ffe08f;
+}
+
+.ocr-warning-desc {
+  font-size: 11.5px;
+  color: #bdc9c6;
+  line-height: 1.4;
+}
+
+.trust-badge-warning {
+  background: rgba(227, 195, 112, 0.15) !important;
+  color: #ffe08f !important;
+  border: 1px solid rgba(227, 195, 112, 0.3) !important;
+}
+
+.trust-badge-success {
+  background: rgba(125, 214, 204, 0.12) !important;
+  color: #7dd6cc !important;
+  border: 1px solid rgba(125, 214, 204, 0.25) !important;
 }
 
 /* Destination mapping */
