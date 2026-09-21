@@ -118,15 +118,20 @@ def _resolve_period_range(period: Optional[str] = None) -> Tuple[str, str, str]:
 
 
 def _match_wallet_name(query: str, target: str) -> bool:
-    """Khớp tên ví thông minh, không cắt nhầm từ con như 'vi' trong 'vietcombank'"""
+    """Khớp tên ví thông minh, không cắt nhầm từ con như 'vi' hay 'mb' trong 'vietcombank'"""
     q = query.lower().strip()
     t = target.lower().strip()
-    if q == t or q in t or t in q:
+    if q == t:
+        return True
+    if re.search(rf"\b{re.escape(q)}\b", t) or re.search(rf"\b{re.escape(t)}\b", q):
         return True
     clean_q = re.sub(r'\b(ví|vi)\b', '', q).strip()
     clean_t = re.sub(r'\b(ví|vi)\b', '', t).strip()
-    if clean_q and (clean_q in t or clean_q in clean_t or clean_t in clean_q):
-        return True
+    if clean_q and clean_t:
+        if clean_q == clean_t:
+            return True
+        if re.search(rf"\b{re.escape(clean_q)}\b", clean_t) or re.search(rf"\b{re.escape(clean_t)}\b", clean_q):
+            return True
     return False
 
 

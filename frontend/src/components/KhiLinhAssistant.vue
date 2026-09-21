@@ -153,6 +153,15 @@
 
                 <!-- Right Stream: Dialogue & Action Cards -->
                 <div class="action-stream-col">
+                  <!-- User Voice Transcript Echo -->
+                  <div v-if="lastUserUtterance" class="user-voice-transcript-banner">
+                    <div class="user-transcript-label">
+                      <span class="user-mic-spark">🎙️</span>
+                      <span>BẠN VỪA NÓI:</span>
+                    </div>
+                    <p class="user-transcript-phrase">"{{ lastUserUtterance }}"</p>
+                  </div>
+
                   <!-- 1. Trạng thái PROCESSING / ĐANG TRA CỨU LINH TỊCH -->
                   <div v-if="isProcessing || agentState === 'PROCESSING' || agentState === 'EXECUTING'" class="system-processing-state">
                     <div class="celestial-spinner">
@@ -262,7 +271,7 @@
                     <!-- Question Prompt -->
                     <p class="conf-question-text">
                       Ký chủ có muốn xác nhận thực thi pháp lệnh này không?
-                      <span class="conf-question-sub">(Nói "Xác nhận", "Hủy", hoặc gõ lệnh bên dưới)</span>
+                      <span class="conf-question-sub">(Nói "Xác nhận", "Hủy", hoặc nhấn nút bên dưới)</span>
                     </p>
 
                     <!-- Action Buttons -->
@@ -291,7 +300,7 @@
                   <div v-else-if="currentDisplayContent" class="system-reply-bubble">
                     <div class="reply-header-tag">
                       <span class="sparkle-icon">✨</span>
-                      <span>KHÍ LINH BẢO TRỢ</span>
+                      <span>KHÍ LINH HIỂU & PHẢN HỒI</span>
                       <span v-if="displaySecondsRemaining > 0" class="countdown-tag">
                         ⏱ Tự dọn sau {{ displaySecondsRemaining }}s
                       </span>
@@ -315,7 +324,7 @@
                     </div>
                     <p class="standby-lead-text">
                       <span class="pulse-beacon-cyan"></span>
-                      Khí Linh đang thường trực lắng nghe. Ký chủ chỉ cần trực tiếp truyền khẩu lệnh hoặc gõ lệnh bên dưới.
+                      Khí Linh đang thường trực lắng nghe. Ký chủ hãy trực tiếp truyền khẩu lệnh giọng nói.
                     </p>
                     <div class="standby-prompts-row">
                       <button class="prompt-chip" @click="handleVoiceAction('Tháng này ta đã chi bao nhiêu?')">
@@ -335,7 +344,7 @@
                 </div>
               </div>
 
-              <!-- ─── FOOTER BAR: STATUS & COMMAND TEXT INPUT FALLBACK (SECTION 26) ─── -->
+              <!-- ─── FOOTER BAR: STATUS & CONTROLS ─── -->
               <div class="system-console-footer">
                 <!-- Status & Mic -->
                 <div class="footer-telemetry-row">
@@ -356,28 +365,6 @@
                       <span v-else>🎙️ Bật Mic</span>
                     </button>
                   </div>
-                </div>
-
-                <!-- Text Command Input Fallback -->
-                <div class="command-input-bar">
-                  <div class="input-icon-glyph">💬</div>
-                  <input
-                    v-model="textCommand"
-                    type="text"
-                    class="command-input-field"
-                    placeholder="Truyền khẩu lệnh hoặc gõ văn bản tại đây (Enter để gửi)..."
-                    @keydown.enter="submitTextCommand"
-                    :disabled="isProcessing"
-                  />
-                  <button
-                    id="btn-khilinh-send"
-                    class="btn-command-submit"
-                    @click="submitTextCommand"
-                    :disabled="!textCommand.trim() || isProcessing"
-                    title="Gửi pháp lệnh (Enter)"
-                  >
-                    <span>Truyền Lệnh ➔</span>
-                  </button>
                 </div>
               </div>
             </div>
@@ -422,6 +409,7 @@ export default {
     const isSubmitting = isProcessing
     const hasSubmittedUtterance = ref(false)
     const lastSpokenText = ref('')
+    const lastUserUtterance = ref('')
     const quickActionChips = ref([
       '💰 Số dư',
       '📊 Tổng quan',
@@ -438,9 +426,11 @@ export default {
     const isListening = ref(false)
     const speechSupported = ref(false)
     let recognitionInstance = null
-    let wakeRecognitionInstance = null
+    let isRecognitionRunning = false
     let restartTimer = null
     let silenceTimer = null
+    let ttsWatchdogTimer = null
+    let hasUserInteracted = false
     let lastProcessedTranscript = ''
     let lastProcessedTime = 0
 
@@ -466,7 +456,6 @@ export default {
       if (SpeechRec) {
         speechSupported.value = true
         initRecognition(SpeechRec)
-        initWakeRecognition(SpeechRec)
       }
 
       if ('speechSynthesis' in window) {
@@ -482,7 +471,7 @@ export default {
         activateLiveMode()
       } else {
         agentState.value = 'SLEEPING'
-        startWakeRecognition()
+        startRecognition()
       }
     })
 
@@ -491,8 +480,8 @@ export default {
       window.removeEventListener('khilinh-voice', handleVoiceEvent)
       window.removeEventListener('keydown', handleKeydown)
       clearSilenceTimer()
+      clearTTSWatchdog()
       stopRecognition()
-      stopWakeRecognition()
       if (synth) {
         try { synth.cancel() } catch (e) {}
       }
@@ -544,15 +533,33 @@ export default {
     }
 
     // ─── ACTIVATION & DEACTIVATION ────────────────
+    async function ensureMicrophonePermission() {
+      hasUserInteracted = true
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          stream.getTracks().forEach(track => track.stop())
+          return true
+        } catch (e) {
+          console.warn('[Khí Linh Mic Permission]', e)
+          return false
+        }
+      }
+      return true
+    }
+
     // Clicking small Khí Linh enters Live Conversation directly
-    function activateLiveMode() {
+    async function activateLiveMode() {
       if (isLiveActive.value) return
       isLiveActive.value = true
+      hasUserInteracted = true
       emit('update:isOpen', true)
       agentState.value = 'LISTENING'
 
       clearDisplayContent()
-      stopWakeRecognition()
+      stopRecognition()
+
+      await ensureMicrophonePermission()
 
       nextTick(() => {
         startRecognition()
@@ -564,11 +571,12 @@ export default {
     function activateFromWakeWord(trailingCommand = '') {
       if (isLiveActive.value) return
       isLiveActive.value = true
+      hasUserInteracted = true
       emit('update:isOpen', true)
       agentState.value = 'AWAKENING'
 
       clearDisplayContent()
-      stopWakeRecognition()
+      stopRecognition()
 
       if (trailingCommand && trailingCommand.length > 1) {
         // Utterance contained wake word AND command together
@@ -608,6 +616,7 @@ export default {
       agentState.value = 'CLOSED'
 
       clearSilenceTimer()
+      clearTTSWatchdog()
       stopRecognition()
       if (synth) {
         try { synth.cancel() } catch (e) {}
@@ -616,10 +625,10 @@ export default {
       clearDisplayTimeout()
       clearDisplayContent()
 
-      // Transition to SLEEPING and restart wake listener
+      // Transition to SLEEPING and restart listener
       setTimeout(() => {
         agentState.value = 'SLEEPING'
-        startWakeRecognition()
+        startRecognition()
       }, 300)
     }
 
@@ -667,6 +676,22 @@ export default {
     }
 
     // ─── CONTINUOUS VOICE LOOP & INTERRUPT PROTECTION ───
+    function clearTTSWatchdog() {
+      if (ttsWatchdogTimer) {
+        clearTimeout(ttsWatchdogTimer)
+        ttsWatchdogTimer = null
+      }
+    }
+
+    function cancelCurrentTTS() {
+      clearTTSWatchdog()
+      if (synth) {
+        try { synth.cancel() } catch (e) {}
+      }
+      currentUtterance = null
+      isSpeakingTTS.value = false
+    }
+
     function initRecognition(SpeechRec) {
       try {
         recognitionInstance = new SpeechRec()
@@ -675,18 +700,30 @@ export default {
         recognitionInstance.interimResults = false
 
         recognitionInstance.onstart = () => {
-          if (agentState.value !== 'SPEAKING' && !isSpeakingTTS.value) {
+          isRecognitionRunning = true
+          if (isLiveActive.value) {
             isListening.value = true
-            if (agentState.value !== 'PROCESSING' && agentState.value !== 'CONFIRMING' && agentState.value !== 'EXECUTING') {
+            if (agentState.value !== 'SPEAKING' && agentState.value !== 'PROCESSING' && agentState.value !== 'CONFIRMING' && agentState.value !== 'EXECUTING') {
               agentState.value = 'LISTENING'
             }
+          } else {
+            isListening.value = false
+          }
+        }
+
+        // Voice Barge-in detection: Intercept user speech during TTS playback
+        recognitionInstance.onspeechstart = () => {
+          if (isSpeakingTTS.value) {
+            cancelCurrentTTS()
+            agentState.value = 'LISTENING'
           }
         }
 
         recognitionInstance.onresult = (event) => {
-          // TTS GATING: While Khí Linh is speaking TTS, drop speech
-          if (agentState.value === 'SPEAKING' || isSpeakingTTS.value) {
-            return
+          // Barge-in: Cancel TTS if still speaking
+          if (isSpeakingTTS.value) {
+            cancelCurrentTTS()
+            agentState.value = 'LISTENING'
           }
 
           let transcript = ''
@@ -699,6 +736,18 @@ export default {
           const cleanMsg = transcript.trim()
           if (!cleanMsg) return
 
+          // Case 1: In SLEEPING mode -> listen for wake word "Hệ thống"
+          if (!isLiveActive.value) {
+            const wakeRegex = /(?:hệ thống|he thong)[,\s]*(.*)/i
+            const wakeMatch = cleanMsg.match(wakeRegex)
+            if (wakeMatch) {
+              const trailing = (wakeMatch[1] || '').trim()
+              activateFromWakeWord(trailing)
+            }
+            return
+          }
+
+          // Case 2: In LIVE CONVERSATION mode
           // Prevent duplicate submission within 1.5 seconds
           const now = Date.now()
           if (cleanMsg.toLowerCase() === lastProcessedTranscript.toLowerCase() && (now - lastProcessedTime) < 1500) {
@@ -726,15 +775,17 @@ export default {
         }
 
         recognitionInstance.onerror = (event) => {
+          isRecognitionRunning = false
           isListening.value = false
-          if (isLiveActive.value && agentState.value !== 'SPEAKING' && agentState.value !== 'PROCESSING' && !isSpeakingTTS.value) {
+          if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
             scheduleRestartRecognition()
           }
         }
 
         recognitionInstance.onend = () => {
+          isRecognitionRunning = false
           isListening.value = false
-          if (isLiveActive.value && agentState.value !== 'SPEAKING' && agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING' && !isSpeakingTTS.value) {
+          if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
             scheduleRestartRecognition()
           }
         }
@@ -746,25 +797,27 @@ export default {
     function scheduleRestartRecognition() {
       clearTimeout(restartTimer)
       restartTimer = setTimeout(() => {
-        if (isLiveActive.value && agentState.value !== 'SPEAKING' && agentState.value !== 'PROCESSING' && !isSpeakingTTS.value) {
+        if (isLiveActive.value && agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
           startRecognition()
         }
-      }, 300)
+      }, isLiveActive.value ? 300 : 800)
     }
 
     function startRecognition() {
-      if (!recognitionInstance || !isLiveActive.value) return
-      if (agentState.value === 'SPEAKING' || isSpeakingTTS.value) return
+      if (!recognitionInstance || isRecognitionRunning) return
+      if (agentState.value === 'PROCESSING' || agentState.value === 'EXECUTING') return
 
       try {
+        isRecognitionRunning = true
         recognitionInstance.start()
       } catch (e) {
-        // Recognition might already be running
+        isRecognitionRunning = false
       }
     }
 
     function stopRecognition() {
       clearTimeout(restartTimer)
+      isRecognitionRunning = false
       if (recognitionInstance) {
         try {
           recognitionInstance.abort()
@@ -777,72 +830,23 @@ export default {
       if (isListening.value) {
         stopRecognition()
       } else {
-        if (agentState.value !== 'SPEAKING' && !isSpeakingTTS.value) {
+        if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
           startRecognition()
           startSilenceTimer()
         }
       }
     }
 
-    // ─── WAKE PHRASE "HỆ THỐNG" (BACKGROUND LISTENER) ───
-    function initWakeRecognition(SpeechRec) {
-      try {
-        wakeRecognitionInstance = new SpeechRec()
-        wakeRecognitionInstance.lang = 'vi-VN'
-        wakeRecognitionInstance.continuous = false
-        wakeRecognitionInstance.interimResults = false
-
-        wakeRecognitionInstance.onresult = (event) => {
-          if (isLiveActive.value) return
-          let text = ''
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              text += event.results[i][0].transcript
-            }
-          }
-          const clean = text.trim()
-          if (!clean) return
-
-          const wakeRegex = /(?:hệ thống|he thong)[,\s]*(.*)/i
-          const match = clean.match(wakeRegex)
-          if (match) {
-            const trailingCommand = (match[1] || '').trim()
-            activateFromWakeWord(trailingCommand)
-          }
-          // Non-wake speech is completely ignored in SLEEPING mode
-        }
-
-        wakeRecognitionInstance.onerror = () => {
-          // Silent fallback for background wake listener
-        }
-
-        wakeRecognitionInstance.onend = () => {
-          // Restart background wake listener if live mode not active
-          if (!isLiveActive.value && speechSupported.value) {
-            setTimeout(() => startWakeRecognition(), 1000)
-          }
-        }
-      } catch (e) {}
-    }
-
-    function startWakeRecognition() {
-      if (!wakeRecognitionInstance || isLiveActive.value) return
-      try {
-        wakeRecognitionInstance.start()
-      } catch (e) {}
-    }
-
-    function stopWakeRecognition() {
-      if (wakeRecognitionInstance) {
-        try {
-          wakeRecognitionInstance.abort()
-        } catch (e) {}
-      }
-    }
-
     // ─── AGENTCORE DISPATCH & LIFECYCLE ───
     async function handleVoiceAction(rawText) {
       if (!rawText || !rawText.trim()) return
+
+      const cleanText = rawText.trim()
+      lastUserUtterance.value = cleanText
+
+      if (isSpeakingTTS.value) {
+        cancelCurrentTTS()
+      }
 
       clearSilenceTimer()
       clearDisplayTimeout()
@@ -854,7 +858,7 @@ export default {
       try {
         const { data } = await props.api.post(
           '/api/ai/chat',
-          { message: rawText, mode: 'action' },
+          { message: cleanText, mode: 'action' },
           { timeout: 25000 }
         )
 
@@ -868,12 +872,12 @@ export default {
             tool_name: p.tool_name,
             title: getToolActionTitle(p.tool_name),
             amount: p.args?.amount || p.args?.limit_amount || p.args?.target_amount,
-            note: p.args?.note || p.args?.target_name || p.args?.wallet_name,
+            note: p.args?.note || (p.tool_name !== 'create_saving_goal' ? p.args?.target_name : '') || p.args?.wallet_name,
             category: p.args?.category_name,
             wallet: p.args?.wallet_name,
             fromWallet: p.args?.from_wallet_name,
             toWallet: p.args?.to_wallet_name,
-            goal: p.args?.goal_name
+            goal: p.args?.target_name || p.args?.goal_name
           }
           currentDisplayContent.value = ''
           currentExecutionResult.value = ''
@@ -898,8 +902,6 @@ export default {
             currentExecutionResult.value = ''
           }
 
-          // Tự động đóng thẻ xác nhận khi có lệnh mới
-          // if (m && m.confirmation) m.confirmation.isPending = false
           if (data.state === 'SUCCESS' || data.state === 'IDLE') {
             agentState.value = 'IDLE'
           }
@@ -931,9 +933,10 @@ export default {
       }
     }
 
-    // ─── TTS PLAYBACK & RETURN TO LISTENING ───
+    // ─── TTS PLAYBACK & RETURN TO LISTENING (WITH BARGE-IN SUPPORT) ───
     function speakAndResume(text) {
       clearSilenceTimer()
+      clearTTSWatchdog()
 
       if (!synth || !ttsEnabled.value) {
         resumeListeningDirectly()
@@ -966,13 +969,27 @@ export default {
         utter.pitch = 1.05
         currentUtterance = utter
 
+        // Watchdog timer: If browser drops onend, guarantee recovery of STT
+        const safetyDuration = Math.max(4000, cleanSpeech.length * 150 + 2500)
+        ttsWatchdogTimer = setTimeout(() => {
+          clearTTSWatchdog()
+          currentUtterance = null
+          isSpeakingTTS.value = false
+          resumeListeningDirectly()
+          startSilenceTimer()
+        }, safetyDuration)
+
         utter.onstart = () => {
           agentState.value = 'SPEAKING'
           isSpeakingTTS.value = true
-          stopRecognition()
+          // Keep recognition active for user barge-in interruption
+          if (!isRecognitionRunning && isLiveActive.value) {
+            startRecognition()
+          }
         }
 
         utter.onend = () => {
+          clearTTSWatchdog()
           currentUtterance = null
           isSpeakingTTS.value = false
           resumeListeningDirectly()
@@ -980,6 +997,7 @@ export default {
         }
 
         utter.onerror = () => {
+          clearTTSWatchdog()
           currentUtterance = null
           isSpeakingTTS.value = false
           resumeListeningDirectly()
@@ -988,6 +1006,7 @@ export default {
 
         synth.speak(utter)
       } catch (e) {
+        clearTTSWatchdog()
         isSpeakingTTS.value = false
         resumeListeningDirectly()
         startSilenceTimer()
@@ -1019,6 +1038,7 @@ export default {
       currentDisplayContent.value = ''
       currentConfirmation.value = null
       currentExecutionResult.value = ''
+      lastUserUtterance.value = ''
     }
 
     function toggleTTS() {
@@ -1076,7 +1096,7 @@ export default {
 
     function getFooterStatusText() {
       if (agentState.value === 'SPEAKING') {
-        return 'Khí Linh đang truyền âm phản hồi (User nói chen sẽ không nhận).'
+        return 'Khí Linh đang truyền âm phản hồi (Bạn có thể nói chen bất kỳ lúc nào để ngắt lời).'
       }
       if (agentState.value === 'LISTENING') {
         return 'Hội thoại liên tục: Đang lắng nghe, không cần gọi "Hệ thống" lại.'
@@ -1111,22 +1131,6 @@ export default {
       return num.toLocaleString('vi-VN') + ' VNĐ'
     }
 
-    // ─── COMMAND TEXT INPUT & TELEMETRY HELPERS (SECTION 26) ───
-    const textCommand = ref('')
-
-    function submitTextCommand() {
-      const cmd = textCommand.value.trim()
-      if (!cmd) return
-      textCommand.value = ''
-      if (agentState.value === 'SPEAKING' || isSpeakingTTS.value) {
-        if (synth) {
-          try { synth.cancel() } catch (e) {}
-        }
-        isSpeakingTTS.value = false
-      }
-      handleVoiceAction(cmd)
-    }
-
     function getPhapTranStatus(state) {
       switch (state) {
         case 'LISTENING': return 'Pháp Trận · Đang Lắng Nghe'
@@ -1151,13 +1155,12 @@ export default {
       isSubmitting,
       hasSubmittedUtterance,
       lastSpokenText,
+      lastUserUtterance,
       quickActionChips,
       displaySecondsRemaining,
       isListening,
       speechSupported,
       ttsEnabled,
-      textCommand,
-      submitTextCommand,
       getPhapTranStatus,
       activateLiveMode,
       deactivateLiveMode,
@@ -2029,6 +2032,41 @@ export default {
   font-weight: 800;
 }
 
+/* 2.5 User Voice Transcript Banner */
+.user-voice-transcript-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: rgba(34, 42, 61, 0.6);
+  border: 1px dashed rgba(125, 214, 204, 0.35);
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.875rem;
+  animation: fadeIn 0.2s ease;
+}
+
+.user-transcript-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--color-primary, #7dd6cc);
+  text-transform: uppercase;
+}
+
+.user-mic-spark {
+  font-size: 0.75rem;
+}
+
+.user-transcript-phrase {
+  font-size: 0.875rem;
+  color: var(--color-on-surface, #dae2fd);
+  font-style: italic;
+  margin: 0;
+  line-height: 1.4;
+}
+
 /* 3. Reply / Response Bubble */
 .system-reply-bubble {
   display: flex;
@@ -2218,59 +2256,6 @@ export default {
   background: rgba(239, 68, 68, 0.2);
   border-color: rgba(239, 68, 68, 0.5);
   color: #ffb4ab;
-}
-
-.command-input-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: rgba(34, 42, 61, 0.7);
-  border: 1px solid rgba(125, 214, 204, 0.25);
-  border-radius: 0.5rem;
-  padding: 0.375rem 0.625rem;
-  box-shadow: inset 0 1px 4px rgba(0,0,0,0.3);
-}
-
-.command-input-bar:focus-within {
-  border-color: var(--color-primary, #7dd6cc);
-  box-shadow: 0 0 8px rgba(125, 214, 204, 0.25);
-}
-
-.input-icon-glyph {
-  font-size: 1rem;
-  opacity: 0.8;
-}
-
-.command-input-field {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--color-on-surface, #dae2fd);
-  font-size: 0.8125rem;
-}
-.command-input-field::placeholder {
-  color: var(--color-outline, #889391);
-}
-
-.btn-command-submit {
-  background: var(--color-primary-container, #449f96);
-  color: var(--color-on-primary, #003733);
-  border: none;
-  border-radius: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-.btn-command-submit:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.btn-command-submit:not(:disabled):hover {
-  background: var(--color-primary, #7dd6cc);
 }
 
 /* ─── ACCESSIBILITY & REDUCED MOTION ─── */

@@ -386,7 +386,7 @@ class AgentCore:
             return True
 
         # 8. Kiểm tra các mệnh lệnh mục tiêu tiết kiệm
-        if any(kw in raw for kw in ["tạo mục tiêu", "lập mục tiêu", "thêm mục tiêu", "đặt mục tiêu", "mục tiêu mới"]):
+        if VietnameseFinancialParser.is_saving_goal_create_intent(message):
             return True
         if any(kw in raw for kw in ["nạp", "nap", "đưa", "dua", "gửi", "gui", "thêm", "them", "rút", "rut", "lấy", "lay"]) and any(kw in raw for kw in ["mục tiêu", "muc tieu", "tiết kiệm", "tiet kiem", "tích lũy", "tich luy"]):
             if amt:
@@ -1515,9 +1515,22 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
                     else:
                         pending["missing_param"] = next_miss
                         self.set_pending_action(user_id, pending)
+                        tool_n = pending.get("tool_name", "")
                         prompt_text = f"{user_name} vui lòng cung cấp thêm thông tin còn thiếu."
                         if next_miss == "amount":
-                            prompt_text = f"{user_name} muốn chuyển bao nhiêu Linh Thạch?"
+                            if tool_n == "create_expense":
+                                prompt_text = f"{user_name} muốn ghi khoản chi bao nhiêu Linh Thạch?"
+                            elif tool_n == "create_income":
+                                prompt_text = f"{user_name} muốn ghi nhận khoản thu bao nhiêu Linh Thạch?"
+                            elif tool_n == "create_debt":
+                                prompt_text = f"{user_name} cho biết số tiền vay/nợ là bao nhiêu Linh Thạch?"
+                            else:
+                                prompt_text = f"{user_name} muốn chuyển bao nhiêu Linh Thạch?"
+                        elif next_miss == "note":
+                            if tool_n == "create_expense":
+                                prompt_text = f"Khoản chi này dùng cho việc gì (ví dụ: ăn sáng, đổ xăng, mua sắm...)?"
+                            elif tool_n == "create_income":
+                                prompt_text = f"Khoản thu này đến từ nguồn nào (ví dụ: tiền lương, thưởng, bán đồ...)?"
                         elif next_miss == "from_wallet_name":
                             prompt_text = f"{user_name} muốn chuyển tiền từ ví nào?"
                         elif next_miss == "to_wallet_name":
@@ -1530,6 +1543,12 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
                             prompt_text = f"{user_name} muốn thao tác với khoản nợ nào?"
                         elif next_miss == "budget_selection":
                             prompt_text = f"{user_name} muốn xóa hạn mức của danh mục nào?"
+                        elif next_miss == "target_name":
+                            prompt_text = f"{user_name} muốn đặt tên cho mục tiêu tiết kiệm này là gì (ví dụ: mua xe, du lịch, mua nhà)?"
+                        elif next_miss == "target_amount":
+                            prompt_text = f"{user_name} muốn đặt số tiền tiết kiệm cho mục tiêu '{pending['args'].get('target_name', '')}' là bao nhiêu Linh Thạch?"
+                        elif next_miss == "goal_details":
+                            prompt_text = f"{user_name} muốn lập mục tiêu tiết kiệm cho việc gì (ví dụ: mua xe, mua nhà) và với số tiền bao nhiêu Linh Thạch?"
                         return AgentResponse(
                             text=prompt_text,
                             state=AgentState.IDLE,
@@ -1736,6 +1755,134 @@ Câu hỏi của {user_name}: {clean_msg}"""
                         pending_confirmation=pending_act
                     )
 
+            # Kiểm tra nếu thiếu tham số tạo mục tiêu tiết kiệm (target_name, target_amount)
+            if tool.name == "create_saving_goal":
+                if not tool_args.get("target_name") and (not tool_args.get("target_amount") or float(tool_args.get("target_amount", 0)) <= 0):
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "goal_details",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    return AgentResponse(
+                        text=f"{user_name} muốn lập mục tiêu tiết kiệm cho việc gì (ví dụ: mua xe, mua nhà, du lịch) và với số tiền bao nhiêu Linh Thạch?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
+                if not tool_args.get("target_name"):
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "target_name",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    amt_disp = f"{float(tool_args.get('target_amount', 0)):,.0f} VNĐ"
+                    return AgentResponse(
+                        text=f"{user_name} muốn đặt tên cho mục tiêu tiết kiệm {amt_disp} này là gì (ví dụ: mua xe, du lịch, mua nhà)?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
+                if not tool_args.get("target_amount") or float(tool_args.get("target_amount", 0)) <= 0:
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "target_amount",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    goal_disp = tool_args.get("target_name", "")
+                    return AgentResponse(
+                        text=f"{user_name} muốn đặt hạn mức tiết kiệm cho mục tiêu '{goal_disp}' là bao nhiêu Linh Thạch?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
+            # Kiểm tra nếu thiếu tham số ghi khoản chi (amount, note/category)
+            if tool.name == "create_expense":
+                if not tool_args.get("amount") or float(tool_args.get("amount", 0)) <= 0:
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "amount",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    target_desc = f" cho '{tool_args.get('note') or tool_args.get('category_name')}'" if (tool_args.get('note') or tool_args.get('category_name')) else ""
+                    return AgentResponse(
+                        text=f"{user_name} muốn ghi khoản chi{target_desc} bao nhiêu Linh Thạch?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+                if not tool_args.get("note") and not tool_args.get("category_name"):
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "note",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    amt_str = f"{float(tool_args.get('amount', 0)):,.0f} VNĐ"
+                    return AgentResponse(
+                        text=f"Khoản chi {amt_str} này dùng cho việc gì (ví dụ: ăn sáng, đổ xăng, mua sắm...)?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
+            # Kiểm tra nếu thiếu tham số ghi khoản thu (amount, note/category)
+            if tool.name == "create_income":
+                if not tool_args.get("amount") or float(tool_args.get("amount", 0)) <= 0:
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "amount",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    return AgentResponse(
+                        text=f"{user_name} muốn ghi nhận khoản thu bao nhiêu Linh Thạch?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+                if not tool_args.get("note") and not tool_args.get("category_name"):
+                    pending_act = {
+                        "tool_name": tool_name,
+                        "args": tool_args,
+                        "status": "AWAITING_PARAM",
+                        "missing_param": "note",
+                        "created_at": datetime.datetime.now().isoformat()
+                    }
+                    if agent_mode == AgentMode.ACTION:
+                        self.set_pending_action(user_id, pending_act)
+                    self.current_state = AgentState.IDLE
+                    amt_str = f"{float(tool_args.get('amount', 0)):,.0f} VNĐ"
+                    return AgentResponse(
+                        text=f"Khoản thu {amt_str} này đến từ nguồn nào (ví dụ: tiền lương, thưởng, bán đồ...)?",
+                        state=self.current_state,
+                        pending_confirmation=pending_act
+                    )
+
             # Kiểm tra nếu thiếu tham số chuyển tiền (amount, from_wallet, to_wallet)
             if tool.name == "transfer_money":
                 if not tool_args.get("amount") or tool_args["amount"] <= 0:
@@ -1766,32 +1913,41 @@ Câu hỏi của {user_name}: {clean_msg}"""
                         state=self.current_state
                     )
 
-                # Nếu chỉ có 1 ví được chỉ định, tự động suy luận ví còn lại nếu người dùng chỉ có 2 ví
+                # Phân giải và xác thực ví nguồn / ví đích
                 import main
-                if (not tool_args.get("from_wallet_name") and not tool_args.get("from_wallet_id")) and (tool_args.get("to_wallet_name") or tool_args.get("to_wallet_id")):
-                    res_to = self._resolve_wallet_for_transfer(user_id, tool_args.get("to_wallet_name") or str(tool_args.get("to_wallet_id")), is_destination=True, user_name=user_name)
-                    if res_to.get("status") == "RESOLVED":
-                        to_w_id = res_to["wallet"]["id"]
-                        tool_args["to_wallet_id"] = to_w_id
-                        tool_args["to_wallet_name"] = res_to["wallet"]["wallet_name"]
-                        with main.get_db() as conn:
-                            user_wallets = [dict(r) for r in conn.execute("SELECT id, wallet_name, wallet_type FROM wallets WHERE user_id = ?", (user_id,)).fetchall()]
-                        other_wallets = [w for w in user_wallets if w["id"] != to_w_id]
-                        if len(other_wallets) == 1:
-                            tool_args["from_wallet_id"] = other_wallets[0]["id"]
-                            tool_args["from_wallet_name"] = other_wallets[0]["wallet_name"]
-                elif (tool_args.get("from_wallet_name") or tool_args.get("from_wallet_id")) and (not tool_args.get("to_wallet_name") and not tool_args.get("to_wallet_id")):
+                if tool_args.get("from_wallet_name") or tool_args.get("from_wallet_id"):
                     res_from = self._resolve_wallet_for_transfer(user_id, tool_args.get("from_wallet_name") or str(tool_args.get("from_wallet_id")), is_destination=False, user_name=user_name)
-                    if res_from.get("status") == "RESOLVED":
-                        from_w_id = res_from["wallet"]["id"]
-                        tool_args["from_wallet_id"] = from_w_id
+                    if res_from.get("status") == "NOT_FOUND":
+                        self.current_state = AgentState.IDLE
+                        return AgentResponse(text=res_from["message"], state=self.current_state)
+                    elif res_from.get("status") == "RESOLVED":
+                        tool_args["from_wallet_id"] = res_from["wallet"]["id"]
                         tool_args["from_wallet_name"] = res_from["wallet"]["wallet_name"]
-                        with main.get_db() as conn:
-                            user_wallets = [dict(r) for r in conn.execute("SELECT id, wallet_name, wallet_type FROM wallets WHERE user_id = ?", (user_id,)).fetchall()]
-                        other_wallets = [w for w in user_wallets if w["id"] != from_w_id]
-                        if len(other_wallets) == 1:
-                            tool_args["to_wallet_id"] = other_wallets[0]["id"]
-                            tool_args["to_wallet_name"] = other_wallets[0]["wallet_name"]
+
+                if tool_args.get("to_wallet_name") or tool_args.get("to_wallet_id"):
+                    res_to = self._resolve_wallet_for_transfer(user_id, tool_args.get("to_wallet_name") or str(tool_args.get("to_wallet_id")), is_destination=True, user_name=user_name)
+                    if res_to.get("status") == "NOT_FOUND":
+                        self.current_state = AgentState.IDLE
+                        return AgentResponse(text=res_to["message"], state=self.current_state)
+                    elif res_to.get("status") == "RESOLVED":
+                        tool_args["to_wallet_id"] = res_to["wallet"]["id"]
+                        tool_args["to_wallet_name"] = res_to["wallet"]["wallet_name"]
+
+                # Nếu chỉ có 1 ví được chỉ định thành công, tự động suy luận ví còn lại nếu người dùng chỉ có 2 ví
+                if tool_args.get("from_wallet_id") and not tool_args.get("to_wallet_id") and not tool_args.get("to_wallet_name"):
+                    with main.get_db() as conn:
+                        user_wallets = [dict(r) for r in conn.execute("SELECT id, wallet_name, wallet_type FROM wallets WHERE user_id = ?", (user_id,)).fetchall()]
+                    other_wallets = [w for w in user_wallets if w["id"] != tool_args["from_wallet_id"]]
+                    if len(other_wallets) == 1:
+                        tool_args["to_wallet_id"] = other_wallets[0]["id"]
+                        tool_args["to_wallet_name"] = other_wallets[0]["wallet_name"]
+                elif tool_args.get("to_wallet_id") and not tool_args.get("from_wallet_id") and not tool_args.get("from_wallet_name"):
+                    with main.get_db() as conn:
+                        user_wallets = [dict(r) for r in conn.execute("SELECT id, wallet_name, wallet_type FROM wallets WHERE user_id = ?", (user_id,)).fetchall()]
+                    other_wallets = [w for w in user_wallets if w["id"] != tool_args["to_wallet_id"]]
+                    if len(other_wallets) == 1:
+                        tool_args["from_wallet_id"] = other_wallets[0]["id"]
+                        tool_args["from_wallet_name"] = other_wallets[0]["wallet_name"]
 
                 if not tool_args.get("from_wallet_name") and not tool_args.get("from_wallet_id"):
                     pending_act = {
@@ -2241,9 +2397,31 @@ Câu hỏi của {user_name}: {clean_msg}"""
             return {"tool": "delete_recurring_transaction", "arguments": {"rec_id": rec_id}}
 
         # F. SAVING GOAL DOMAIN
-        if any(kw in raw for kw in ["tạo mục tiêu", "lập mục tiêu", "thêm mục tiêu", "đặt mục tiêu", "mục tiêu mới"]):
-            goal = VietnameseFinancialParser.extract_goal_name(message) or "Mục Tiêu Mới"
-            return {"tool": "create_saving_goal", "arguments": {"target_name": goal, "target_amount": amt or 10000000}}
+        if VietnameseFinancialParser.is_saving_goal_create_intent(message):
+            goal = VietnameseFinancialParser.extract_goal_name(message)
+            if not goal and (not amt or amt <= 0):
+                return {
+                    "tool": "create_saving_goal",
+                    "arguments": {"target_name": None, "target_amount": 0},
+                    "missing_param": "goal_details",
+                    "clarification_message": f"{user_name} muốn lập mục tiêu tiết kiệm cho việc gì (ví dụ: mua xe, mua nhà, du lịch) và với số tiền bao nhiêu Linh Thạch?"
+                }
+            elif not goal and amt and amt > 0:
+                return {
+                    "tool": "create_saving_goal",
+                    "arguments": {"target_name": None, "target_amount": amt},
+                    "missing_param": "target_name",
+                    "clarification_message": f"{user_name} muốn đặt tên cho mục tiêu tiết kiệm {amt:,.0f} VNĐ này là gì (ví dụ: mua xe, mua nhà, du lịch)?"
+                }
+            elif goal and (not amt or amt <= 0):
+                return {
+                    "tool": "create_saving_goal",
+                    "arguments": {"target_name": goal, "target_amount": 0},
+                    "missing_param": "target_amount",
+                    "clarification_message": f"{user_name} muốn đặt hạn mức tiết kiệm cho mục tiêu '{goal}' là bao nhiêu Linh Thạch?"
+                }
+            else:
+                return {"tool": "create_saving_goal", "arguments": {"target_name": goal, "target_amount": amt}}
 
         if any(kw in raw for kw in ["rút", "rut", "lấy", "lay"]) and any(kw in raw for kw in ["mục tiêu", "muc tieu", "tiết kiệm", "tiet kiem", "tích lũy", "tich luy"]):
             goal = VietnameseFinancialParser.extract_goal_name(message)
@@ -2314,7 +2492,12 @@ Câu hỏi của {user_name}: {clean_msg}"""
             tool_target = "saving_goal_status" if ("thế nào" in raw or "tiến triển" in raw or "của ta" in raw) else "get_saving_goals"
             return {"tool": tool_target, "arguments": {"goal_name": goal} if goal else {}}
 
-        if any(kw in raw for kw in ["danh mục", "danh muc", "loại thu chi"]):
+        # Tra cứu danh mục (Read-only Categories)
+        has_category_kw = any(kw in raw for kw in ["danh mục", "danh muc", "loại thu chi", "loai thu chi", "các khoản chi tiêu", "cac khoan chi tieu"]) or (
+            any(kw in raw for kw in ["các mục", "cac muc", "mục chi tiêu", "muc chi tieu", "mục thu chi", "muc thu chi"]) and not any(w in raw for w in ["mục tiêu", "muc tieu", "tiết kiệm", "tiet kiem"])
+        )
+        has_action_intent = any(act in raw for act in ["thêm", "them", "tạo", "tao", "ghi", "mới", "moi", "đặt", "dat", "nhập", "nhap"])
+        if has_category_kw and not has_action_intent:
             return {"tool": "get_categories", "arguments": {}}
 
         if any(kw in raw for kw in ["định kỳ", "dinh ky"]):
@@ -2399,15 +2582,20 @@ Câu hỏi của {user_name}: {clean_msg}"""
             return {"tool": "get_system_help", "arguments": {}}
 
         # K. FINANCIAL WRITE: CREATE EXPENSE & INCOME
-        expense_verbs = ["ăn", "an", "uống", "uong", "hết", "het", "mua", "chi", "tiêu", "tieu", "đổ xăng", "do xang", "trả tiền", "tra tien", "đóng tiền", "dong tien", "thanh toán", "thanh toan", "khoản chi", "tán tài", "tan tai"]
+        expense_verbs = [
+            "ăn", "an", "uống", "uong", "hết", "het", "mua", "chi", "tiêu", "tieu",
+            "đổ xăng", "do xang", "trả tiền", "tra tien", "đóng tiền", "dong tien",
+            "thanh toán", "thanh toan", "khoản chi", "mục chi tiêu", "muc chi tieu",
+            "khoản chi tiêu", "tán tài", "tan tai"
+        ]
         is_expense_trigger = any(re.search(rf"\b{re.escape(kw)}\b", raw) for kw in expense_verbs)
-        is_income_trigger = any(re.search(rf"(?<!ghi\s)\b{re.escape(kw)}\b", raw) for kw in ["thu", "nhận", "lương", "thưởng", "được cho", "được tặng", "bán", "khoản thu", "nạp tài", "nap tai"])
-        is_read_query = any(q in raw for q in ["bao nhiêu", "bao nhieu", "thế nào", "the nao", "ra sao", "mấy", "may", "lịch sử", "lich su", "xem", "tra cứu", "tra cuu", "tìm", "tim"])
+        is_income_trigger = any(re.search(rf"(?<!ghi\s)\b{re.escape(kw)}\b", raw) for kw in ["thu", "nhận", "lương", "thưởng", "được cho", "được tặng", "bán", "khoản thu", "khoản tiền ta vừa nhận", "tiền vừa nhận", "nạp tài", "nap tai"])
+        is_read_query = any(q in raw for q in ["bao nhiêu", "bao nhieu", "thế nào", "the nao", "ra sao", "mấy", "may", "lịch sử", "lich su", "xem", "tra cứu", "tra cuu", "tìm", "tim", "là gì", "la gi", "những gì", "nhung gi", "gồm những", "gom nhung", "liệt kê", "liet ke", "danh sách", "danh sach", "có những", "co nhung"])
 
-        if any(w in raw for w in ["khoản chi", "khoan chi"]):
+        if any(w in raw for w in ["khoản chi", "khoan chi", "mục chi tiêu", "muc chi tieu", "khoản chi tiêu", "khoan chi tieu"]):
             is_expense_trigger = True
             is_income_trigger = False
-        elif any(w in raw for w in ["khoản thu", "khoan thu"]):
+        elif any(w in raw for w in ["khoản thu", "khoan thu", "khoản tiền ta vừa nhận", "tiền vừa nhận"]):
             is_income_trigger = True
             is_expense_trigger = False
 
@@ -2419,10 +2607,18 @@ Câu hỏi của {user_name}: {clean_msg}"""
         # Chi tiêu (create_expense)
         if amt is not None and is_expense_trigger and not is_income_trigger and not is_read_query:
             clean_note = message
-            for kw in ["cho tôi ghi nhận", "ghi nhận", "cho tôi thêm", "tôi vừa", "vừa", "hôm nay", "hôm qua", "hết", "thêm khoản chi", "khoản chi", "tiền"]:
+            for kw in [
+                "cho tôi ghi nhận", "ghi nhận", "cho tôi thêm", "tôi vừa", "vừa", "hôm nay", "hôm qua", "hết",
+                "thêm khoản chi", "khoản chi", "thêm 1 khoản chi", "thêm một khoản chi", "thêm 1 mục chi tiêu mới",
+                "thêm một mục chi tiêu mới", "ghi một khoản chi mới", "ghi giúp ta", "ghi giup ta", "ghi cho ta",
+                "ghi hộ ta", "ta vừa", "ta da", "ta đã", "tiền", "năm chục"
+            ]:
                 clean_note = re.sub(rf"\b{re.escape(kw)}\b", "", clean_note, flags=re.IGNORECASE)
-            clean_note = re.sub(r"\b\d+[\d.,]*\s*(?:k|nghìn|ngàn|tr|triệu|tỷ|vnđ|đ|đồng)?\b", "", clean_note, flags=re.IGNORECASE).strip()
-            clean_note = clean_note.strip(" .,-") or (cat or "Ăn uống / Chi tiêu")
+            clean_note = re.sub(r"\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|ngàn|tr|triệu|tỷ|vnđ|vnd|đ|đồng|củ|lít)?\b", "", clean_note, flags=re.IGNORECASE).strip()
+            clean_note = re.sub(r"\b(?:một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười|trăm|nghìn|ngàn|triệu|chục)\b", "", clean_note, flags=re.IGNORECASE).strip()
+            clean_note = clean_note.strip(" .,-")
+            if clean_note.lower() in ["tiêu", "chi", "ăn", "uống", "ta tiêu", "ta chi", ""]:
+                clean_note = cat or "Chi tiêu"
             return {
                 "tool": "create_expense",
                 "arguments": {
@@ -2437,10 +2633,17 @@ Câu hỏi của {user_name}: {clean_msg}"""
         # Thu nhập (create_income)
         if amt is not None and is_income_trigger and not is_expense_trigger and not is_read_query:
             clean_note = message
-            for kw in ["cho tôi ghi nhận", "ghi nhận", "cho tôi thêm", "tôi vừa", "vừa", "hôm nay", "hôm qua", "nhận được", "thêm khoản thu", "khoản thu", "tiền"]:
+            for kw in [
+                "cho tôi ghi nhận", "ghi nhận", "cho tôi thêm", "tôi vừa", "vừa", "hôm nay", "hôm qua",
+                "nhận được", "thêm khoản thu", "khoản thu", "thêm 1 khoản thu", "ghi nhận khoản tiền ta vừa nhận",
+                "ghi giúp ta", "ghi giup ta", "ta vừa", "ta da", "ta đã", "tiền", "tiền lương"
+            ]:
                 clean_note = re.sub(rf"\b{re.escape(kw)}\b", "", clean_note, flags=re.IGNORECASE)
-            clean_note = re.sub(r"\b\d+[\d.,]*\s*(?:k|nghìn|ngàn|tr|triệu|tỷ|vnđ|đ|đồng)?\b", "", clean_note, flags=re.IGNORECASE).strip()
-            clean_note = clean_note.strip(" .,-") or (cat or "Thu nhập")
+            clean_note = re.sub(r"\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|ngàn|tr|triệu|tỷ|vnđ|vnd|đ|đồng|củ|lít)?\b", "", clean_note, flags=re.IGNORECASE).strip()
+            clean_note = re.sub(r"\b(?:một|hai|ba|bốn|năm|sáu|bảy|tám|chín|mười|trăm|nghìn|ngàn|triệu|chục)\b", "", clean_note, flags=re.IGNORECASE).strip()
+            clean_note = clean_note.strip(" .,-")
+            if clean_note.lower() in ["thu", "nhận", "lương", "tiền lương", ""]:
+                clean_note = cat or "Thu nhập"
             return {
                 "tool": "create_income",
                 "arguments": {
@@ -2454,15 +2657,34 @@ Câu hỏi của {user_name}: {clean_msg}"""
 
         # Cần làm rõ số tiền nếu có trigger nhưng thiếu amount
         if is_expense_trigger and not is_read_query and amt is None:
+            clean_n = message
+            for kw in ["thêm 1 mục chi tiêu mới", "thêm một mục chi tiêu mới", "thêm 1 khoản chi", "thêm một khoản chi", "ghi một khoản chi mới", "thêm khoản chi", "khoản chi"]:
+                clean_n = re.sub(rf"\b{re.escape(kw)}\b", "", clean_n, flags=re.IGNORECASE).strip()
             return {
-                "intent": "CLARIFICATION_NEEDED",
-                "clarification_message": f"Khí Linh đã ghi nhận ý định chi tiêu{' cho ' + cat if cat else ''}. {user_name} vui lòng cho biết số tiền Linh Thạch đã chi là bao nhiêu để lưu vào sổ sách?"
+                "tool": "create_expense",
+                "arguments": {
+                    "amount": 0,
+                    "note": cat or (clean_n.capitalize() if len(clean_n) > 2 else None),
+                    "category_name": cat,
+                    "wallet_name": w_name,
+                    "transaction_date": dt
+                },
+                "missing_param": "amount",
+                "clarification_message": f"{user_name} muốn ghi khoản chi bao nhiêu Linh Thạch?"
             }
 
         if is_income_trigger and not is_read_query and amt is None:
             return {
-                "intent": "CLARIFICATION_NEEDED",
-                "clarification_message": f"Khí Linh đã ghi nhận ý định thu nhập{' từ ' + cat if cat else ''}. {user_name} vui lòng cho biết số tiền Linh Thạch nhận được là bao nhiêu?"
+                "tool": "create_income",
+                "arguments": {
+                    "amount": 0,
+                    "note": cat or "Thu nhập",
+                    "category_name": cat,
+                    "wallet_name": w_name,
+                    "transaction_date": dt
+                },
+                "missing_param": "amount",
+                "clarification_message": f"{user_name} muốn ghi nhận khoản thu bao nhiêu Linh Thạch?"
             }
 
         # L. FALLBACK: DÙNG LLM DISCOVERY VỚI SCHEMAS DỰA TRÊN TOOL REGISTRY
@@ -2723,79 +2945,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
             if w_by_id:
                 return {"status": "RESOLVED", "wallet": w_by_id}
 
-        # 2. Xử lý "tiền mặt" (Cash)
-        cash_keywords = ["tiền mặt", "tien mat", "ví tiền mặt", "vi tien mat", "tiền mặt cá nhân", "tien mat ca nhan"]
-        if q in cash_keywords or q == "tiền mặt" or q == "tien mat":
-            matched = [
-                w for w in wallets
-                if "tiền mặt" in w["wallet_name"].lower()
-                or "tien mat" in remove_accents(w["wallet_name"].lower())
-            ]
-            if len(matched) == 1:
-                return {"status": "RESOLVED", "wallet": matched[0]}
-            elif len(matched) > 1:
-                list_str = "\n".join(f"{i+1}. {w['wallet_name']}" for i, w in enumerate(matched))
-                return {
-                    "status": "AMBIGUOUS",
-                    "wallets": matched,
-                    "message": f"Có {len(matched)} ví tiền mặt:\n{list_str}\n\n{user_name} muốn chuyển tiền {'sang' if is_destination else 'từ'} ví nào?"
-                }
-            else:
-                return {
-                    "status": "NOT_FOUND",
-                    "is_generic": True,
-                    "message": f"Không tìm thấy ví '{wallet_query}' trong danh sách ví của bạn. (Hệ thống không tự ý tạo ví mới)."
-                }
-
-        # 3. Xử lý "ngân hàng" (Bank)
-        bank_keywords = ["ngân hàng", "ngan hang", "ví ngân hàng", "vi ngan hang", "tài khoản ngân hàng", "tai khoan ngan hang", "bank"]
-        if q in bank_keywords:
-            matched = [
-                w for w in wallets
-                if (w.get("wallet_type") or "").lower() in ("bank", "ngan_hang")
-                or any(k in w["wallet_name"].lower() for k in ["ngân hàng", "ngan hang", "bank", "vcb", "vietcombank", "techcombank", "mb", "bidv", "agribank", "acb", "tpbank", "vpbank"])
-            ]
-            if len(matched) == 1:
-                return {"status": "RESOLVED", "wallet": matched[0]}
-            elif len(matched) > 1:
-                list_str = "\n".join(f"{i+1}. {w['wallet_name']}" for i, w in enumerate(matched))
-                return {
-                    "status": "AMBIGUOUS",
-                    "wallets": matched,
-                    "message": f"Có {len(matched)} ví ngân hàng:\n{list_str}\n\n{user_name} muốn chọn ví nào?"
-                }
-            else:
-                return {
-                    "status": "NOT_FOUND",
-                    "is_generic": True,
-                    "message": "Không tìm thấy ví ngân hàng nào trong danh sách ví của bạn."
-                }
-
-        # 4. Xử lý "ví điện tử" (E-Wallet) / MoMo / ZaloPay
-        ewallet_keywords = ["ví điện tử", "vi dien tu", "điện tử", "dien tu", "e-wallet", "ewallet", "momo", "ví momo", "vi momo", "zalopay", "zalo pay", "ví zalopay", "shopeepay", "viettelpay", "vnpay"]
-        if q in ewallet_keywords or any(k in q for k in ["momo", "zalopay", "ví điện tử"]):
-            matched = [
-                w for w in wallets
-                if (w.get("wallet_type") or "").lower() in ("e-wallet", "ewallet", "vi_dien_tu", "e_wallet")
-                or any(k in w["wallet_name"].lower() for k in ["ví điện tử", "vi dien tu", "momo", "zalopay", "zalo", "shopeepay", "viettelpay", "vnpay"])
-            ]
-            if len(matched) == 1:
-                return {"status": "RESOLVED", "wallet": matched[0]}
-            elif len(matched) > 1:
-                list_str = "\n".join(f"{i+1}. {w['wallet_name']}" for i, w in enumerate(matched))
-                return {
-                    "status": "AMBIGUOUS",
-                    "wallets": matched,
-                    "message": f"Có {len(matched)} ví điện tử:\n{list_str}\n\n{user_name} muốn chọn ví nào?"
-                }
-            else:
-                return {
-                    "status": "NOT_FOUND",
-                    "is_generic": True,
-                    "message": f"Không tìm thấy ví '{wallet_query}' trong danh sách ví của bạn."
-                }
-
-        # 4.b Xử lý từ khóa ví không tồn tại minh thị
+        # 2. Xử lý từ khóa ví không tồn tại minh thị
         if any(k in q for k in ["không tồn tại", "khong ton tai"]):
             return {
                 "status": "NOT_FOUND",
@@ -2803,7 +2953,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                 "message": f"Không tìm thấy ví '{wallet_query}' trong danh sách ví của bạn."
             }
 
-        # 5. Khớp theo tên ví cụ thể (MoMo, Vietcombank, ...)
+        # 3. Khớp chính xác hoặc gần đúng theo TÊN VÍ CỤ THỂ trước (MoMo, Vietcombank, MB Bank, ...)
         matched = [w for w in wallets if _match_wallet_name(q, w["wallet_name"])]
         if len(matched) == 1:
             return {"status": "RESOLVED", "wallet": matched[0]}
@@ -2815,7 +2965,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                 "message": f"Có {len(matched)} ví phù hợp với '{wallet_query}':\n{list_str}\n\n{user_name} muốn chọn ví nào?"
             }
 
-        # 5.b Khớp substring không dấu
+        # 3.b Khớp substring không dấu theo tên ví
         matched_unacc = [
             w for w in wallets
             if q_unacc in remove_accents(w["wallet_name"].lower())
@@ -2831,10 +2981,83 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                 "message": f"Có {len(matched_unacc)} ví phù hợp với '{wallet_query}':\n{list_str}\n\n{user_name} muốn chọn ví nào?"
             }
 
+        # 4. Khi không khớp tên ví cụ thể -> Xử lý từ khóa loại ví CHUNG (Generic Categories)
+        # 4.a "tiền mặt" (Cash)
+        cash_keywords = ["tiền mặt", "tien mat", "ví tiền mặt", "vi tien mat", "tiền mặt cá nhân", "tien mat ca nhan"]
+        if q in cash_keywords or q == "tiền mặt" or q == "tien mat":
+            matched_cash = [
+                w for w in wallets
+                if "tiền mặt" in w["wallet_name"].lower()
+                or "tien mat" in remove_accents(w["wallet_name"].lower())
+            ]
+            if len(matched_cash) == 1:
+                return {"status": "RESOLVED", "wallet": matched_cash[0]}
+            elif len(matched_cash) > 1:
+                list_str = "\n".join(f"{i+1}. {w['wallet_name']}" for i, w in enumerate(matched_cash))
+                return {
+                    "status": "AMBIGUOUS",
+                    "wallets": matched_cash,
+                    "message": f"Có {len(matched_cash)} ví tiền mặt:\n{list_str}\n\n{user_name} muốn chuyển tiền {'sang' if is_destination else 'từ'} ví nào?"
+                }
+            else:
+                return {
+                    "status": "NOT_FOUND",
+                    "is_generic": True,
+                    "message": f"Không tìm thấy ví '{wallet_query}' trong danh sách ví của bạn. (Hệ thống không tự ý tạo ví mới)."
+                }
+
+        # 4.b "ngân hàng" (Bank)
+        bank_keywords = ["ngân hàng", "ngan hang", "ví ngân hàng", "vi ngan hang", "tài khoản ngân hàng", "tai khoan ngan hang", "bank"]
+        if q in bank_keywords:
+            matched_bank = [
+                w for w in wallets
+                if (w.get("wallet_type") or "").lower() in ("bank", "ngan_hang")
+                or any(k in w["wallet_name"].lower() for k in ["ngân hàng", "ngan hang", "bank", "vcb", "vietcombank", "techcombank", "mb", "bidv", "agribank", "acb", "tpbank", "vpbank"])
+            ]
+            if len(matched_bank) == 1:
+                return {"status": "RESOLVED", "wallet": matched_bank[0]}
+            elif len(matched_bank) > 1:
+                list_str = "\n".join(f"{i+1}. {w['wallet_name']}" for i, w in enumerate(matched_bank))
+                return {
+                    "status": "AMBIGUOUS",
+                    "wallets": matched_bank,
+                    "message": f"Có {len(matched_bank)} ví ngân hàng:\n{list_str}\n\n{user_name} muốn chọn ví nào?"
+                }
+            else:
+                return {
+                    "status": "NOT_FOUND",
+                    "is_generic": True,
+                    "message": "Không tìm thấy ví ngân hàng nào trong danh sách ví của bạn."
+                }
+
+        # 4.c "ví điện tử" (E-Wallet)
+        ewallet_keywords = ["ví điện tử", "vi dien tu", "điện tử", "dien tu", "e-wallet", "ewallet"]
+        if q in ewallet_keywords:
+            matched_ew = [
+                w for w in wallets
+                if (w.get("wallet_type") or "").lower() in ("e-wallet", "ewallet", "vi_dien_tu", "e_wallet")
+                or any(k in w["wallet_name"].lower() for k in ["ví điện tử", "vi dien tu", "momo", "zalopay", "zalo", "shopeepay", "viettelpay", "vnpay"])
+            ]
+            if len(matched_ew) == 1:
+                return {"status": "RESOLVED", "wallet": matched_ew[0]}
+            elif len(matched_ew) > 1:
+                list_str = "\n".join(f"{i+1}. {w['wallet_name']}" for i, w in enumerate(matched_ew))
+                return {
+                    "status": "AMBIGUOUS",
+                    "wallets": matched_ew,
+                    "message": f"Có {len(matched_ew)} ví điện tử:\n{list_str}\n\n{user_name} muốn chọn ví nào?"
+                }
+            else:
+                return {
+                    "status": "NOT_FOUND",
+                    "is_generic": True,
+                    "message": f"Không tìm thấy ví '{wallet_query}' trong danh sách ví của bạn."
+                }
+
         return {
             "status": "NOT_FOUND",
             "is_generic": False,
-            "message": f"Không tìm thấy ví '{wallet_query}' trong danh sách ví của bạn."
+            "message": f"Không tìm thấy ví '{wallet_query}' trong danh sách ví của bạn. (Hệ thống không tự ý tạo ví mới)."
         }
 
     def _check_pending_completeness(
@@ -2926,6 +3149,22 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                 return False, "wallet_name"
             return True, None
 
+        elif tool_name in ("create_expense", "create_income"):
+            amt = args.get("amount")
+            if not amt or float(amt) <= 0:
+                return False, "amount"
+            if not args.get("note") and not args.get("category_name"):
+                return False, "note"
+            # Tự động gán note = category_name nếu thiếu note
+            if not args.get("note") and args.get("category_name"):
+                args["note"] = args["category_name"]
+            # Tự động đoán category_name nếu thiếu category_name
+            if not args.get("category_name") and args.get("note"):
+                guessed = VietnameseFinancialParser.guess_category(args["note"])
+                if guessed:
+                    args["category_name"] = guessed
+            return True, None
+
         elif tool_name == "create_debt":
             amt = args.get("amount")
             if not amt or amt <= 0:
@@ -2939,6 +3178,17 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
             amt = args.get("limit_amount")
             if not amt or amt <= 0:
                 return False, "limit_amount"
+            return True, None
+
+        elif tool_name == "create_saving_goal":
+            name = args.get("target_name")
+            amt = args.get("target_amount")
+            if not name and (not amt or float(amt) <= 0):
+                return False, "goal_details"
+            if not name or not str(name).strip():
+                return False, "target_name"
+            if not amt or float(amt) <= 0:
+                return False, "target_amount"
             return True, None
 
         elif tool_name in ("delete_debt", "settle_debt"):
@@ -3114,6 +3364,127 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
             if updated:
                 return True, ""
 
+        # Saving goal creation follow-up
+        if tool_name == "create_saving_goal":
+            amt = VietnameseFinancialParser.parse_amount(text)
+            existing_name = args.get("target_name")
+            existing_amt = args.get("target_amount")
+
+            # Trường hợp 1: Đang chờ số tiền (missing == "target_amount" hoặc đã có tên nhưng chưa có tiền)
+            if missing == "target_amount" or (existing_name and (not existing_amt or float(existing_amt) <= 0)):
+                if amt and amt > 0:
+                    args["target_amount"] = amt
+                    pending["missing_param"] = None
+                    return True, ""
+                return False, f"Khí Linh chưa nhận diện được số tiền. {user_name} vui lòng cho biết số tiền Linh Thạch dự định tiết kiệm (ví dụ: 1 triệu, 20 triệu)."
+
+            # Trường hợp 2: Đang chờ tên mục tiêu (missing == "target_name" hoặc đã có tiền nhưng chưa có tên)
+            if missing == "target_name" or (existing_amt and float(existing_amt) > 0 and not existing_name):
+                # Nếu người dùng lại nhập số tiền thuần túy mà không có tên mục tiêu -> cập nhật lại số tiền
+                if amt and amt > 0 and not any(w in text.lower() for w in ["mua", "xe", "nhà", "nha", "du lịch", "du lich", "laptop", "iphone", "điện thoại", "dien thoai", "hoc", "học", "cưới", "cuoi", "đổi", "doi"]):
+                    args["target_amount"] = amt
+                    pending["missing_param"] = "target_name"
+                    return True, ""
+
+                cand_goal = VietnameseFinancialParser.extract_goal_name(text)
+                if not cand_goal:
+                    clean_t = text.strip()
+                    clean_t = re.sub(r"\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?\b", "", clean_t, flags=re.IGNORECASE).strip(" .,-")
+                    for stop in [
+                        "mục tiêu là", "mục tiêu", "muc tieu", "tên là", "ten la",
+                        "đặt là", "đặt tên là", "muốn", "để", "cho", "nhé", "nha", "đi", "giúp"
+                    ]:
+                        clean_t = re.sub(rf"\b{re.escape(stop)}\b", "", clean_t, flags=re.IGNORECASE).strip()
+                    if clean_t and len(clean_t) >= 2 and not clean_t.isdigit() and not VietnameseFinancialParser.parse_amount(clean_t):
+                        cand_goal = clean_t.title() if clean_t.islower() else clean_t
+
+                if cand_goal and cand_goal.lower() not in ["thì", "mới", "nào", "gì"] and not VietnameseFinancialParser.parse_amount(cand_goal):
+                    args["target_name"] = cand_goal
+                    pending["missing_param"] = None
+                    return True, ""
+                return False, f"Khí Linh chưa nhận diện được tên mục tiêu. {user_name} muốn đặt tên cho mục tiêu là gì (ví dụ: mua xe, du lịch, mua iphone)?"
+
+            # Trường hợp 3: Chưa có cả tên lẫn số tiền (missing == "goal_details")
+            updated = False
+            if amt and amt > 0:
+                args["target_amount"] = amt
+                updated = True
+
+            cand_goal = VietnameseFinancialParser.extract_goal_name(text)
+            if not cand_goal:
+                clean_t = text.strip()
+                clean_t = re.sub(r"\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?\b", "", clean_t, flags=re.IGNORECASE).strip(" .,-")
+                for stop in [
+                    "mục tiêu là", "mục tiêu", "muc tieu", "tên là", "ten la",
+                    "đặt là", "đặt tên là", "muốn", "để", "cho", "nhé", "nha", "đi", "giúp"
+                ]:
+                    clean_t = re.sub(rf"\b{re.escape(stop)}\b", "", clean_t, flags=re.IGNORECASE).strip()
+                if clean_t and len(clean_t) >= 2 and not clean_t.isdigit() and not VietnameseFinancialParser.parse_amount(clean_t):
+                    cand_goal = clean_t.title() if clean_t.islower() else clean_t
+
+            if cand_goal and cand_goal.lower() not in ["thì", "mới", "nào", "gì"] and not VietnameseFinancialParser.parse_amount(cand_goal):
+                args["target_name"] = cand_goal
+                updated = True
+
+            if updated:
+                if args.get("target_name") and args.get("target_amount") and float(args.get("target_amount", 0)) > 0:
+                    pending["missing_param"] = None
+                elif args.get("target_name"):
+                    pending["missing_param"] = "target_amount"
+                elif args.get("target_amount"):
+                    pending["missing_param"] = "target_name"
+                return True, ""
+
+        # Expense & Income creation follow-up
+        if tool_name in ("create_expense", "create_income"):
+            amt = VietnameseFinancialParser.parse_amount(text)
+            w_name = VietnameseFinancialParser.extract_wallet_name(text)
+            cat_guess = VietnameseFinancialParser.guess_category(text)
+            updated = False
+
+            if w_name:
+                args["wallet_name"] = w_name
+                updated = True
+
+            if amt and amt > 0:
+                args["amount"] = amt
+                updated = True
+                clean_n = text
+                clean_n = re.sub(r"\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?\b", "", clean_n, flags=re.IGNORECASE).strip(" .,-")
+                for stop in ["tiêu", "chi", "cho", "thu", "nhận", "đồng", "vnđ", "tiền", "năm chục", "ăn", "uống"]:
+                    clean_n = re.sub(rf"\b{re.escape(stop)}\b", "", clean_n, flags=re.IGNORECASE).strip()
+                if cat_guess:
+                    args["category_name"] = cat_guess
+                if clean_n and len(clean_n) >= 2 and not clean_n.isdigit() and not VietnameseFinancialParser.parse_amount(clean_n):
+                    args["note"] = clean_n.capitalize()
+                elif cat_guess and not args.get("note"):
+                    args["note"] = cat_guess
+
+            # Nếu người dùng trả lời cho câu hỏi về mục đích/nội dung (ví dụ: "ăn sáng", "mua sắm", "tiền lương")
+            if not amt or amt <= 0:
+                clean_n = text.strip(" .,-")
+                for stop in ["dùng cho việc", "dùng cho", "dùng để", "dùng vào", "cho việc", "cho", "việc", "tiền", "là", "khoản", "mục"]:
+                    clean_n = re.sub(rf"\b{re.escape(stop)}\b", "", clean_n, flags=re.IGNORECASE).strip()
+                if cat_guess:
+                    args["category_name"] = cat_guess
+                    updated = True
+                if clean_n and len(clean_n) >= 2:
+                    args["note"] = clean_n.capitalize()
+                    updated = True
+                elif cat_guess:
+                    args["note"] = cat_guess
+                    updated = True
+
+            if updated:
+                if args.get("amount") and float(args.get("amount", 0)) > 0:
+                    if args.get("note") or args.get("category_name"):
+                        pending["missing_param"] = None
+                    else:
+                        pending["missing_param"] = "note"
+                else:
+                    pending["missing_param"] = "amount"
+                return True, ""
+
         # Budget selection follow-up
         if tool_name in ("delete_budget", "update_budget") or missing == "budget_selection":
             idx = VietnameseFinancialParser.extract_selection_index(text)
@@ -3138,7 +3509,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
                 pending["missing_param"] = None
                 return True, ""
 
-        # Các tool khác (create_expense, saving_goal...)
+        # Các tool khác (generic amount fallback)
         amt = VietnameseFinancialParser.parse_amount(text)
         if amt and amt > 0:
             for amt_field in ("amount", "limit_amount", "target_amount", "balance"):

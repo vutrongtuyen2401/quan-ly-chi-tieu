@@ -618,6 +618,10 @@ class TestFullSystemAgent(unittest.TestCase):
     # ─────────────────────────────────────────────────────────
     def test_14_cross_domain_natural_language_resolution(self):
         """Kiểm thử phân giải ngôn ngữ tự nhiên cho các tool khác trong hệ thống"""
+        with main.get_db() as conn:
+            conn.execute("INSERT OR REPLACE INTO wallets (id, user_id, wallet_name, wallet_type, balance) VALUES (9013, 901, 'MB', 'bank', 50000000)")
+            conn.execute("INSERT OR REPLACE INTO wallets (id, user_id, wallet_name, wallet_type, balance) VALUES (9014, 901, 'Vietcombank', 'bank', 50000000)")
+
         # A. Chuyển tiền: "Chuyển 2 triệu từ MB sang Vietcombank"
         res_trans = self.client.post("/api/ai/chat", json={"message": "Chuyển 2 triệu từ MB sang Vietcombank"}, headers=self.user_headers)
         self.assertEqual(res_trans.status_code, 200)

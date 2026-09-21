@@ -781,22 +781,81 @@ class VietnameseFinancialParser:
         if any(q in raw for q in ["mục tiêu của ta", "mục tiêu của tôi", "mục tiêu tiết kiệm của ta", "tiết kiệm của ta thế nào", "tiến độ mục tiêu", "các mục tiêu", "tất cả mục tiêu"]):
             return None
 
-        m = re.search(r"(?:mục tiêu|tiết kiệm cho|quỹ|muc tieu)\s+(?:là\s+|để\s+)?([^?.,\n;]+)", text, re.IGNORECASE)
+        # Pattern with amount in between e.g. "mục tiêu tiết kiệm 50 triệu để mua xe" -> "mua xe"
+        m_mid = re.search(r"(?:mục tiêu|tiết kiệm|để dành).*?\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?\s+(?:để|cho|là)\s+([^?.,\n;]+)", text, re.IGNORECASE)
+        if m_mid:
+            cand = m_mid.group(1).strip()
+            for stop_w in ["tiết kiệm", "của ta", "của tôi", "thế nào", "ra sao", "thì", "nhé", "nha", "mới", "đi", "giúp"]:
+                cand = re.sub(rf"\b{re.escape(stop_w)}\b", "", cand, flags=re.IGNORECASE).strip()
+            if cand and len(cand) > 1 and cand.lower() not in ["thì", "mới", "gì", "nào", "thế nào", "ra sao"]:
+                return cand
+
+        m = re.search(r"(?:mục tiêu|tiết kiệm cho|tiết kiệm để|để dành tiền để|để dành để|để dành tiền|dành dụm để|quỹ|muc tieu)\s+(?:là\s+|để\s+)?([^?.,\n;]+)", text, re.IGNORECASE)
         if m:
             candidate = m.group(1).strip()
             # Bóc tách số tiền ở đuôi nếu có (ví dụ: 'mua laptop 30 triệu' -> 'mua laptop')
             candidate = re.sub(r"\s*(?:với|khoảng|tầm|số tiền)?\s*\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?\b.*$", "", candidate, flags=re.IGNORECASE).strip()
-            for stop_w in ["tiết kiệm", "của ta", "của tôi", "thế nào", "ra sao", "tiến triển thế nào", "tiến triển ra sao"]:
+            for stop_w in ["tiết kiệm", "của ta", "của tôi", "thế nào", "ra sao", "tiến triển thế nào", "tiến triển ra sao", "thì", "nhé", "nha", "mới", "cho ta", "cho tôi", "đi", "giúp"]:
                 candidate = re.sub(rf"\b{re.escape(stop_w)}\b", "", candidate, flags=re.IGNORECASE).strip()
-            if candidate and len(candidate) > 1 and not any(w in candidate.lower() for w in ["thế nào", "ra sao", "gì"]):
+            if candidate and len(candidate) > 1 and candidate.lower() not in ["thì", "mới", "nào", "gì", "thế nào", "ra sao"]:
                 return candidate
         return None
+
+    @classmethod
+    def is_saving_goal_create_intent(cls, text: str) -> bool:
+        """Kiểm tra ý định tạo/thêm/lập mục tiêu tiết kiệm mới"""
+        raw = text.lower().strip()
+        raw_unacc = remove_accents(raw)
+
+        # Loại trừ các hành động hủy/xóa, sửa/đổi, nạp/rút
+        if any(neg in raw for neg in ["xóa", "xoa", "hủy", "huy", "gỡ", "go", "bỏ", "bo", "delete"]):
+            return False
+        if any(kw in raw for kw in ["sửa", "sua", "đổi", "doi", "cập nhật", "cap nhat", "chỉnh", "chinh"]):
+            return False
+        if any(kw in raw for kw in ["nạp", "nap", "rút", "rut", "bỏ vào", "bo vao", "lấy ra", "lay ra", "đưa vào", "dua vao", "gửi vào", "gui vao"]):
+            return False
+
+        # Loại trừ các câu hỏi tra cứu, tìm hiểu, phân tích (pure read / inquiry)
+        inquiry_kws = [
+            "chức năng nào", "chuc nang nao", "dùng chức năng", "dung chuc nang",
+            "phân hệ nào", "phan he nao", "tab nào", "tab nao", "ở đâu", "o dau",
+            "thế nào", "the nao", "làm sao", "lam sao", "là gì", "la gi",
+            "hướng dẫn", "huong dan", "giải thích", "giai thich", "như thế nào", "ra sao",
+            "cách nào", "cach nao", "dùng để làm gì", "hoạt động thế nào"
+        ]
+        if any(q in raw for q in inquiry_kws):
+            return False
+
+        # Loại trừ câu hỏi tra cứu tiến độ / danh sách / chi tiêu thuần túy
+        if any(q in raw for q in [
+            "các mục tiêu của ta là gì", "cac muc tieu cua ta la gi",
+            "các mục chi tiêu của ta là gì", "cac muc chi tieu cua ta la gi",
+            "ta đã tiết kiệm bao nhiêu", "ta da tiet kiem bao nhieu",
+            "tiết kiệm được bao nhiêu", "tiet kiem duoc bao nhieu",
+            "xem mục tiêu", "xem muc tieu", "danh sách mục tiêu",
+            "tiến độ mục tiêu", "tien do muc tieu"
+        ]):
+            return False
+
+        # 1. Động từ tạo/thêm/lập/đặt/mở ... mục tiêu / kế hoạch
+        if re.search(r"\b(?:thêm|them|tạo|tao|lập|lap|đặt|dat|mở|mo)\b.*?\b(?:mục tiêu|muc tieu|kế hoạch|ke hoach)\b", raw):
+            return True
+
+        # 2. Để dành tiền / tiết kiệm tiền / gom tiền để [mua / làm gì]
+        if re.search(r"\b(?:để dành|de danh|tiết kiệm|tiet kiem|gom tiền|gom tien|dành dụm|danh dum)\s+(?:tiền\s+)?(?:để\s+|cho\s+)?(?:mua|sắm|lấy|xây|làm)\b", raw):
+            return True
+
+        # 3. 'Mục tiêu mới' hoặc 'thêm 1 mục tiêu'
+        if re.search(r"\b(?:mục tiêu mới|muc tieu moi|thêm\s+(?:một|1)\s+mục tiêu|tạo\s+(?:một|1)\s+mục tiêu)\b", raw):
+            return True
+
+        return False
 
     @classmethod
     def guess_category(cls, text: str) -> Optional[str]:
         """Dự đoán danh mục thu/chi từ ngữ cảnh câu nói"""
         raw = text.lower()
-        if any(k in raw for k in ["ăn uống", "cơm", "phở", "bún", "bánh mì", "trà sữa", "cafe", "cà phê", "nhậu", "tiệc", "ăn sáng", "ăn trưa", "ăn tối", "bữa sáng", "bữa trưa", "bữa tối", "điểm tâm"]) or re.search(r"\b(ăn|uống)\b", raw):
+        if any(k in raw for k in ["ăn uống", "cơm", "phở", "bún", "bánh mì", "trà sữa", "cafe", "cà phê", "nhậu", "tiệc", "ăn sáng", "ăn trưa", "ăn tối", "bữa sáng", "bữa trưa", "bữa tối", "điểm tâm", "toa sáng"]) or re.search(r"\b(ăn|uống|toa\s*sáng)\b", raw):
             return "Ăn Uống"
         if any(k in raw for k in ["xăng", "đổ xăng", "grab", "taxi", "gửi xe", "vé xe", "sửa xe", "đi lại"]) or re.search(r"\b(xe|be)\b", raw):
             return "Đi Lại"
@@ -1373,12 +1432,23 @@ class VietnameseFinancialParser:
         if cls.is_confirmation(clean) or cls.is_cancellation(clean) or cls.is_modification(clean):
             return False
 
-        # 2. Nếu câu quá ngắn chỉ chứa số tiền hoặc tên ví (ví dụ '1 triệu', 'momo', 'ví 2') -> thường là tham số bổ sung
+        # 2. Nếu câu ngắn (<= 4 từ):
         words = raw.split()
         if len(words) <= 4:
             amt = cls.parse_amount(clean)
-            if amt and len(words) <= 3 and not any(w in raw for w in ["ăn", "uống", "mua", "chi", "lương", "thu", "vay", "nợ", "xăng"]):
-                return False
+            if amt and len(words) <= 3:
+                # Nếu có số tiền và câu ngắn:
+                if pending_tool in ("create_expense", "create_income", "create_saving_goal", "create_budget", "create_debt", "transfer_money"):
+                    return False
+                if not any(w in raw for w in ["vay", "nợ", "chuyển"]):
+                    return False
+
+            # Nếu là follow-up cho create_expense, create_income, create_saving_goal, create_budget
+            if pending_tool in ("create_expense", "create_income", "create_saving_goal", "create_budget", "create_debt"):
+                # Các câu trả lời nội dung ngắn (ví dụ 'ăn sáng', 'mua cafe', 'tiền xăng', 'mua iphone', 'du lịch')
+                if not any(kw in raw for kw in ["xem", "kiểm tra", "báo cáo", "hủy", "xóa", "chuyển tiền", "tạo ví"]):
+                    return False
+
             # Nếu chỉ là tên ví hoặc 'ví số 1'
             if any(w in raw for w in ["momo", "zalopay", "tiền mặt", "vietcombank", "mb bank", "acb", "techcombank", "số 1", "số 2", "ví 1", "ví 2"]):
                 return False
@@ -1397,16 +1467,20 @@ class VietnameseFinancialParser:
             return True
 
         # Chi tiêu độc lập (ví dụ: 'hôm nay tôi ăn sáng 50 nghìn', 'mua cafe 35k', 'đổ xăng 50k')
-        if any(kw in raw for kw in ["ăn sáng", "ăn trưa", "ăn tối", "uống cafe", "mua sắm", "đổ xăng", "chi tiêu", "tiêu hết", "chi hết"]):
+        if any(kw in raw for kw in ["ăn sáng", "ăn trưa", "ăn tối", "uống cafe", "mua sắm", "đổ xăng", "chi tiêu", "tiêu hết", "chi hết"]) and pending_tool != "create_expense":
             return True
 
         # Thu nhập độc lập (ví dụ: 'vừa nhận lương', 'thưởng tết', 'bán đồ được')
-        if any(kw in raw for kw in ["nhận lương", "thưởng", "thu nhập", "nhận được tiền"]):
+        if any(kw in raw for kw in ["nhận lương", "thưởng", "thu nhập", "nhận được tiền"]) and pending_tool != "create_income":
+            return True
+
+        # Mục tiêu tiết kiệm độc lập (ví dụ: 'tạo mục tiêu mới', 'thêm mục tiêu tiết kiệm')
+        if any(kw in raw for kw in ["thêm mục tiêu", "tạo mục tiêu", "mục tiêu tiết kiệm mới"]) and pending_tool != "create_saving_goal":
             return True
 
         # Chuyển tiền độc lập
         fw, tw = cls.extract_transfer_wallets(clean)
-        if fw and tw:
+        if fw and tw and pending_tool != "transfer_money":
             return True
         if any(kw in raw for kw in ["chuyển tiền", "chuyển khoản", "bắn tiền", "chuyển từ", "bắn sang"]) and pending_tool != "transfer_money":
             return True
