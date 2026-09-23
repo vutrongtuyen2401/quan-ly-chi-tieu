@@ -86,10 +86,10 @@ export default {
     let recognition = null
 
     const defaultQuestions = [
+      'Giao dịch mới nhất của ta là gì?',
+      'Ta đang có tổng cộng bao nhiêu tiền?',
       'Tháng này ta đã chi bao nhiêu?',
-      'Khoản chi nào lớn nhất trong 30 ngày qua?',
-      'Tình hình ngân sách ra sao?',
-      'Mục tiêu tiết kiệm đạt bao nhiêu %?'
+      'Hạn mức ăn uống còn bao nhiêu?'
     ]
 
     const displayedQuestions = computed(() => {
@@ -220,6 +220,7 @@ export default {
 }
 
 .prompt-chip {
+  font-family: inherit;
   padding: 0.35rem 0.75rem;
   border-radius: 9999px;
   background: rgba(45, 52, 73, 0.7);
@@ -261,6 +262,7 @@ export default {
 }
 
 .knowledge-text-input {
+  font-family: inherit;
   width: 100%;
   height: 44px;
   background: rgba(6, 14, 32, 0.85);
@@ -319,6 +321,7 @@ export default {
 }
 
 .btn-send-command {
+  font-family: inherit;
   height: 44px;
   padding: 0 1.25rem;
   border-radius: 12px;

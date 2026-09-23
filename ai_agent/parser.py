@@ -795,7 +795,9 @@ class VietnameseFinancialParser:
             candidate = m.group(1).strip()
             # Bóc tách số tiền ở đuôi nếu có (ví dụ: 'mua laptop 30 triệu' -> 'mua laptop')
             candidate = re.sub(r"\s*(?:với|khoảng|tầm|số tiền)?\s*\b\d+[\d.,]*\s*(?:chục\s*)?(?:k|nghìn|nghin|ngàn|ngan|tr|triệu|trieu|củ|tỷ|ty|vnđ|vnd|đ|đồng)?\b.*$", "", candidate, flags=re.IGNORECASE).strip()
-            for stop_w in ["tiết kiệm", "của ta", "của tôi", "thế nào", "ra sao", "tiến triển thế nào", "tiến triển ra sao", "thì", "nhé", "nha", "mới", "cho ta", "cho tôi", "đi", "giúp"]:
+            # Bóc tách các cụm hỏi tiến độ ở đuôi
+            candidate = re.sub(r"\s+(?:còn thiếu|còn bao nhiêu|tới đâu|đến đâu|được bao nhiêu|đạt bao nhiêu|bao nhiêu).*$", "", candidate, flags=re.IGNORECASE).strip()
+            for stop_w in ["tiết kiệm", "của ta", "của tôi", "thế nào", "ra sao", "tiến triển thế nào", "tiến triển ra sao", "thì", "nhé", "nha", "mới", "cho ta", "cho tôi", "đi", "giúp", "còn thiếu", "bao nhiêu"]:
                 candidate = re.sub(rf"\b{re.escape(stop_w)}\b", "", candidate, flags=re.IGNORECASE).strip()
             if candidate and len(candidate) > 1 and candidate.lower() not in ["thì", "mới", "nào", "gì", "thế nào", "ra sao"]:
                 return candidate
@@ -1648,5 +1650,115 @@ class VietnameseFinancialParser:
             return True
 
         return False
+
+    @classmethod
+    def is_latest_transaction_query(cls, text: str) -> bool:
+        """Kiểm tra xem câu hỏi có phải là tra cứu giao dịch mới nhất / gần nhất / vừa ghi không"""
+        clean = text.lower().strip()
+        raw_unacc = remove_accents(clean)
+
+        patterns = [
+            "giao dịch mới nhất", "giao dich moi nhat",
+            "giao dịch gần nhất", "giao dich gan nhat",
+            "giao dịch cuối cùng", "giao dich cuoi cung",
+            "giao dịch cuối", "giao dich cuoi",
+            "giao dịch gần đây nhất", "giao dich gan day nhat",
+            "khoản vừa ghi", "khoan vua ghi",
+            "khoản vừa chi", "khoan vua chi",
+            "khoản vừa thu", "khoan vua thu",
+            "khoản vừa rồi", "khoan vua roi",
+            "khoản thu chi gần nhất", "khoan thu chi gan nhat",
+            "khoản chi gần nhất", "khoan chi gan nhat",
+            "khoản thu gần nhất", "khoan thu gan nhat",
+            "vừa tiêu khoản gì", "vua tieu khoan gi",
+            "vừa chi khoản gì", "vua chi khoan gi",
+            "vừa chi gì", "vua chi gi",
+            "vừa tiêu gì", "vua tieu gi",
+            "vừa mua gì", "vua mua gi",
+            "vừa ghi nhận gì", "vua ghi nhan gi",
+            "lần cuối ta ghi", "lan cuoi ta ghi",
+            "lần cuối ghi", "lan cuoi ghi",
+            "lần cuối cùng ghi", "lan cuoi cung ghi",
+            "mới tiêu gì", "moi tieu gi",
+            "mới chi gì", "moi chi gi",
+            "tiêu khoản gì gần nhất", "tieu khoan gi gan nhat",
+            "chi khoản gì gần nhất", "chi khoan gi gan nhat",
+            "giao dịch gần nhất của ví", "giao dich gan nhat cua vi",
+            "giao dịch cuối cùng của ví", "giao dich cuoi cung cua vi"
+        ]
+        if any(p in clean or p in raw_unacc for p in patterns):
+            return True
+
+        if any(w in clean for w in ["giao dịch", "giao dich", "khoản", "khoan"]) and any(w in clean for w in ["mới nhất", "moi nhat", "gần nhất", "gan nhat", "cuối cùng", "cuoi cung"]):
+            return True
+
+        return False
+
+    @classmethod
+    def is_system_knowledge_inquiry(cls, text: str) -> bool:
+        """Kiểm tra xem câu hỏi có phải là câu hỏi khái niệm / tri thức hệ thống (RAG) không.
+        Tuyệt đối không nhầm với câu hỏi tra cứu dữ liệu cá nhân (ví dụ: 'hạn mức của ta còn bao nhiêu')."""
+        clean = text.lower().strip()
+        raw_unacc = remove_accents(clean)
+
+        # Nếu có từ chỉ định dữ liệu cá nhân rõ ràng -> KHÔNG PHẢI system knowledge
+        personal_indicators = [
+            "của ta", "cua ta", "của tôi", "cua toi", "của mình", "cua minh",
+            "còn bao nhiêu", "con bao nhieu", "được bao nhiêu", "duoc bao nhieu",
+            "hết bao nhiêu", "het bao nhieu", "bao nhiêu tiền", "bao nhieu tien",
+            "nhiều nhất", "nhieu nhat", "ngốn tiền", "ngon tien", "mới nhất", "moi nhat",
+            "gần nhất", "gan nhat", "cuối cùng", "cuoi cung", "còn nợ", "con no",
+            "ai nợ", "ai no", "nợ ai", "no ai", "còn thiếu", "con thieu", "mua xe", "mua nhà",
+            "mua iphone", "tháng này", "thang nay", "tháng trước", "thang truoc",
+            "hôm nay", "hom nay", "tuần này", "tuan nay", "số dư", "so du"
+        ]
+        if any(p in clean or p in raw_unacc for p in personal_indicators):
+            return False
+
+        # Các mẫu câu hỏi khái niệm / hướng dẫn thuần túy
+        system_patterns = [
+            "là gì", "la gi",
+            "hoạt động thế nào", "hoat dong the nao",
+            "hoạt động ra sao", "hoat dong ra sao",
+            "vận hành thế nào", "van hanh the nao",
+            "cách hoạt động", "cach hoat dong",
+            "nguyên lý", "nguyen ly",
+            "khái niệm", "khai niem",
+            "dùng để làm gì", "dung de lam gi",
+            "tại sao cần", "tai sao can",
+            "làm sao để", "lam sao de",
+            "hướng dẫn", "huong dan",
+            "quy trình", "quy trinh",
+            "chức năng nào", "chuc nang nao",
+            "có những chức năng nào", "co nhung chuc nang nao",
+            "hệ thống có những", "he thong co nhung",
+            "phân hệ nào", "phan he nao"
+        ]
+        # Các mẫu regex linh hoạt (ví dụ: 'cách hạn mức hoạt động?', 'hoạt động như thế nào?')
+        if re.search(r"cách\s+.*?\s+hoạt động", clean) or re.search(r"hoạt động\s+.*?(?:thế nào|ra sao)", clean):
+            return True
+
+        return any(p in clean or p in raw_unacc for p in system_patterns)
+
+    @classmethod
+    def is_read_query(cls, text: str) -> bool:
+        """Kiểm tra toàn diện xem câu nói có mang ý định đọc / tra cứu / xem xét dữ liệu không (tránh false write trigger)"""
+        clean = text.lower().strip()
+        raw_unacc = remove_accents(clean)
+
+        read_markers = [
+            "bao nhiêu", "bao nhieu", "thế nào", "the nao", "ra sao", "mấy", "may",
+            "lịch sử", "lich su", "xem", "tra cứu", "tra cuu", "tìm", "tim", "kiểm tra", "kiem tra",
+            "là gì", "la gi", "những gì", "nhung gi", "gồm những", "gom nhung",
+            "liệt kê", "liet ke", "danh sách", "danh sach", "có những", "co nhung",
+            "mới nhất", "moi nhat", "gần nhất", "gan nhat", "cuối cùng", "cuoi cung", "lần cuối", "lan cuoi",
+            "vừa tiêu gì", "vừa chi gì", "vừa mua gì", "khoản gì", "gì vậy",
+            "nào", "ở đâu", "vào đâu", "ngốn tiền nhất", "nhiều nhất", "ít nhất", "cao nhất", "thấp nhất",
+            "tổng cộng", "tổng tiền", "tổng thu", "tổng chi", "tổng nợ", "còn lại", "còn bao nhiêu",
+            "còn nợ", "ai nợ", "nợ ai", "tiến độ", "chu kỳ", "lần tiếp theo", "định kỳ",
+            "phần trăm", "%", "tháng này", "tháng trước", "hôm nay", "tuần này",
+            "số dư", "so du", "tài sản", "tai san", "ngân khố", "ngan kho"
+        ]
+        return any(m in clean or m in raw_unacc for m in read_markers)
 
 

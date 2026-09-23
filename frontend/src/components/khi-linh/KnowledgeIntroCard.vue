@@ -23,7 +23,7 @@
           <span class="badge-pill gold">Độ Nhạy: Thần Thức Cấp 7</span>
         </div>
         <p class="greeting-text">
-          Thiện tai Đạo Trưởng! Khí Linh đã sẵn sàng mở kho tàng thư tịch tài chính. Ta có thể giải đáp mọi vấn đề về thu chi, ngân sách, nợ nần và phân bổ đan dược linh thạch một cách chuẩn xác nhất.
+          Thiện tai {{ userName || 'Ký Chủ' }}! Khí Linh đã sẵn sàng mở kho tàng thư tịch tài chính. Ta có thể tra cứu giao dịch, số dư các ví, ngân sách, nợ nần và giải đáp mọi quy tắc tu luyện tài chính một cách chuẩn xác nhất.
         </p>
       </div>
     </div>
@@ -37,6 +37,12 @@ export default {
   name: 'KnowledgeIntroCard',
   components: {
     KhiLinhCharacter
+  },
+  props: {
+    userName: {
+      type: String,
+      default: 'Ký Chủ'
+    }
   }
 }
 </script>

@@ -11,6 +11,51 @@ body, html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ─── NATIVE CONTROLS INHERITANCE RULE ─── */
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* ─── MARKDOWN & RICH TEXT TYPOGRAPHY ─── */
+.markdown-body,
+.knowledge-content,
+.ai-rich-content,
+.khi-linh-stream {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  line-height: 1.6;
+}
+
+.markdown-body p,
+.knowledge-content p {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.markdown-body strong,
+.knowledge-content strong,
+.ai-rich-content strong {
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.markdown-body ul,
+.markdown-body ol,
+.knowledge-content ul,
+.knowledge-content ol {
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.markdown-body li,
+.knowledge-content li {
+  margin-bottom: 0.25rem;
+}
+
 /* ─── TABULAR NUMBERS: FINANCIAL ACCURACY RULE ─── */
 .tabular-nums,
 .currency-display,

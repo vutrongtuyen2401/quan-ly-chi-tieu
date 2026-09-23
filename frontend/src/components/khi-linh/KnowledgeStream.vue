@@ -17,12 +17,12 @@
               <p class="bubble-text">{{ msg.text }}</p>
             </div>
             <span class="bubble-timestamp">
-              {{ userName || 'Đạo Hữu' }}
+              {{ userName || 'Ký Chủ' }}
             </span>
           </div>
 
           <!-- User Initial Avatar Orb -->
-          <div class="user-avatar-orb" :title="userName || 'Đạo Hữu'">
+          <div class="user-avatar-orb" :title="userName || 'Ký Chủ'">
             <span>{{ userInitial }}</span>
           </div>
         </div>
@@ -112,16 +112,16 @@ export default {
     },
     userName: {
       type: String,
-      default: 'Đạo Hữu'
+      default: 'Ký Chủ'
     }
   },
   setup(props) {
     const streamContainer = ref(null)
 
     const userInitial = computed(() => {
-      const name = props.userName || 'Đạo Hữu'
+      const name = props.userName || 'Ký Chủ'
       const parts = name.trim().split(/\s+/)
-      return parts[parts.length - 1].charAt(0).toUpperCase() || 'Đ'
+      return parts[parts.length - 1].charAt(0).toUpperCase() || 'K'
     })
 
     const formattedTodayDate = computed(() => {
@@ -369,7 +369,9 @@ export default {
 .ai-rich-content :deep(.hl-currency) {
   color: #e3c370;
   font-weight: 600;
-  font-family: monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv05" 1, "cv11" 1;
 }
 
 .ai-source-tag {

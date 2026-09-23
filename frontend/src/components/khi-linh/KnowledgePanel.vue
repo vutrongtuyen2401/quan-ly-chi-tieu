@@ -11,7 +11,7 @@
 
       <!-- 2. Intro Welcome Card -->
       <div class="intro-container">
-        <KnowledgeIntroCard />
+        <KnowledgeIntroCard :user-name="userName" />
       </div>
 
       <!-- 3. Message Stream -->
@@ -60,7 +60,7 @@ export default {
     },
     userName: {
       type: String,
-      default: 'Đạo Hữu'
+      default: 'Ký Chủ'
     }
   },
   emits: ['send-message', 'clear-history']

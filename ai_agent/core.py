@@ -365,7 +365,7 @@ class AgentCore:
         expense_verbs = ["ăn", "an", "uống", "uong", "hết", "het", "mua", "chi", "tiêu", "tieu", "đổ xăng", "do xang", "trả tiền", "tra tien", "đóng tiền", "dong tien", "thanh toán", "thanh toan"]
         is_expense_trigger = any(re.search(rf"\b{re.escape(kw)}\b", raw) for kw in expense_verbs)
         is_income_trigger = any(re.search(rf"\b{re.escape(kw)}\b", raw) for kw in ["thu", "nhận", "lương", "thưởng", "được cho", "được tặng", "bán"])
-        is_read_query = any(q in raw for q in ["bao nhiêu", "bao nhieu", "thế nào", "the nao", "ra sao", "mấy", "may", "lịch sử", "lich su", "xem", "tra cứu", "tra cuu", "tìm", "tim"])
+        is_read_query = VietnameseFinancialParser.is_read_query(message)
 
         if amt is not None and (is_expense_trigger or is_income_trigger) and not is_read_query:
             return True
@@ -411,7 +411,7 @@ class AgentCore:
 
         return False
 
-    def _is_combined_query(self, message: str) -> Tuple[bool, Optional[str]]:
+    def _is_combined_query(self, message: str, user_id: Optional[int] = None) -> Tuple[bool, Optional[str]]:
         """Kiểm tra xem câu hỏi có kết hợp giữa tra cứu Tri thức Hệ thống và Dữ liệu Cá nhân Read-Only không.
         Ví dụ:
         - "Hệ thống có ngân sách không và ngân sách ăn uống tháng này của ta thế nào?"
@@ -421,13 +421,17 @@ class AgentCore:
         raw = message.lower().strip()
         raw_unacc = remove_accents(raw)
 
+        # 1. Nếu là câu hỏi đọc dữ liệu cá nhân thuần túy hoặc giao dịch mới nhất -> KHÔNG phải combined query!
+        if VietnameseFinancialParser.is_latest_transaction_query(message) or self._is_pure_personal_read_query(message, user_id=user_id):
+            return False, None
+
         # Cần có cả 2 vế:
         # Vế 1: Hỏi về tính năng hệ thống
         has_sys = any(kw in raw or kw in raw_unacc for kw in [
             "hệ thống có", "he thong co", "trong hệ thống có", "trong he thong co",
             "có chức năng", "co chuc nang", "có tính năng", "co tinh nang",
             "hỗ trợ không", "ho tro khong", "có hỗ trợ", "co ho tro",
-            "là gì", "la gi", "dùng để làm gì", "dung de lam gi"
+            "dùng để làm gì", "dung de lam gi"
         ])
 
         # Vế 2: Hỏi về dữ liệu cá nhân của người dùng
@@ -656,10 +660,10 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
 
         return False
 
-    def _is_pure_personal_read_query(self, message: str) -> bool:
+    def _is_pure_personal_read_query(self, message: str, user_id: Optional[int] = None) -> bool:
         """Kiểm tra xem câu hỏi có phải là câu hỏi tra cứu dữ liệu cá nhân thuần túy (Read-Only) không.
-        Ví dụ: 'ta hiện có những ví nào', 'ngân sách ăn uống tháng này của ta thế nào',
-               'tổng số dư tài sản hiện tại của ta là bao nhiêu', 'tháng này ta đã chi tiêu bao nhiêu tiền'.
+        Bao gồm: giao dịch (mới nhất, gần đây, lịch sử), số dư các ví, ngân sách/hạn mức,
+        sổ nợ, mục tiêu tiết kiệm, giao dịch định kỳ, thống kê thu chi, báo cáo, hồ sơ cá nhân.
         """
         raw = message.lower().strip()
         raw_unacc = remove_accents(raw)
@@ -673,24 +677,74 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
         if any(k in raw or k in raw_unacc for k in permission_keywords):
             return False
 
-        # 2. Nếu là câu hỏi về hướng dẫn thao tác, workflow, giải thích khái niệm
-        inquiry_verbs = [
-            "làm sao", "lam sao", "làm thế nào", "lam the nao", "cách nào", "cach nao",
-            "như thế nào", "nhu the nao", "hoạt động ra sao", "hoat dong ra sao", "hoạt động thế nào",
-            "mần răng", "man rang", "mần sao", "man sao", "dùng để làm gì", "dung de lam gi"
-        ]
-        if any(v in raw or v in raw_unacc for v in inquiry_verbs):
+        # 2. Nếu là câu hỏi về khái niệm/hướng dẫn thuần túy hệ thống (RAG)
+        if VietnameseFinancialParser.is_system_knowledge_inquiry(message):
             return False
 
-        # 3. Các dấu hiệu nhận diện câu hỏi đọc dữ liệu cá nhân
+        # 3. Giao dịch mới nhất / gần nhất
+        if VietnameseFinancialParser.is_latest_transaction_query(message):
+            return True
+
+        # 4. Follow-up query khi có context trước đó
+        if user_id and self._last_user_tool.get(user_id) and VietnameseFinancialParser.is_followup_query(message):
+            return True
+
+        # 5. Các dấu hiệu nhận diện câu hỏi đọc dữ liệu cá nhân
         personal_markers = [
             "của ta", "cua ta", "của tôi", "cua toi", "của mình", "cua minh",
             "tôi hiện có", "toi hien co", "ta hiện có", "ta hien co",
             "tôi có những", "ta có những", "tôi có mấy", "ta có mấy",
-            "tổng tài sản hiện tại", "tong tai san hien tai",
-            "tổng số dư", "tong so du",
-            "tháng này ta đã", "thang nay ta da", "tháng này tôi đã", "thang nay toi da",
-            "tháng này chi tiêu", "thang nay chi tieu", "đã chi tiêu bao nhiêu", "da chi tieu bao nhieu"
+            "ta đang có", "ta dang co", "tôi đang có", "toi dang co",
+            "ta có bao nhiêu", "toi co bao nhieu", "tôi có bao nhiêu",
+            "ta vừa", "ta da", "ta đã", "tôi đã", "toi da",
+            "ta còn", "ta con", "tôi còn", "toi con",
+            "ta nợ", "ta no", "tôi nợ", "toi no",
+            "ai nợ ta", "ai no ta", "ai đang nợ ta", "ai dang no ta",
+            "ai nợ tôi", "ai no toi",
+
+            # Giao dịch
+            "giao dịch", "giao dich", "khoản chi", "khoan chi", "khoản thu", "khoan thu",
+            "khoản vừa", "khoan vua", "vừa tiêu", "vua tieu", "vừa chi", "vua chi",
+            "vừa nhận", "vua nhan", "vừa mua", "vua mua", "lịch sử", "lich su",
+            "lần cuối", "lan cuoi", "tổng chi", "tong chi", "tổng thu", "tong thu",
+            "thu bao nhiêu", "thu bao nhieu", "chi bao nhiêu", "chi bao nhieu",
+            "tiêu bao nhiêu", "tieu bao nhieu", "hôm nay tiêu", "hom nay tieu",
+            "tuần này tiêu", "tuan nay tieu", "tháng này tiêu", "thang nay tieu",
+            "tháng này chi", "thang nay chi", "tháng này thu", "thang nay thu",
+
+            # Ví & tài sản
+            "tổng tài sản", "tong tai san", "tổng số dư", "tong so du",
+            "số dư", "so du", "ví nào", "vi nao", "túi càn khôn", "tui can khon",
+            "momo", "zalopay", "tiền mặt", "tien mat", "vietcombank", "vcb",
+            "nhiều tiền nhất", "nhieu tien nhat", "ít tiền nhất", "it tien nhat",
+            "cao nhất", "cao nhat", "thấp nhất", "thap nhat",
+            "phân bổ tiền", "phan bo tien",
+
+            # Ngân sách / Hạn mức
+            "hạn mức", "han muc", "ngân sách", "ngan sach", "vượt hạn mức", "vuot han muc",
+            "vượt ngân sách", "vuot ngan sach", "còn được tiêu", "con duoc tieu",
+            "phần trăm ngân sách", "phan tram ngan sach",
+
+            # Sổ nợ
+            "sổ nợ", "so no", "khoản nợ", "khoan no", "còn nợ", "con no",
+            "phải trả", "phai tra", "phải thu", "phai thu", "tổng nợ", "tong no",
+
+            # Mục tiêu tiết kiệm
+            "mục tiêu", "muc tieu", "tiết kiệm", "tiet kiem", "tích lũy", "tich luy",
+            "còn thiếu bao nhiêu", "con thieu bao nhieu", "mua xe", "mua nhà", "mua nha", "mua iphone",
+
+            # Giao dịch định kỳ
+            "định kỳ", "dinh ky",
+
+            # Báo cáo / Thống kê / Phân tích
+            "chi nhiều nhất", "chi nhieu nhat", "tiêu nhiều nhất", "tieu nhieu nhat",
+            "ngốn tiền nhất", "ngon tien nhat", "tốn nhiều tiền nhất", "ton nhieu tien nhat",
+            "ăn uống tháng này", "an uong thang nay", "ăn uống hết bao nhiêu", "an uong het bao nhieu",
+            "so với tháng trước", "so voi thang truoc", "xu hướng", "xu huong", "báo cáo", "bao cao",
+            "thống kê", "thong ke",
+
+            # Hồ sơ
+            "đạo hiệu của ta", "dao hieu cua ta", "hồ sơ của ta", "ho so cua ta"
         ]
         return any(p in raw or p in raw_unacc for p in personal_markers)
 
@@ -975,7 +1029,7 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
                 text=reply_text,
                 state=self.current_state,
                 tool_executed="get_wallets",
-                tool_result={"top_wallet": top_w, "wallets": wallets_sorted}
+                tool_result={"success": True, "top_wallet": top_w, "wallets": wallets_sorted}
             )
 
         # ─────────────────────────────────────────────────────────────
@@ -1172,9 +1226,234 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
         # Fallback default
         self.current_state = AgentState.IDLE
         return AgentResponse(
-            text=f"Khí Linh chưa phân tích được yêu cầu này của {user_name}.",
+            text=f"Khí Linh đã tiếp nhận yêu cầu của {user_name}.",
             state=self.current_state
         )
+
+    def _format_natural_data_response(
+        self,
+        tool_name: str,
+        tool_res: Any,
+        user_name: str = "Ký Chủ",
+        message: str = "",
+        tool_args: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Sinh câu trả lời tự nhiên, chính xác, súc tích từ kết quả có cấu trúc của ToolResult.
+        TUYỆT ĐỐI KHÔNG BỊA ĐẶT, KHÔNG DÙNG SỐ TỰ NGHĨ. TOOL RESULT = SOURCE OF TRUTH.
+        Xưng hô: user_name (profile đạo hiệu nếu có, hoặc 'Ký Chủ', CẤM 'Đạo Hữu').
+        """
+        if not user_name or "đạo hữu" in user_name.lower():
+            user_name = "Ký Chủ"
+
+        if not tool_res or not getattr(tool_res, "success", False):
+            return f"{user_name}, Khí Linh chưa thể truy xuất dữ liệu này lúc này."
+
+        data = getattr(tool_res, "data", {}) or {}
+        raw = message.lower().strip()
+        args = tool_args or {}
+
+        # 1. TRANSACTIONS DOMAIN
+        if tool_name in ("get_latest_transaction", "search_transactions", "transaction_search", "get_recent_transactions"):
+            txns = data.get("transactions") or data.get("results") or []
+            if not txns:
+                return "Hiện chưa có giao dịch nào để ta tra cứu."
+
+            if tool_name == "get_latest_transaction" or len(txns) == 1 or VietnameseFinancialParser.is_latest_transaction_query(message):
+                t = txns[0]
+                t_type = "chi cho" if t.get("transaction_type") == "EXPENSE" else "thu từ"
+                amt = float(t.get("amount", 0))
+                cat = t.get("category_name") or "Chung"
+                wallet = t.get("wallet_name") or "Túi Càn Khôn"
+                note = t.get("note") or ""
+                date = t.get("transaction_date") or ""
+
+                note_part = f', ghi chú “{note}”' if note else ""
+                wallet_part = f" từ ví {wallet}" if t.get("transaction_type") == "EXPENSE" else f" vào ví {wallet}"
+                return f"{user_name}, giao dịch gần nhất là {amt:,.0f}đ {t_type} {cat}{wallet_part}{note_part}, vào ngày {date}."
+
+            if any(w in raw for w in ["lớn nhất", "cao nhất", "nhiều nhất"]) and args.get("sort_by") == "amount":
+                t = txns[0]
+                t_type = "chi tiêu" if t.get("transaction_type") == "EXPENSE" else "thu nhập"
+                amt = float(t.get("amount", 0))
+                cat = t.get("category_name") or ""
+                note = t.get("note") or ""
+                date = t.get("transaction_date") or ""
+                return f"{user_name}, giao dịch {t_type} có số tiền lớn nhất là {amt:,.0f}đ ({cat} - “{note}”) vào ngày {date}."
+
+            total_amt = data.get("total_amount")
+            if total_amt is None:
+                total_amt = sum(float(x.get("amount", 0)) for x in txns)
+            summary_items = []
+            for t in txns[:3]:
+                summary_items.append(f"{t.get('transaction_date')}: {t.get('note')} ({float(t.get('amount', 0)):,.0f}đ)")
+            sample_str = "; ".join(summary_items)
+            more_str = f" và {len(txns) - 3} giao dịch khác" if len(txns) > 3 else ""
+            return f"{user_name}, tìm thấy {len(txns)} giao dịch phù hợp với tổng số tiền {total_amt:,.0f}đ. Tiêu biểu: {sample_str}{more_str}."
+
+        # 2. WALLETS DOMAIN
+        if tool_name in ("get_wallets", "wallet_status"):
+            wallets = data.get("wallets") or []
+            if not wallets:
+                return f"{user_name} chưa tạo Túi Càn Khôn nào trong hệ thống."
+
+            if any(w in raw for w in ["nhiều tiền nhất", "cao nhất", "lớn nhất"]):
+                highest = data.get("highest_wallet") or max(wallets, key=lambda x: x.get("balance", 0))
+                return f"{user_name}, ví có số dư nhiều nhất là {highest['wallet_name']} với số dư {float(highest['balance']):,.0f}đ."
+
+            if any(w in raw for w in ["ít tiền nhất", "thấp nhất", "nhỏ nhất"]):
+                lowest = data.get("lowest_wallet") or min(wallets, key=lambda x: x.get("balance", 0))
+                return f"{user_name}, ví có số dư thấp nhất là {lowest['wallet_name']} với số dư {float(lowest['balance']):,.0f}đ."
+
+            if len(wallets) == 1 and not any(w in raw for w in ["tổng", "tất cả", "các ví", "danh sách"]):
+                w = wallets[0]
+                pct_str = f" (chiếm {w.get('percentage', 0)}% tổng tài sản)" if "percentage" in w else ""
+                return f"{user_name}, số dư hiện tại của ví {w['wallet_name']} là {float(w['balance']):,.0f}đ{pct_str}."
+
+            total_bal = data.get("total_balance", sum(float(w.get("balance", 0)) for w in wallets))
+            wallet_details = ", ".join([f"{w['wallet_name']}: {float(w['balance']):,.0f}đ" for w in wallets])
+            return f"{user_name} đang có tổng cộng {total_bal:,.0f}đ trải khắp {len(wallets)} ví: {wallet_details}."
+
+        # 3. BUDGETS DOMAIN
+        if tool_name in ("get_budget_status", "budget_status"):
+            budgets = data.get("budgets") or []
+            if not budgets:
+                return f"{user_name} chưa thiết lập hạn mức ngân sách nào trong tháng này."
+
+            if len(budgets) == 1 or any(w in raw for w in ["ăn uống", "mua sắm", "di chuyển", "giải trí"]):
+                b = budgets[0]
+                spent = float(b.get("spent", 0))
+                limit = float(b.get("limit_amount", 0))
+                remain = float(b.get("remaining", limit - spent))
+                pct = float(b.get("percent", (spent / limit * 100) if limit > 0 else 0))
+                status_txt = f"đã vượt {spent - limit:,.0f}đ!" if remain < 0 else f"còn lại {remain:,.0f}đ."
+                return f"{user_name}, hạn mức danh mục '{b['category_name']}' tháng này là {limit:,.0f}đ, đã chi {spent:,.0f}đ ({pct:.1f}%), {status_txt}"
+
+            exceeded = [b for b in budgets if b.get("is_exceeded")]
+            if exceeded:
+                ex_str = ", ".join([f"'{b['category_name']}' (vượt {b.get('percent', 0)}%)" for b in exceeded])
+                return f"{user_name}, hiện có {len(exceeded)} danh mục vượt hạn mức: {ex_str}. Tổng số danh mục đã đặt hạn mức là {len(budgets)}."
+
+            return f"{user_name}, tất cả {len(budgets)} danh mục đều đang trong tầm kiểm soát an toàn, chưa có danh mục nào vượt hạn mức!"
+
+        # 4. DEBTS DOMAIN
+        if tool_name in ("get_debts", "debt_status", "debt_list"):
+            debts = data.get("debts") or []
+            if not debts:
+                return f"{user_name} hiện không có khoản nợ nào trong sổ nợ."
+
+            borrow_debts = [d for d in debts if d.get("debt_type") == "BORROW" and not d.get("is_settled")]
+            lend_debts = [d for d in debts if d.get("debt_type") == "LEND" and not d.get("is_settled")]
+            total_borrow = sum(float(d.get("amount", 0)) for d in borrow_debts)
+            total_lend = sum(float(d.get("amount", 0)) for d in lend_debts)
+
+            if any(w in raw for w in ["ta nợ", "ta vay", "khoản ta vay", "ta còn nợ", "phải trả"]):
+                if not borrow_debts:
+                    return f"{user_name} hiện không nợ ai khoản nào, tâm cảnh thanh tịnh!"
+                borrow_list = ", ".join([f"{d.get('person_name')}: {float(d.get('amount', 0)):,.0f}đ" for d in borrow_debts])
+                return f"{user_name} đang nợ tổng cộng {total_borrow:,.0f}đ ({len(borrow_debts)} khoản): {borrow_list}."
+
+            if any(w in raw for w in ["ai nợ ta", "người khác nợ", "cho vay", "phải thu", "ai đang nợ"]):
+                if not lend_debts:
+                    return f"{user_name}, hiện không có ai nợ tiền Ký Chủ."
+                lend_list = ", ".join([f"{d.get('person_name')}: {float(d.get('amount', 0)):,.0f}đ" for d in lend_debts])
+                return f"Người khác đang nợ {user_name} tổng cộng {total_lend:,.0f}đ ({len(lend_debts)} khoản): {lend_list}."
+
+            return f"{user_name}, sổ nợ hiện có {len(debts)} khoản: tổng tiền phải trả (đi vay) là {total_borrow:,.0f}đ, tổng tiền phải thu (cho vay) là {total_lend:,.0f}đ."
+
+        # 5. SAVING GOALS DOMAIN
+        if tool_name in ("get_saving_goals", "saving_goal_status"):
+            goals = data.get("saving_goals") or data.get("goals") or []
+            target_g = data.get("target_goal")
+            if target_g and target_g not in goals:
+                goals = [target_g] + goals
+
+            if not goals:
+                return f"{user_name} chưa lập mục tiêu tiết kiệm nào trong tiên phủ."
+
+            if target_g or len(goals) == 1 or any(w in raw for w in ["mua xe", "mua nhà", "mua iphone", "laptop"]):
+                g = target_g or goals[0]
+                target = float(g.get("target_amount", 0))
+                curr = float(g.get("current_amount", 0))
+                pct = float(g.get("progress_percent", g.get("percent", (curr / target * 100) if target > 0 else 0)))
+                rem = float(g.get("remaining_amount", target - curr))
+                return f"{user_name}, mục tiêu '{g['target_name']}' đã tích lũy được {curr:,.0f}đ / {target:,.0f}đ ({pct:.1f}%), còn thiếu {rem:,.0f}đ để hoàn thành."
+
+            if any(w in raw for w in ["gần nhất", "gần hoàn thành", "tiến độ cao nhất"]):
+                closest = data.get("closest_goal") or max(goals, key=lambda x: x.get("progress_percent", x.get("percent", 0)))
+                c_rem = float(closest.get("remaining_amount", closest.get("target_amount", 0) - closest.get("current_amount", 0)))
+                c_pct = float(closest.get("progress_percent", closest.get("percent", 0)))
+                return f"{user_name}, mục tiêu gần hoàn thành nhất là '{closest['target_name']}' với tiến độ {c_pct:.1f}%, còn thiếu {c_rem:,.0f}đ."
+
+            total_target = sum(float(g.get("target_amount", 0)) for g in goals)
+            total_saved = sum(float(g.get("current_amount", 0)) for g in goals)
+            overall_pct = (total_saved / total_target * 100) if total_target > 0 else 0
+            return f"{user_name} có {len(goals)} mục tiêu tiết kiệm: đã tích lũy {total_saved:,.0f}đ / {total_target:,.0f}đ (đạt {overall_pct:.1f}% tổng kế hoạch)."
+
+        # 6. RECURRING DOMAIN
+        if tool_name == "get_recurring_transactions":
+            items = data.get("recurring") or data.get("recurring_transactions") or data.get("items") or []
+            if not items:
+                return f"{user_name} chưa thiết lập giao dịch định kỳ nào."
+            summary_list = []
+            for it in items[:3]:
+                t_label = "Chi" if it.get("transaction_type") == "EXPENSE" else "Thu"
+                summary_list.append(f"{t_label} {float(it.get('amount', 0)):,.0f}đ ({it.get('frequency')}, kỳ tới: {it.get('next_run_date')})")
+            details = "; ".join(summary_list)
+            return f"{user_name} hiện có {len(items)} giao dịch định kỳ đang hoạt động: {details}."
+
+        # 7. CATEGORIES DOMAIN
+        if tool_name == "get_categories":
+            cats = data.get("categories") or []
+            if not cats:
+                return f"{user_name} chưa có danh mục nào trong hệ thống."
+            if any(w in raw for w in ["danh mục thu", "thu nhập"]):
+                inc_cats = [c for c in cats if c.get("category_type") == "INCOME"]
+                c_names = ", ".join([f"{c.get('icon', '')} {c.get('category_name')}" for c in inc_cats])
+                return f"{user_name}, danh mục Thu gồm: {c_names}."
+            if any(w in raw for w in ["danh mục chi", "chi tiêu"]):
+                exp_cats = [c for c in cats if c.get("category_type") == "EXPENSE"]
+                c_names = ", ".join([f"{c.get('icon', '')} {c.get('category_name')}" for c in exp_cats])
+                return f"{user_name}, danh mục Chi gồm: {c_names}."
+            c_names = ", ".join([f"{c.get('icon', '')} {c.get('category_name')}" for c in cats[:10]])
+            return f"{user_name} có {len(cats)} danh mục: {c_names}."
+
+        # 8. ANALYTICS / SPENDING DOMAIN
+        if tool_name in ("spending_by_category", "spending_summary", "financial_overview", "get_financial_overview"):
+            period = data.get("period") or "tháng này"
+            period_title = "tháng này" if period in ("this_month", "tháng này") else f"kỳ {period}"
+
+            if any(w in raw for w in ["thu bao nhiêu", "tổng thu", "thu nhập"]):
+                inc = float(data.get("income", 0))
+                return f"Trong {period_title}, tổng thu của {user_name} là {inc:,.0f}đ."
+
+            if tool_name == "spending_by_category" and any(w in raw for w in ["nhiều nhất", "ngốn tiền nhất", "lớn nhất"]):
+                breakdown = data.get("breakdown") or data.get("categories") or []
+                if breakdown:
+                    top_cat = breakdown[0]
+                    return f"Trong {period_title}, danh mục {user_name} chi nhiều tiền nhất là '{top_cat.get('category_name')}' với {float(top_cat.get('total', 0)):,.0f}đ."
+                return f"Trong {period_title}, {user_name} chưa có khoản chi tiêu nào để xếp hạng."
+
+            cat_name = data.get("category_name")
+            if cat_name and "total_spent" in data:
+                return f"Trong {period_title}, {user_name} đã chi {float(data.get('total_spent', 0)):,.0f}đ cho danh mục {cat_name}."
+
+            exp = float(data.get("expense", data.get("total_spent", 0)))
+            inc = float(data.get("income", 0))
+            net = float(data.get("net_savings", inc - exp))
+            if "income" in data:
+                return f"Trong {period_title}, {user_name} đã chi {exp:,.0f}đ, thu {inc:,.0f}đ, tiết kiệm thuần là {net:,.0f}đ."
+            return f"Trong {period_title}, tổng chi tiêu của {user_name} là {exp:,.0f}đ."
+
+        # 9. USER PROFILE
+        if tool_name == "get_user_profile":
+            fn = data.get("full_name") or user_name
+            role = data.get("role") or "Đệ Tử"
+            role_desc = "Chưởng Môn" if role == "admin" else "Đệ Tử"
+            return f"Đạo hiệu của {user_name} là **{fn}**, cảnh giới: {role_desc}."
+
+        return getattr(tool_res, "message", "")
+
+
 
 
     async def process_request(
@@ -1223,6 +1502,9 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
         # ─────────────────────────────────────────────────────────────
         # 0. PHÂN LUỒNG TRI THỨC VÀ KIỂM SOÁT QUYỀN HẠN KHÍ LINH AI LỚN (KNOWLEDGE MODE)
         # ─────────────────────────────────────────────────────────────
+        if not user_name or "đạo hữu" in user_name.lower():
+            user_name = "Ký Chủ"
+
         if agent_mode == AgentMode.KNOWLEDGE:
             # 0.A. Chặn xác nhận thao tác ghi dữ liệu từ chế độ Knowledge
             if VietnameseFinancialParser.is_confirmation(clean_msg):
@@ -1244,17 +1526,30 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
                     state=self.current_state
                 )
 
-            # 0.C. Xử lý câu hỏi kết hợp: RAG Tri thức Hệ thống + Dữ liệu Cá nhân Read-Only
-            is_comb, comb_domain = self._is_combined_query(clean_msg)
-            if is_comb and comb_domain:
-                return await self._handle_combined_query(
-                    user_id, clean_msg, comb_domain, recent_history=recent_history, user_role=user_role
+            # 0.C. Phân loại luồng câu hỏi trong Knowledge Mode (Requirement 5: LIVE DATA ƯU TIÊN HƠN RAG):
+            # 1. CURRENT_USER_DATA: Đọc dữ liệu thực tế người dùng -> Fallthrough xuống Planning & ToolRegistry!
+            is_personal_read = self._is_pure_personal_read_query(clean_msg, user_id=user_id)
+            if is_personal_read:
+                pass  # Fallthrough thẳng xuống Planning chạy READ tools qua ToolRegistry
+            elif VietnameseFinancialParser.is_system_knowledge_inquiry(clean_msg):
+                # 2. SYSTEM_KNOWLEDGE: Câu hỏi khái niệm / hướng dẫn thuần túy -> RAG
+                ans_text, trace = await self.rag.answer_question(clean_msg, provider=self.provider, recent_history=recent_history)
+                self.current_state = AgentState.IDLE
+                return AgentResponse(
+                    text=ans_text,
+                    state=self.current_state,
+                    tool_executed="knowledge_rag",
+                    tool_result={"trace_sources": trace}
                 )
+            else:
+                # 3. MIXED_QUERY: Câu hỏi kết hợp hệ thống + dữ liệu cá nhân
+                is_comb, comb_domain = self._is_combined_query(clean_msg, user_id=user_id)
+                if is_comb and comb_domain:
+                    return await self._handle_combined_query(
+                        user_id, clean_msg, comb_domain, recent_history=recent_history, user_role=user_role
+                    )
 
-            # 0.D. Nếu là câu hỏi đọc dữ liệu cá nhân thuần túy (Personal Read-Only) -> Để fallthrough xuống planning chạy READ tool
-            is_personal_read = self._is_pure_personal_read_query(clean_msg)
-            if not is_personal_read:
-                # Toàn bộ câu hỏi còn lại trong Knowledge Mode đều là tra cứu Tri Thức Hệ Thống qua RAG
+                # 4. SYSTEM_KNOWLEDGE / GENERAL KNOWLEDGE còn lại -> RAG
                 ans_text, trace = await self.rag.answer_question(clean_msg, provider=self.provider, recent_history=recent_history)
                 self.current_state = AgentState.IDLE
                 return AgentResponse(
@@ -2158,16 +2453,36 @@ Câu hỏi của {user_name}: {clean_msg}"""
             self.current_state = AgentState.SUCCESS
             self._last_user_tool[user_id] = {"tool_name": tool_name, "args": tool_args}
             self.record_successful_action(user_id, tool, tool_args, tool_res)
+
+            # Định dạng câu trả lời tự nhiên, chính xác, súc tích (grounded in data)
+            natural_text = self._format_natural_data_response(
+                tool_name=tool_name,
+                tool_res=tool_res,
+                user_name=user_name,
+                message=clean_msg,
+                tool_args=tool_args
+            )
+            resp_text = natural_text if (natural_text and natural_text.strip()) else tool_res.message
+
             return AgentResponse(
-                text=tool_res.message,
+                text=resp_text,
                 state=self.current_state,
                 tool_executed=tool_name,
                 tool_result=tool_res.to_dict()
             )
         else:
             self.current_state = AgentState.ERROR
+            err_msg = tool_res.error or tool_res.message or "Lỗi không xác định"
+            if "permission denied" in err_msg.lower() or "read-only" in err_msg.lower():
+                resp_err = (
+                    "Khí Linh AI Lớn hoạt động ở chế độ Tra cứu Tri thức (Read-Only), "
+                    "không có quyền thực thi thao tác thay đổi số dư hoặc sổ sách này. "
+                    "Hãy triệu hồi Khí Linh (nhỏ / Live System Mode) để thực hiện!"
+                )
+            else:
+                resp_err = f"{user_name}, Khí Linh chưa thể truy xuất dữ liệu này lúc này ({err_msg})."
             return AgentResponse(
-                text=f"Không thể thực thi pháp bảo: {tool_res.error or tool_res.message}",
+                text=resp_err,
                 state=self.current_state,
                 tool_executed=tool_name,
                 tool_result=tool_res.to_dict(),
@@ -2223,16 +2538,26 @@ Câu hỏi của {user_name}: {clean_msg}"""
                 if cat:
                     return {"tool": "spending_by_category", "arguments": {"category_name": cat, "period": last_args.get("period", "this_month")}}
 
-            if last_tool in ("transaction_search", "search_transactions"):
+            if last_tool in ("transaction_search", "search_transactions", "get_latest_transaction", "get_recent_transactions"):
                 if period:
                     last_args["time_frame"] = period
-                    return {"tool": "transaction_search", "arguments": last_args}
+                    return {"tool": "search_transactions", "arguments": last_args}
                 if cat:
                     last_args["category_name"] = cat
-                    return {"tool": "transaction_search", "arguments": last_args}
+                    return {"tool": "search_transactions", "arguments": last_args}
                 if w_name:
                     last_args["wallet_name"] = w_name
-                    return {"tool": "transaction_search", "arguments": last_args}
+                    return {"tool": "search_transactions", "arguments": last_args}
+
+            if last_tool in ("get_wallets", "wallet_status"):
+                if w_name:
+                    return {"tool": "get_wallets", "arguments": {"wallet_name": w_name}}
+
+            if last_tool in ("get_budget_status", "budget_status"):
+                if cat:
+                    return {"tool": "get_budget_status", "arguments": {"category_name": cat, "month_year": last_args.get("month_year", "this_month")}}
+                if period:
+                    return {"tool": "get_budget_status", "arguments": {"category_name": last_args.get("category_name"), "month_year": period}}
 
         # ─────────────────────────────────────────────────────────────
         # 4.5. ACTION CONTEXT & INTENT PRIORITY (DESTRUCTIVE / UPDATE / CONTEXTUAL REFERENCE)
@@ -2672,6 +2997,39 @@ Câu hỏi của {user_name}: {clean_msg}"""
             return {"tool": "get_user_profile", "arguments": {}}
 
         # J. READ OPERATIONS (BUDGET / DEBT / GOAL / WALLET / CATEGORY / TRANSACTIONS)
+
+        # 0. Giao dịch mới nhất / gần nhất (Latest Transaction)
+        if VietnameseFinancialParser.is_latest_transaction_query(message):
+            t_type = "EXPENSE" if any(w in raw for w in ["tiêu", "chi", "tán tài"]) else ("INCOME" if any(w in raw for w in ["thu", "nhận", "nạp tài"]) else None)
+            return {
+                "tool": "get_latest_transaction",
+                "arguments": {
+                    "wallet_name": w_name,
+                    "category_name": cat,
+                    "txn_type": t_type
+                }
+            }
+
+        # Giao dịch có số tiền lớn nhất
+        if any(w in raw for w in ["giao dịch lớn nhất", "khoản chi lớn nhất", "số tiền lớn nhất", "khoản tiền lớn nhất", "giao dịch nhiều tiền nhất"]):
+            t_type = "EXPENSE" if any(w in raw for w in ["chi", "tiêu"]) else ("INCOME" if any(w in raw for w in ["thu", "nhận"]) else None)
+            return {
+                "tool": "search_transactions",
+                "arguments": {
+                    "sort_by": "amount",
+                    "order": "DESC",
+                    "limit": 1,
+                    "wallet_name": w_name,
+                    "category_name": cat,
+                    "txn_type": t_type,
+                    "time_frame": period
+                }
+            }
+
+        # Tra cứu thu nhập / tổng thu
+        if any(kw in raw for kw in ["thu bao nhiêu", "thu nhập tháng", "tháng này ta thu", "tháng này thu bao nhiêu", "tổng thu", "thu được bao nhiêu", "khoản thu tháng này"]):
+            return {"tool": "financial_overview", "arguments": {"period": period or "this_month"}}
+
         if any(kw in raw for kw in ["hạn mức", "han muc", "ngân sách", "ngan sach", "vượt hạn mức"]):
             tool_target = "get_budget_status" if "hạn mức chi tiêu thế nào" in raw else "budget_status"
             return {"tool": tool_target, "arguments": {"category_name": cat} if cat else {}}
@@ -2685,6 +3043,18 @@ Câu hỏi của {user_name}: {clean_msg}"""
             tool_target = "saving_goal_status" if ("thế nào" in raw or "tiến triển" in raw or "của ta" in raw) else "get_saving_goals"
             return {"tool": tool_target, "arguments": {"goal_name": goal} if goal else {}}
 
+        # Chi tiêu theo danh mục & Top danh mục chi nhiều nhất (Spending by Category)
+        if any(kw in raw for kw in [
+            "chi nhiều nhất", "tiêu nhiều nhất", "chi gì nhiều nhất", "tiêu gì nhiều nhất",
+            "ngốn tiền nhất", "tốn tiền nhất", "danh mục nào chi", "danh mục nào tiêu",
+            "khoản nào lớn nhất", "tiêu vào đâu", "phân bổ", "cơ cấu chi tiêu"
+        ]):
+            return {"tool": "spending_by_category", "arguments": {"category_name": cat, "period": period or "this_month"} if cat else {"period": period or "this_month"}}
+
+        if cat and not any(kw in raw for kw in ["mục tiêu", "muc tieu", "ngân sách", "ngan sach", "hạn mức"]):
+            if any(kw in raw for kw in ["bao nhiêu", "thế nào", "mấy", "chi", "tiêu", "hết", "tốn", "mất"]) and not amt:
+                return {"tool": "spending_by_category", "arguments": {"category_name": cat, "period": period or "this_month"}}
+
         # Tra cứu danh mục (Read-only Categories)
         has_category_kw = any(kw in raw for kw in ["danh mục", "danh muc", "loại thu chi", "loai thu chi", "các khoản chi tiêu", "cac khoan chi tieu"]) or (
             any(kw in raw for kw in ["các mục", "cac muc", "mục chi tiêu", "muc chi tieu", "mục thu chi", "muc thu chi"]) and not any(w in raw for w in ["mục tiêu", "muc tieu", "tiết kiệm", "tiet kiem"])
@@ -2695,13 +3065,6 @@ Câu hỏi của {user_name}: {clean_msg}"""
 
         if any(kw in raw for kw in ["định kỳ", "dinh ky"]):
             return {"tool": "get_recurring_transactions", "arguments": {}}
-
-        if any(kw in raw for kw in ["tiêu nhiều nhất", "tiêu gì nhiều nhất", "chi nhiều nhất", "chi gì nhiều nhất", "khoản nào lớn nhất", "tiêu vào đâu", "phân bổ", "cơ cấu chi tiêu", "theo danh mục", "theo mục", "quá tay", "lỡ tiêu", "tiêu nhiều quá"]):
-            return {"tool": "spending_by_category", "arguments": {"category_name": cat, "period": period or "this_month"} if cat else {"period": period or "this_month"}}
-
-        if cat and not any(kw in raw for kw in ["mục tiêu", "muc tieu", "ngân sách", "ngan sach", "hạn mức"]):
-            if any(kw in raw for kw in ["tiêu", "chi"]) and any(kw in raw for kw in ["bao nhiêu", "thế nào", "mấy"]) and not amt:
-                return {"tool": "spending_by_category", "arguments": {"category_name": cat, "period": period or "this_month"}}
 
         if any(kw in raw for kw in [
             "hôm nay ta đã tiêu gì", "đã tiêu gì", "ta tiêu bao nhiêu", "hôm nay tiêu", "tuần này tiêu",
@@ -2781,9 +3144,10 @@ Câu hỏi của {user_name}: {clean_msg}"""
             "thanh toán", "thanh toan", "khoản chi", "mục chi tiêu", "muc chi tieu",
             "khoản chi tiêu", "tán tài", "tan tai"
         ]
+        is_read_query = VietnameseFinancialParser.is_read_query(message) or any(q in raw for q in ["bao nhiêu", "bao nhieu", "thế nào", "the nao", "ra sao", "mấy", "may", "lịch sử", "lich su", "xem", "tra cứu", "tra cuu", "tìm", "tim", "là gì", "la gi", "những gì", "nhung gi", "gồm những", "gom nhung", "liệt kê", "liet ke", "danh sách", "danh sach", "có những", "co nhung"])
+
         is_expense_trigger = any(re.search(rf"\b{re.escape(kw)}\b", raw) for kw in expense_verbs)
         is_income_trigger = any(re.search(rf"(?<!ghi\s)\b{re.escape(kw)}\b", raw) for kw in ["thu", "nhận", "lương", "thưởng", "được cho", "được tặng", "bán", "khoản thu", "khoản tiền ta vừa nhận", "tiền vừa nhận", "nạp tài", "nap tai"])
-        is_read_query = any(q in raw for q in ["bao nhiêu", "bao nhieu", "thế nào", "the nao", "ra sao", "mấy", "may", "lịch sử", "lich su", "xem", "tra cứu", "tra cuu", "tìm", "tim", "là gì", "la gi", "những gì", "nhung gi", "gồm những", "gom nhung", "liệt kê", "liet ke", "danh sách", "danh sach", "có những", "co nhung"])
 
         if any(w in raw for w in ["khoản chi", "khoan chi", "mục chi tiêu", "muc chi tieu", "khoản chi tiêu", "khoan chi tieu"]):
             is_expense_trigger = True
@@ -2791,6 +3155,10 @@ Câu hỏi của {user_name}: {clean_msg}"""
         elif any(w in raw for w in ["khoản thu", "khoan thu", "khoản tiền ta vừa nhận", "tiền vừa nhận"]):
             is_income_trigger = True
             is_expense_trigger = False
+
+        if is_read_query:
+            is_expense_trigger = False
+            is_income_trigger = False
 
         # QUAN TRỌNG: Các hành động Xóa, Hủy, Gỡ, Bỏ, Sửa, Đổi hoặc Tạo/Xóa Danh Mục Tuyệt đối KHÔNG biến thành Create Expense hay Create Income!
         if has_destructive_verb or has_update_verb or VietnameseFinancialParser.is_category_create_intent(message) or VietnameseFinancialParser.is_category_delete_intent(message):

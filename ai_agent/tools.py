@@ -327,6 +327,8 @@ async def handle_get_wallets(user_id: int, wallet_name: Optional[str] = None, **
         ).fetchall()
         wallets = [dict(r) for r in rows]
         total_balance = sum(w["balance"] for w in wallets)
+        for w in wallets:
+            w["percentage"] = round((w["balance"] / total_balance * 100), 1) if total_balance > 0 else 0.0
 
         if wallet_name:
             matched = [w for w in wallets if _match_wallet_name(wallet_name, w["wallet_name"])]
@@ -339,11 +341,17 @@ async def handle_get_wallets(user_id: int, wallet_name: Optional[str] = None, **
                 )
 
         top_wallet = max(wallets, key=lambda w: w["balance"]) if wallets else None
+        lowest_wallet = min(wallets, key=lambda w: w["balance"]) if wallets else None
         top_msg = f" Túi Càn Khôn dồi dào nhất hiện tại là '{top_wallet['wallet_name']}' với {top_wallet['balance']:,.0f} VNĐ." if top_wallet else ""
 
         return ToolResult(
             success=True,
-            data={"wallets": wallets, "total_balance": total_balance, "top_wallet": top_wallet},
+            data={
+                "wallets": wallets,
+                "total_balance": total_balance,
+                "top_wallet": top_wallet,
+                "lowest_wallet": lowest_wallet
+            },
             message=f"Ký Chủ hiện có {len(wallets)} Túi Càn Khôn, tổng số dư là {total_balance:,.0f} VNĐ.{top_msg}"
         )
 
@@ -809,6 +817,13 @@ async def handle_search_transactions(
             params.append(txn_type)
 
         limit_val = min(max(1, int(limit)), 50)
+        sort_by = kwargs.get("sort_by") or ("amount" if kwargs.get("order_by_amount") else "date")
+        order_dir = "ASC" if str(kwargs.get("order", "DESC")).upper() == "ASC" else "DESC"
+        if sort_by == "amount":
+            order_clause = f"t.amount {order_dir}, t.transaction_date DESC, t.id DESC"
+        else:
+            order_clause = f"t.transaction_date {order_dir}, t.id {order_dir}"
+
         sql = f"""
             SELECT t.id, t.amount, t.transaction_type, t.transaction_date, t.note,
                    w.wallet_name, c.category_name, c.icon as category_icon
@@ -816,7 +831,7 @@ async def handle_search_transactions(
             LEFT JOIN wallets w ON t.wallet_id = w.id
             LEFT JOIN categories c ON t.category_id = c.id
             WHERE {' AND '.join(where_clauses)}
-            ORDER BY t.transaction_date DESC, t.id DESC
+            ORDER BY {order_clause}
             LIMIT {limit_val}
         """
         rows = conn.execute(sql, params).fetchall()
@@ -1694,6 +1709,9 @@ async def handle_get_saving_goals(user_id: int, goal_name: Optional[str] = None,
         total_target = sum(g["target_amount"] for g in goals)
         total_saved = sum(g["current_amount"] for g in goals)
         overall_pct = round(total_saved / total_target * 100, 1) if total_target > 0 else 0
+        uncompleted_goals = [g for g in goals if not g.get("is_completed")]
+        closest_goal = max(uncompleted_goals, key=lambda g: g["percent"]) if uncompleted_goals else None
+        total_remaining = sum(g["remaining_amount"] for g in uncompleted_goals)
         return ToolResult(
             success=True,
             data={
@@ -1701,7 +1719,9 @@ async def handle_get_saving_goals(user_id: int, goal_name: Optional[str] = None,
                 "count": len(goals),
                 "total_target": total_target,
                 "total_saved": total_saved,
-                "overall_percent": overall_pct
+                "total_remaining": total_remaining,
+                "overall_percent": overall_pct,
+                "closest_goal": closest_goal
             },
             message=f"Ký Chủ có {len(goals)} mục tiêu tiết kiệm, đã tích lũy {total_saved:,.0f} / {total_target:,.0f} VNĐ ({overall_pct}%)."
         )
@@ -2546,6 +2566,25 @@ def build_default_tool_registry() -> ToolRegistry:
         risk_level=RiskLevel.LOW,
         requires_confirmation=False,
         handler=handle_get_recent_transactions
+    ))
+    reg.register(Tool(
+        name="get_latest_transaction",
+        description="Xem giao dịch thu/chi mới nhất hoặc khoản tiền vừa thu/chi gần nhất của Ký Chủ.",
+        domain="transaction",
+        parameters={
+            "type": "object",
+            "properties": {
+                "wallet_name": {"type": "string", "description": "Tên ví nếu muốn lọc theo ví cụ thể"},
+                "category_name": {"type": "string", "description": "Tên danh mục nếu muốn lọc theo danh mục cụ thể"},
+                "txn_type": {"type": "string", "enum": ["INCOME", "EXPENSE"], "description": "Loại thu hoặc chi"}
+            }
+        },
+        action_type=ToolActionType.READ,
+        risk_level=RiskLevel.LOW,
+        requires_confirmation=False,
+        handler=lambda user_id, wallet_name=None, category_name=None, txn_type=None, **kw: handle_search_transactions(
+            user_id=user_id, wallet_name=wallet_name, category_name=category_name, txn_type=txn_type, limit=1, **kw
+        )
     ))
     search_tool = Tool(
         name="transaction_search",
