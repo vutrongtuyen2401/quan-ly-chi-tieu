@@ -80,6 +80,8 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
 - `ALLOWED_ORIGINS`: Danh sách tên miền CORS được phép truy cập (mặc định: `http://localhost:5173`).
 - `GEMINI_API_KEY`: Khóa API Google Gemini cho tính năng AI OCR và trợ lý Khí Linh.
 - `SEED_ADMIN_PASSWORD`: (Tùy chọn) Mật khẩu cho tài khoản seed `admin@gmail.com`.
+- `APP_ENV`: `development` (mặc định) hoặc `production`. Ở `production`, mã reset mật khẩu **chỉ** được gửi qua email và không bao giờ trả trong API; nếu chưa cấu hình SMTP, chức năng quên mật khẩu trả lỗi 503. Ở `development` mà chưa cấu hình SMTP, mã được trả trực tiếp để test.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` (`starttls` | `ssl` | `none`): Cấu hình SMTP để gửi mã reset mật khẩu (ví dụ Gmail: `smtp.gmail.com`, `587`, `starttls`, dùng App Password). Khi đã đặt `SMTP_HOST` thì mã luôn được gửi qua email, kể cả ở `development`.
 
 ---
 

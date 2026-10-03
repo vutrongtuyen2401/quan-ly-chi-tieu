@@ -17,6 +17,9 @@ import secrets
 import time
 import csv
 import io
+import smtplib
+import ssl
+from email.message import EmailMessage
 from contextlib import contextmanager
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
@@ -57,6 +60,20 @@ if not JWT_SECRET:
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Gửi mã reset mật khẩu qua email (SMTP)
+# APP_ENV=production: bắt buộc cấu hình SMTP, KHÔNG BAO GIỜ trả mã reset trong response.
+# APP_ENV=development (mặc định): nếu chưa cấu hình SMTP thì trả mã trực tiếp để test.
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+IS_PRODUCTION = APP_ENV == "production"
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587") or 587)
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "").strip() or SMTP_USER
+# SMTP_SECURITY: starttls (cổng 587, mặc định) | ssl (cổng 465) | none
+SMTP_SECURITY = os.getenv("SMTP_SECURITY", "starttls").strip().lower()
+RESET_TOKEN_EXPIRE_MINUTES = 30
 
 # Change 1: CORS an toàn — đọc danh sách origins từ biến môi trường
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
@@ -651,11 +668,45 @@ def login(body: LoginBody):
 # ──────────────────────────────────────────────
 # Change 5: FORGOT / RESET PASSWORD
 # ──────────────────────────────────────────────
+def smtp_configured() -> bool:
+    return bool(SMTP_HOST and SMTP_FROM)
+
+
+def send_reset_email(to_email: str, reset_token: str) -> None:
+    """Gửi mã reset qua SMTP. Ném exception nếu gửi thất bại."""
+    msg = EmailMessage()
+    msg["Subject"] = "Mã khôi phục mật khẩu - Càn Khôn Linh Thạch Các"
+    msg["From"] = SMTP_FROM
+    msg["To"] = to_email
+    msg.set_content(
+        f"Xin chào Đạo Hữu,\n\n"
+        f"Mã xác thực để đặt lại mật khẩu của bạn là: {reset_token}\n"
+        f"Mã có hiệu lực trong {RESET_TOKEN_EXPIRE_MINUTES} phút và chỉ dùng được một lần.\n\n"
+        f"Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.\n"
+    )
+
+    if SMTP_SECURITY == "ssl":
+        server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15, context=ssl.create_default_context())
+    else:
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+    with server:
+        if SMTP_SECURITY == "starttls":
+            server.starttls(context=ssl.create_default_context())
+        if SMTP_USER:
+            server.login(SMTP_USER, SMTP_PASSWORD)
+        server.send_message(msg)
+
+
 @app.post("/api/auth/forgot-password")
 def forgot_password(body: ForgotPasswordBody):
     """Tạo mã reset mật khẩu — Yêu cầu xác thực Email + Bản Mệnh Hồn Đăng"""
     if not body.email or not body.soul_lamp:
         raise HTTPException(status_code=400, detail="Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
+
+    use_email = smtp_configured()
+    if IS_PRODUCTION and not use_email:
+        print("  ❌ forgot-password: APP_ENV=production nhưng chưa cấu hình SMTP_HOST/SMTP_FROM")
+        raise HTTPException(status_code=503, detail="Chức năng khôi phục mật khẩu tạm thời không khả dụng. Vui lòng liên hệ quản trị viên.")
 
     with get_db() as conn:
         user = conn.execute("SELECT id, soul_lamp_hash FROM users WHERE email = ?", (body.email,)).fetchone()
@@ -676,19 +727,36 @@ def forgot_password(body: ForgotPasswordBody):
 
         # Tạo mã reset 6 ký tự, hạn 30 phút
         reset_token = secrets.token_urlsafe(4)[:6].upper()
-        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=30)).isoformat()
+        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)).isoformat()
 
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (?, ?, ?)",
             (body.email, reset_token, expires_at)
         )
+        token_id = cur.lastrowid
 
-    # TODO: Gửi email thật khi lên production. Hiện tại trả trực tiếp cho dev/đồ án.
+    if use_email:
+        try:
+            send_reset_email(body.email, reset_token)
+        except Exception as e:
+            print(f"  ❌ forgot-password: gửi email thất bại: {type(e).__name__}: {e}")
+            # Vô hiệu hóa mã vừa tạo vì người dùng không nhận được
+            with get_db() as conn:
+                conn.execute("UPDATE password_reset_tokens SET used = 1 WHERE id = ?", (token_id,))
+            raise HTTPException(status_code=503, detail="Không gửi được email khôi phục. Vui lòng thử lại sau.")
+        return {
+            "message": "Mã xác thực đã được gửi tới email của bạn.",
+            "email_sent": True,
+            "expires_in_minutes": RESET_TOKEN_EXPIRE_MINUTES,
+        }
+
+    # Chế độ phát triển (APP_ENV != production và chưa cấu hình SMTP): trả mã trực tiếp
     return {
         "message": "Mã reset đã được tạo. (Chế độ phát triển: mã hiển thị trực tiếp)",
+        "email_sent": False,
         "reset_token": reset_token,
-        "expires_in_minutes": 30,
-        "note": "⚠️ DEV MODE: Trong production, mã này sẽ được gửi qua email thay vì hiển thị trực tiếp."
+        "expires_in_minutes": RESET_TOKEN_EXPIRE_MINUTES,
+        "note": "⚠️ DEV MODE: Cấu hình SMTP_* trong .env để gửi mã qua email; đặt APP_ENV=production để tắt chế độ này."
     }
 
 
