@@ -6,9 +6,40 @@ Dự án quản lý chi tiêu cá nhân kết hợp AI Google Gemini, xây dựn
 
 ## 🛠️ Công Nghệ Sử Dụng
 
-- **Backend**: Python 3.10+, FastAPI, SQLite (`app.db`), JWT, Bcrypt, Google Gemini API (`google-generativeai`).
-- **Frontend**: Vue 3, Vite, Chart.js, `vue-chartjs`, Axios, Vanilla CSS (Cosmic Dark / Xianxia Theme).
+- **Backend**: Python 3.10+, FastAPI, SQLite (`app.db`), JWT, Bcrypt, Google Gemini API (`google-genai`).
+- **Frontend**: Vue 3, Vite, Pinia, Vue Router, Chart.js, `vue-chartjs`, Axios, Vanilla CSS (Cosmic Dark / Xianxia Theme).
 - **Spec-Kit**: GitHub Spec-Kit CLI (`specify-cli`), `.specify/` specification templates & workflow, `.github/skills/` agent integrations.
+
+---
+
+## 🗂️ Cấu Trúc Mã Nguồn
+
+```
+main.py                    # Khởi tạo FastAPI, gắn router (chạy: python main.py)
+backend/
+  config.py                # Đọc cấu hình từ .env
+  db.py                    # Kết nối SQLite, tạo bảng, migration không phá hủy, seed
+  schemas.py               # Pydantic schemas + kiểm tra dữ liệu đầu vào
+  security.py              # JWT, phân quyền, mật khẩu, giới hạn số lần thử sai
+  services.py              # Nghiệp vụ dùng chung (quyền sở hữu ví/danh mục, số dư, giao dịch định kỳ)
+  mailer.py                # Gửi mã reset mật khẩu qua SMTP
+  gemini.py                # Gọi Google Gemini (google-genai)
+  errors.py, utils.py
+  routers/                 # auth, wallets, categories, transactions, budgets, reports,
+                           # recurring, debts, goals, ai, users, admin
+frontend/src/
+  main.js                  # Tạo app, Pinia, router, guard trang admin
+  App.vue                  # Khung: nền, header, thanh tab, <router-view>, modal hồ sơ, toast
+  router.js                # Mỗi tab là một route (#/transactions, #/stats, ...)
+  stores/app.js            # Store Pinia: state + gọi API
+  composables/useAppBindings.js
+  views/                   # LoginView + 11 view theo tab (DashboardView, TransactionsView, ...)
+  components/              # ChartComponents, XianxiaBackdrop
+  utils/format.js          # Định dạng tiền, ngày theo giờ địa phương, escape HTML
+  styles/app.css
+test_suite.py              # python -m unittest test_suite -v
+scripts/reset_sample_data.py
+```
 
 ---
 

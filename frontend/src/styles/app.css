@@ -2182,6 +2182,11 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
 /* ─── RESPONSIVE ───────────────────────── */
 /* ─── RESPONSIVE ───────────────────────── */
 @media (max-width: 1024px) {
+  /* Header: không để chữ trên nút / tên app xuống dòng khi màn hình hẹp dần */
+  .header-title { font-size: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .clickable-brand { min-width: 0; }
+  .header-right { gap: 10px; flex-shrink: 0; }
+  .theme-btn, .btn-logout, .user-badge-btn { white-space: nowrap; }
   .tab-btn { padding: 11px 13px; font-size: 13px; gap: 5px; }
   .tab-label { font-size: 13px; }
 }
