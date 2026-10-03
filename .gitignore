@@ -6,9 +6,9 @@ venv/
 .venv/
 env/
 
-# Database
-# Un-comment if you don't want to upload test database
-# app.db
+# Database (created and seeded automatically by init_db() on first run)
+app.db
+app.db-journal
 
 # Environment variables
 .env
