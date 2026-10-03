@@ -799,6 +799,63 @@ class ComprehensiveTestSuite(unittest.TestCase):
         self.assertEqual(msg["From"], "noreply@test.local")
         self.assertIn("ABC123", msg.get_content())
 
+    # ──────────────────────────────────────────────
+    # 11. BIỂU ĐỒ, LỊCH SỬ CHUYỂN TIỀN & MỤC TIÊU
+    # ──────────────────────────────────────────────
+    def test_19_trend_and_weekly_fill_empty_periods(self):
+        headers, _ = self._register("charts@gmail.com")
+        trend = self.client.get("/api/reports/trend?months=6", headers=headers).json()["trend"]
+        self.assertEqual(len(trend), 6)  # đủ 6 tháng dù chưa có giao dịch nào
+        today = main.datetime.date.today()
+        self.assertEqual(trend[-1]["month"], today.strftime("%Y-%m"))
+        self.assertTrue(all(t["income"] == 0 and t["expense"] == 0 for t in trend))
+
+        weekly = self.client.get("/api/reports/weekly?weeks=4", headers=headers).json()["data"]
+        self.assertEqual(len(weekly), 4)
+        this_monday = today - main.datetime.timedelta(days=today.weekday())
+        self.assertEqual(weekly[-1]["week_start"], this_monday.isoformat())
+
+        w = self.client.get("/api/wallets", headers=headers).json()[0]
+        c = next(c for c in self.client.get("/api/categories", headers=headers).json() if c["category_type"] == "EXPENSE")
+        self.client.post("/api/transactions", headers=headers, json={
+            "wallet_id": w["id"], "category_id": c["id"], "amount": 7000,
+            "transaction_type": "EXPENSE", "transaction_date": today.isoformat()})
+        weekly = self.client.get("/api/reports/weekly?weeks=4", headers=headers).json()["data"]
+        self.assertEqual(weekly[-1]["expense"], 7000)
+        trend = self.client.get("/api/reports/trend?months=6", headers=headers).json()["trend"]
+        self.assertEqual(trend[-1]["expense"], 7000)
+
+    def test_20_transfer_and_goal_history(self):
+        headers, _ = self._register("history@gmail.com")
+        w1, w2 = self.client.get("/api/wallets", headers=headers).json()[:2]
+        res = self.client.post("/api/wallets/transfer", headers=headers, json={
+            "from_wallet_id": w1["id"], "to_wallet_id": w2["id"], "amount": 12345, "note": "Nạp ngân hàng"})
+        self.assertEqual(res.status_code, 200)
+        transfers = self.client.get("/api/wallets/transfers", headers=headers).json()
+        self.assertEqual(transfers[0]["amount"], 12345)
+        self.assertEqual(transfers[0]["from_wallet_name"], w1["wallet_name"])
+        self.assertEqual(transfers[0]["note"], "Nạp ngân hàng")
+
+        goal = self.client.post("/api/saving-goals", headers=headers, json={
+            "target_name": "Quỹ", "target_amount": 1000}).json()
+        self.client.post(f"/api/saving-goals/{goal['id']}/deposit", headers=headers, json={"amount": 1000, "wallet_id": w1["id"]})
+        self.client.post(f"/api/saving-goals/{goal['id']}/withdraw", headers=headers, json={"amount": 300})
+        logs = self.client.get(f"/api/saving-goals/{goal['id']}/logs", headers=headers).json()
+        self.assertEqual([l["action"] for l in logs], ["WITHDRAW", "DEPOSIT"])
+        self.assertEqual(logs[1]["wallet_name"], w1["wallet_name"])
+
+        # Mục tiêu đã hoàn thành, nâng số tiền mục tiêu → tự chuyển về chưa hoàn thành
+        self.client.post(f"/api/saving-goals/{goal['id']}/deposit", headers=headers, json={"amount": 300})
+        self.client.put(f"/api/saving-goals/{goal['id']}", headers=headers, json={
+            "target_name": "Quỹ", "target_amount": 5000, "current_amount": 1000, "is_completed": 1})
+        g = next(x for x in self.client.get("/api/saving-goals", headers=headers).json()["goals"] if x["id"] == goal["id"])
+        self.assertEqual(g["is_completed"], 0)
+
+        # Người khác không xem được lịch sử
+        other, _ = self._register("history_other@gmail.com")
+        self.assertEqual(self.client.get(f"/api/saving-goals/{goal['id']}/logs", headers=other).status_code, 404)
+        self.assertEqual(self.client.get("/api/wallets/transfers", headers=other).json(), [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

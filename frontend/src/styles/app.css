@@ -2187,8 +2187,13 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
 }
 
 @media (max-width: 768px) {
-  .header-title { font-size: 17px; }
+  .header-title { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .version-badge { display: none; }
+  .header-inner { padding: 0 12px; gap: 8px; }
+  .clickable-brand { min-width: 0; padding: 4px 6px; gap: 8px; }
+  .header-right { gap: 8px; flex-shrink: 0; }
+  .theme-btn, .btn-logout { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+  .user-badge-btn { white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
   .realm-content { padding: 20px 16px 80px; }
   .metrics-grid { grid-template-columns: 1fr; }
   .categories-split { grid-template-columns: 1fr; }
@@ -2218,6 +2223,12 @@ body[data-theme='modern'] .tab-scroll-btn:hover {
 }
 
 @media (max-width: 480px) {
+  /* Header: chỉ giữ biểu tượng ☯ (vẫn bấm được để về Tổng Quan) để 3 nút không bị dồn */
+  .header-title { display: none; }
+  .header-symbol { font-size: 24px; }
+  .header-right { gap: 6px; }
+  .theme-btn, .btn-logout, .user-badge-btn { padding: 5px 8px; font-size: 11.5px; }
+  .user-badge-btn { max-width: 110px; }
   .tab-btn { padding: 8px 9px; font-size: 12px; gap: 4px; }
   .tab-label { font-size: 12px; }
   .tab-icon { font-size: 13px; }

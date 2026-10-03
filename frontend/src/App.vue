@@ -254,11 +254,11 @@
               title="🥧 Phân Bổ Chi Tiêu Tháng Này"
             />
           </div>
-          <div class="chart-card" v-if="trendData.trend && trendData.trend.length">
+          <div class="chart-card" v-if="hasTrendData">
             <ChartComponent
               type="bar"
               :chart-data="dashboardBarData"
-              title="📊 Thu/Chi 6 Tháng Gần Đây"
+              :title="`📊 Thu/Chi ${trendData.months || 6} Tháng Gần Đây`"
             />
           </div>
         </div>
@@ -826,10 +826,37 @@
               <label>Số Tiền Chuyển (VNĐ)</label>
               <input v-model.number="transferForm.amount" type="number" placeholder="0" min="0" />
             </div>
+            <div class="input-group-xianxia">
+              <label>Ghi Chú (Tùy chọn)</label>
+              <input v-model="transferForm.note" type="text" placeholder="VD: Rút tiền mặt, nạp Momo..." />
+            </div>
           </div>
           <button class="btn-jade" @click="doTransfer" :disabled="loading || !transferForm.from_wallet_id || !transferForm.to_wallet_id || !transferForm.amount" style="margin-top: 16px;">
             {{ loading ? '⏳ Đang chuyển...' : '🔄 Chuyển Linh Thạch' }}
           </button>
+
+          <div v-if="walletTransfers.length" class="table-scroll" style="margin-top: 20px;">
+            <table class="xianxia-table">
+              <thead>
+                <tr>
+                  <th>Thời Gian</th>
+                  <th>Từ Ví</th>
+                  <th>Đến Ví</th>
+                  <th>Số Tiền</th>
+                  <th>Ghi Chú</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in walletTransfers" :key="'tf-'+t.id">
+                  <td>{{ t.created_at }}</td>
+                  <td>{{ t.from_wallet_name }}</td>
+                  <td>{{ t.to_wallet_name }}</td>
+                  <td>{{ formatVND(t.amount) }}</td>
+                  <td>{{ t.note || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div class="wallet-grid">
@@ -984,7 +1011,7 @@
         <div class="tab-header" style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
           <h2 class="section-title" style="margin:0;">🎯 Hạn Mức Tu Luyện — Ngân Sách</h2>
           <div class="input-group-xianxia" style="width: auto; margin-bottom: 0;">
-            <input type="month" v-model="budgetMonth" @input="loadBudgets" @change="loadBudgets" style="padding: 6px 12px;" />
+            <input type="month" v-model="budgetMonth" style="padding: 6px 12px;" />
           </div>
         </div>
 
@@ -1202,20 +1229,20 @@
         </div>
 
         <!-- Trend Chart -->
-        <div class="stats-chart-card" v-if="trendData.trend && trendData.trend.length">
+        <div class="stats-chart-card" v-if="hasTrendData">
           <ChartComponent
             type="bar"
             :chart-data="trendBarData"
-            title="📊 Xu Hướng Thu/Chi 6 Tháng"
+            :title="`📊 Xu Hướng Thu/Chi ${trendData.months || 6} Tháng`"
           />
         </div>
 
         <!-- Weekly Chart -->
-        <div class="stats-chart-card" v-if="weeklyData.data && weeklyData.data.length">
+        <div class="stats-chart-card" v-if="hasWeeklyData">
           <ChartComponent
             type="line"
             :chart-data="weeklyLineData"
-            title="📉 Chi Tiêu Theo Tuần (4 Tuần Gần Đây)"
+            :title="`📉 Chi Tiêu Theo Tuần (${weeklyData.weeks || 4} Tuần Gần Đây)`"
           />
         </div>
 
@@ -1276,7 +1303,7 @@
           </div>
         </div>
 
-        <div v-if="!trendData.trend?.length && !weeklyData.data?.length" class="empty-state">
+        <div v-if="!hasTrendData && !hasWeeklyData" class="empty-state">
           Chưa có đủ dữ liệu để hiển thị thống kê. Hãy thêm giao dịch!
         </div>
       </section>
@@ -1815,6 +1842,22 @@
               <option v-for="w in wallets" :key="'dep-w-'+w.id" :value="w.id">{{ w.wallet_name }} ({{ formatVND(w.balance) }})</option>
             </select>
           </div>
+          <div v-if="goalLogs.length" style="margin-top: 12px;">
+            <label class="hint-text">📜 Lịch sử nạp / rút gần đây</label>
+            <div class="table-scroll">
+              <table class="xianxia-table">
+                <tbody>
+                  <tr v-for="log in goalLogs" :key="'gl-'+log.id">
+                    <td>{{ log.created_at }}</td>
+                    <td :class="log.action === 'DEPOSIT' ? 'amt-income' : 'amt-expense'">
+                      {{ log.action === 'DEPOSIT' ? '+' : '-' }}{{ formatVND(log.amount) }}
+                    </td>
+                    <td>{{ log.wallet_name || 'Tích lũy độc lập' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" @click="showDepositModal = false">Hủy</button>
@@ -2090,7 +2133,9 @@ export default {
       category_id: null, limit_amount: 0,
       month_year: toLocalMonthStr(new Date())
     })
-    const transferForm = ref({ from_wallet_id: null, to_wallet_id: null, amount: 0 })
+    const transferForm = ref({ from_wallet_id: null, to_wallet_id: null, amount: 0, note: '' })
+    const walletTransfers = ref([])
+    const goalLogs = ref([])
 
     // OCR
     const ocrFile = ref(null)
@@ -2170,6 +2215,10 @@ export default {
       income: (weeklyData.value.data || []).map(w => w.income),
     }))
 
+    // API trả đủ các tháng/tuần (kể cả kỳ bằng 0) → chỉ vẽ biểu đồ khi có ít nhất 1 kỳ phát sinh giao dịch
+    const hasTrendData = computed(() => (trendData.value.trend || []).some(t => t.income || t.expense))
+    const hasWeeklyData = computed(() => (weeklyData.value.data || []).some(w => w.income || w.expense))
+
     const statsDoughnutData = computed(() => ({
       labels: (summary.value.expense_by_category || []).map(c => `${c.icon} ${c.category_name}`),
       values: (summary.value.expense_by_category || []).map(c => c.total),
@@ -2216,6 +2265,8 @@ export default {
       adminUsers.value = []
       adminStats.value = {}
       recurringList.value = []
+      walletTransfers.value = []
+      goalLogs.value = []
       budgets.value = []
       summary.value = { total_income: 0, total_expense: 0, net_savings: 0, total_balance: 0, expense_by_category: [] }
       budgetAlerts.value = []
@@ -2550,6 +2601,7 @@ export default {
         loadDebts(), loadSavingGoals(),
         loadRecurring(), loadSummary(), loadBudgets(), checkBudgetAlerts(),
         loadTrend(), loadWeekly(), loadSuggestedQuestions(), loadChatHistory(),
+        loadWalletTransfers(),
       ])
       if (userRole.value === 'admin') {
         loadAdminStats()
@@ -2573,6 +2625,15 @@ export default {
         const { data } = await api.get('/api/chat/suggested-questions')
         suggestedQuestions.value = data || []
       } catch {}
+    }
+
+    async function loadWalletTransfers() {
+      try { walletTransfers.value = (await api.get('/api/wallets/transfers', { params: { limit: 10 } })).data || [] } catch {}
+    }
+
+    async function loadGoalLogs(goalId) {
+      goalLogs.value = []
+      try { goalLogs.value = (await api.get(`/api/saving-goals/${goalId}/logs`, { params: { limit: 5 } })).data || [] } catch {}
     }
 
     async function loadWallets() {
@@ -2753,6 +2814,7 @@ export default {
         action: action
       }
       showDepositModal.value = true
+      loadGoalLogs(g.id)
     }
 
     async function submitDepositWithdrawGoal() {
@@ -3232,9 +3294,8 @@ export default {
       try {
         const { data } = await api.post('/api/wallets/transfer', transferForm.value)
         showToast(`⚡ ${data.message}`)
-        transferForm.value = { from_wallet_id: null, to_wallet_id: null, amount: 0 }
-        await loadWallets()
-        await loadSummary()
+        transferForm.value = { from_wallet_id: null, to_wallet_id: null, amount: 0, note: '' }
+        await Promise.all([loadWallets(), loadSummary(), loadWalletTransfers()])
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi chuyển tiền!', 'error')
       }
@@ -3519,7 +3580,7 @@ export default {
       compareMonth1, compareMonth2,
       // chart computed
       dashboardDoughnutData, dashboardBarData,
-      trendBarData, weeklyLineData, statsDoughnutData,
+      trendBarData, weeklyLineData, statsDoughnutData, hasTrendData, hasWeeklyData,
       // methods
       formatVND, showToast, budgetPct, formatChatText, walletTypeIcon,
       doLogin, doRegister, doLogout, openForgotPassword, doForgotPassword, doResetPassword,
@@ -3533,7 +3594,7 @@ export default {
       showEditTxnModal, editTxnForm, editTxnCategories, openEditTxn, updateTransaction,
       budgetMonth, statsDateRange, presetRanges, onStatsDateChange, viLocale, doExport,
       showEditBudgetModal, editBudgetForm, openEditBudget, updateBudget,
-      createWallet, deleteWallet, doTransfer,
+      createWallet, deleteWallet, doTransfer, walletTransfers, goalLogs,
       createCategory, deleteCategory,
       createBudget, deleteBudget,
       handleOCRUpload, handleOCRDrop, scanInvoice, confirmOCRTransaction,

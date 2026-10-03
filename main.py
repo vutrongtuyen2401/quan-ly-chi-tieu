@@ -135,8 +135,13 @@ FIELD_LABELS = {
 }
 
 
+def vnd(amount) -> str:
+    """Định dạng số tiền kiểu Việt Nam: 1234567 -> 1.234.567"""
+    return f"{amount:,.0f}".replace(",", ".")
+
+
 def _fmt_limit(value) -> str:
-    return f"{value:,.0f}" if isinstance(value, (int, float)) and float(value).is_integer() else str(value)
+    return vnd(value) if isinstance(value, (int, float)) and float(value).is_integer() else str(value)
 
 
 def _format_validation_error(err: dict) -> str:
@@ -357,6 +362,33 @@ def init_db():
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+
+            /* Lịch sử chuyển tiền giữa các ví */
+            CREATE TABLE IF NOT EXISTS wallet_transfers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                from_wallet_id INTEGER,
+                to_wallet_id INTEGER,
+                from_wallet_name TEXT NOT NULL,
+                to_wallet_name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                note TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            /* Lịch sử nạp / rút mục tiêu tiết kiệm */
+            CREATE TABLE IF NOT EXISTS saving_goal_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                goal_id INTEGER NOT NULL,
+                action TEXT CHECK(action IN ('DEPOSIT','WITHDRAW')) NOT NULL,
+                amount REAL NOT NULL,
+                wallet_id INTEGER,
+                wallet_name TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
         """)
 
         # Migration: Ensure role, is_active, and soul_lamp_hash columns exist on users table
@@ -489,6 +521,8 @@ def init_db():
         conn.execute("DELETE FROM budgets WHERE user_id NOT IN (SELECT id FROM users)")
         conn.execute("DELETE FROM invoice_ocr_logs WHERE user_id NOT IN (SELECT id FROM users)")
         conn.execute("DELETE FROM chat_sessions WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM wallet_transfers WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM saving_goal_logs WHERE user_id NOT IN (SELECT id FROM users)")
 
         conn.commit()
 
@@ -756,7 +790,11 @@ def _recovery_blocked(bucket: str, email: str) -> bool:
 
 def _recovery_fail(bucket: str, email: str):
     key = (bucket, email)
-    attempt = recovery_attempts.setdefault(key, {"count": 0, "first_attempt": time.time()})
+    now_ts = time.time()
+    if len(recovery_attempts) > 1000:
+        for k in [k for k, v in recovery_attempts.items() if now_ts - v["first_attempt"] > LOGIN_LOCKOUT_SECONDS]:
+            recovery_attempts.pop(k, None)
+    attempt = recovery_attempts.setdefault(key, {"count": 0, "first_attempt": now_ts})
     attempt["count"] += 1
 
 
@@ -850,6 +888,11 @@ def login(body: LoginBody):
     # Change 6: Rate limiting — kiểm tra số lần đăng nhập sai
     email_lower = body.email.lower().strip()
     now_ts = time.time()
+
+    # Dọn các bản ghi đã hết hạn để bộ đếm không phình to theo thời gian
+    if len(login_attempts) > 1000:
+        for key in [k for k, v in login_attempts.items() if now_ts - v["first_attempt"] > LOGIN_LOCKOUT_SECONDS]:
+            login_attempts.pop(key, None)
 
     if email_lower in login_attempts:
         attempt = login_attempts[email_lower]
@@ -1843,7 +1886,13 @@ def update_saving_goal(goal_id: int, body: SavingGoalUpdateBody, user: dict = De
         c_amt = body.current_amount if body.current_amount is not None and body.current_amount >= 0 else goal["current_amount"]
         t_date = body.target_date if body.target_date is not None else goal["target_date"]
         icon = body.icon if body.icon else goal["icon"]
-        is_comp = body.is_completed if body.is_completed is not None else (1 if c_amt >= t_amt else 0)
+        amounts_changed = t_amt != goal["target_amount"] or c_amt != goal["current_amount"]
+        if c_amt >= t_amt:
+            is_comp = 1
+        elif body.is_completed is not None and not amounts_changed:
+            is_comp = body.is_completed  # người dùng tự đánh dấu hoàn thành / chưa hoàn thành
+        else:
+            is_comp = 0
 
         conn.execute("""
             UPDATE saving_goals SET target_name=?, target_amount=?, current_amount=?, target_date=?, icon=?, is_completed=?
@@ -1855,9 +1904,6 @@ def update_saving_goal(goal_id: int, body: SavingGoalUpdateBody, user: dict = De
 
 @app.post("/api/saving-goals/{goal_id}/deposit")
 def deposit_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict = Depends(get_current_user)):
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="Số tiền tích lũy phải lớn hơn 0.")
-
     with get_db() as conn:
         goal = conn.execute("SELECT * FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
         if not goal:
@@ -1868,10 +1914,11 @@ def deposit_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict = 
             if not w:
                 raise HTTPException(status_code=404, detail="Túi Càn Khôn không tồn tại.")
             if w["balance"] < body.amount:
-                raise HTTPException(status_code=400, detail=f"Số dư ví không đủ (Còn {w['balance']:,.0f} VNĐ).")
+                raise HTTPException(status_code=400, detail=f"Số dư ví không đủ (Còn {vnd(w['balance'])} VNĐ).")
             conn.execute("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?",
                          (body.amount, body.wallet_id, user["user_id"]))
 
+        log_goal_action(conn, user["user_id"], goal_id, "DEPOSIT", body.amount, w if body.wallet_id else None)
         new_amt = goal["current_amount"] + body.amount
         is_comp = 1 if new_amt >= goal["target_amount"] else goal["is_completed"]
 
@@ -1884,21 +1931,20 @@ def deposit_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict = 
 
 @app.post("/api/saving-goals/{goal_id}/withdraw")
 def withdraw_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict = Depends(get_current_user)):
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="Số tiền rút phải lớn hơn 0.")
-
     with get_db() as conn:
         goal = conn.execute("SELECT * FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
         if not goal:
             raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại.")
         if goal["current_amount"] < body.amount:
-            raise HTTPException(status_code=400, detail=f"Số dư mục tiêu không đủ (Hiện có {goal['current_amount']:,.0f} VNĐ).")
+            raise HTTPException(status_code=400, detail=f"Số dư mục tiêu không đủ (Hiện có {vnd(goal['current_amount'])} VNĐ).")
 
+        wallet = None
         if body.wallet_id:
-            get_owned_wallet(conn, body.wallet_id, user["user_id"])
+            wallet = get_owned_wallet(conn, body.wallet_id, user["user_id"])
             conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
                          (body.amount, body.wallet_id, user["user_id"]))
 
+        log_goal_action(conn, user["user_id"], goal_id, "WITHDRAW", body.amount, wallet)
         new_amt = goal["current_amount"] - body.amount
         is_comp = 1 if new_amt >= goal["target_amount"] else 0
 
@@ -1911,8 +1957,29 @@ def withdraw_saving_goal(goal_id: int, body: SavingGoalDepositBody, user: dict =
 @app.delete("/api/saving-goals/{goal_id}")
 def delete_saving_goal(goal_id: int, user: dict = Depends(get_current_user)):
     with get_db() as conn:
+        conn.execute("DELETE FROM saving_goal_logs WHERE goal_id = ? AND user_id = ?", (goal_id, user["user_id"]))
         conn.execute("DELETE FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"]))
         return {"message": "Đã xóa mục tiêu tiết kiệm!"}
+
+
+def log_goal_action(conn, user_id: int, goal_id: int, action: str, amount: float, wallet=None):
+    conn.execute(
+        "INSERT INTO saving_goal_logs (user_id, goal_id, action, amount, wallet_id, wallet_name) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, goal_id, action, amount, wallet["id"] if wallet else None, wallet["wallet_name"] if wallet else "")
+    )
+
+
+@app.get("/api/saving-goals/{goal_id}/logs")
+def get_saving_goal_logs(goal_id: int, limit: int = Query(20, ge=1, le=100), user: dict = Depends(get_current_user)):
+    with get_db() as conn:
+        goal = conn.execute("SELECT id FROM saving_goals WHERE id = ? AND user_id = ?", (goal_id, user["user_id"])).fetchone()
+        if not goal:
+            raise HTTPException(status_code=404, detail="Mục tiêu không tồn tại.")
+        rows = conn.execute(
+            "SELECT * FROM saving_goal_logs WHERE goal_id = ? AND user_id = ? ORDER BY id DESC LIMIT ?",
+            (goal_id, user["user_id"], limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ──────────────────────────────────────────────
@@ -2185,6 +2252,17 @@ def get_suggested_questions(user: dict = Depends(get_current_user)):
 # ──────────────────────────────────────────────
 # WALLET TRANSFER
 # ──────────────────────────────────────────────
+@app.get("/api/wallets/transfers")
+def get_wallet_transfers(limit: int = Query(20, ge=1, le=100), user: dict = Depends(get_current_user)):
+    """Lịch sử chuyển Linh Thạch giữa các ví (mới nhất trước)"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM wallet_transfers WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user["user_id"], limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 @app.post("/api/wallets/transfer")
 def transfer_between_wallets(body: TransferBody, user: dict = Depends(get_current_user)):
     """Chuyển Linh Thạch giữa các Túi Càn Khôn"""
@@ -2210,9 +2288,15 @@ def transfer_between_wallets(body: TransferBody, user: dict = Depends(get_curren
                      (body.amount, body.from_wallet_id, user["user_id"]))
         conn.execute("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?",
                      (body.amount, body.to_wallet_id, user["user_id"]))
+        conn.execute(
+            """INSERT INTO wallet_transfers (user_id, from_wallet_id, to_wallet_id, from_wallet_name, to_wallet_name, amount, note)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (user["user_id"], body.from_wallet_id, body.to_wallet_id,
+             from_wallet["wallet_name"], to_wallet["wallet_name"], body.amount, body.note or "")
+        )
 
         return {
-            "message": f"Đã chuyển {body.amount:,.0f} Linh Thạch từ '{from_wallet['wallet_name']}' sang '{to_wallet['wallet_name']}'!",
+            "message": f"Đã chuyển {vnd(body.amount)} Linh Thạch từ '{from_wallet['wallet_name']}' sang '{to_wallet['wallet_name']}'!",
             "from_wallet": from_wallet["wallet_name"],
             "to_wallet": to_wallet["wallet_name"],
             "amount": body.amount,
@@ -2224,46 +2308,74 @@ def transfer_between_wallets(body: TransferBody, user: dict = Depends(get_curren
 # ──────────────────────────────────────────────
 @app.get("/api/reports/trend")
 def get_trend_report(months: int = Query(6, ge=1, le=12), user: dict = Depends(get_current_user)):
-    """Xu hướng thu/chi N tháng gần nhất"""
+    """Xu hướng thu/chi N tháng gần nhất (tính cả tháng hiện tại; tháng không có giao dịch vẫn trả về 0)"""
+    today = datetime.date.today()
+    year, month = today.year, today.month - (months - 1)
+    while month <= 0:
+        year, month = year - 1, month + 12
+    start = datetime.date(year, month, 1)
+    next_month_start = (datetime.date(today.year + 1, 1, 1) if today.month == 12
+                        else datetime.date(today.year, today.month + 1, 1))
+
     with get_db() as conn:
         rows = conn.execute("""
             SELECT strftime('%Y-%m', transaction_date) as month,
                    COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
                    COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense
             FROM transactions
-            WHERE user_id = ?
-              AND transaction_date >= date('now', 'localtime', 'start of month', ? || ' months')
+            WHERE user_id = ? AND transaction_date >= ? AND transaction_date < ?
             GROUP BY month
-            ORDER BY month ASC
-        """, (user["user_id"], f"-{months - 1}")).fetchall()
+        """, (user["user_id"], start.isoformat(), next_month_start.isoformat())).fetchall()
 
-        result = []
-        for r in rows:
-            d = dict(r)
-            d["savings"] = d["income"] - d["expense"]
-            result.append(d)
+    by_month = {r["month"]: r for r in rows}
+    result = []
+    y, m = start.year, start.month
+    for _ in range(months):
+        key = f"{y}-{m:02d}"
+        r = by_month.get(key)
+        income = r["income"] if r else 0
+        expense = r["expense"] if r else 0
+        result.append({"month": key, "income": income, "expense": expense, "savings": income - expense})
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
 
-        return {"months": months, "trend": result}
+    return {"months": months, "trend": result}
 
 
 @app.get("/api/reports/weekly")
 def get_weekly_report(weeks: int = Query(4, ge=1, le=12), user: dict = Depends(get_current_user)):
-    """Chi tiêu theo tuần (N tuần gần đây)"""
+    """Thu/chi theo tuần (tuần bắt đầu từ thứ Hai, N tuần gần nhất tính cả tuần hiện tại)"""
+    today = datetime.date.today()
+    this_monday = today - datetime.timedelta(days=today.weekday())
+    start = this_monday - datetime.timedelta(weeks=weeks - 1)
+    end = this_monday + datetime.timedelta(days=7)
+
     with get_db() as conn:
         rows = conn.execute("""
-            SELECT strftime('%Y-W%W', transaction_date) as week,
-                   MIN(transaction_date) as week_start,
+            SELECT date(transaction_date,
+                        printf('-%d days', (CAST(strftime('%w', transaction_date) AS INTEGER) + 6) % 7)) as week_start,
                    COALESCE(SUM(CASE WHEN transaction_type='EXPENSE' THEN amount ELSE 0 END), 0) as expense,
                    COALESCE(SUM(CASE WHEN transaction_type='INCOME' THEN amount ELSE 0 END), 0) as income,
                    COUNT(*) as txn_count
             FROM transactions
-            WHERE user_id = ?
-              AND transaction_date >= date('now', 'localtime', ? || ' days')
-            GROUP BY week
-            ORDER BY week ASC
-        """, (user["user_id"], f"-{weeks * 7}")).fetchall()
+            WHERE user_id = ? AND transaction_date >= ? AND transaction_date < ?
+            GROUP BY week_start
+        """, (user["user_id"], start.isoformat(), end.isoformat())).fetchall()
 
-        return {"weeks": weeks, "data": [dict(r) for r in rows]}
+    by_week = {r["week_start"]: r for r in rows}
+    data = []
+    for i in range(weeks):
+        monday = start + datetime.timedelta(weeks=i)
+        r = by_week.get(monday.isoformat())
+        iso_year, iso_week, _ = monday.isocalendar()
+        data.append({
+            "week": f"{iso_year}-W{iso_week:02d}",
+            "week_start": monday.isoformat(),
+            "expense": r["expense"] if r else 0,
+            "income": r["income"] if r else 0,
+            "txn_count": r["txn_count"] if r else 0,
+        })
+
+    return {"weeks": weeks, "data": data}
 
 
 @app.get("/api/reports/compare")

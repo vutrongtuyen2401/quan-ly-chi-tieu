@@ -57,6 +57,8 @@ def run_reset():
 
         # Danh sách các bảng cần xóa dữ liệu mẫu theo thứ tự an toàn
         tables_to_clear = [
+            "wallet_transfers",
+            "saving_goal_logs",
             "transactions",
             "recurring_transactions",
             "debts",
@@ -70,8 +72,10 @@ def run_reset():
             "users"
         ]
 
+        existing_tables = {r[0] for r in cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         for table in tables_to_clear:
-            cursor.execute(f"DELETE FROM {table}")
+            if table in existing_tables:  # bảng mới chỉ có sau khi server chạy init_db() lần đầu
+                cursor.execute(f"DELETE FROM {table}")
 
         # Reset sequence AUTOINCREMENT trong sqlite_sequence
         cursor.execute("DELETE FROM sqlite_sequence")
