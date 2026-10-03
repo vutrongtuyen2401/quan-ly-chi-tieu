@@ -35,3 +35,6 @@ xianxia.db
 *.bak
 .kilo/
 test_screenshots/
+
+# File cục bộ chứa thông tin đăng nhập — không đưa lên git
+*.local.txt
