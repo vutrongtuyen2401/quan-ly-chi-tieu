@@ -40,13 +40,13 @@
 
 <script>
 import { nextTick, onMounted, ref, watch } from 'vue'
-import { useAppStore } from '../stores/app'
+import { useAiStore } from '../stores/ai'
 import { useAppBindings } from '../composables/useAppBindings'
 
 export default {
   name: 'ChatView',
   setup() {
-    const store = useAppStore()
+    const store = useAiStore()
     const chatMessagesEl = ref(null)
 
     function scrollChat() {

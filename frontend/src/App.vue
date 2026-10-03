@@ -131,13 +131,13 @@ import { useRoute } from 'vue-router'
 import XianxiaBackdrop from './components/XianxiaBackdrop.vue'
 import LoginView from './views/LoginView.vue'
 import { useAppBindings } from './composables/useAppBindings'
-import { useAppStore } from './stores/app'
+import { useSessionStore } from './stores/session'
 
 export default {
   name: 'CankKhonApp',
   components: { XianxiaBackdrop, LoginView },
   setup() {
-    const store = useAppStore()
+    const store = useSessionStore()
     const route = useRoute()
     const activeTab = computed(() => route.name || 'dashboard')
 

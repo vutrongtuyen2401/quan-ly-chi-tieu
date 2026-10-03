@@ -13,9 +13,14 @@
 - Nếu dùng Options API/Composition mixin, kiểm tra biến mới đã được thêm vào đúng chỗ (data(), computed, methods) và có `return` đầy đủ nếu dùng `setup()`. Nếu dùng `<script setup>`, kiểm tra biến được khai báo ở top-level của block, không lồng trong hàm khác khiến template không truy cập được.
 
 ### 2. KHÔNG SỬA/THÊM TRỰC TIẾP VÀO FILE DÙNG CHUNG QUÁ LỚN MÀ KHÔNG KIỂM TRA TOÀN DIỆN
-- Dự án đang dùng file `App.vue` rất lớn chứa toàn bộ các trang. Bất kỳ lỗi nhỏ nào ở 1 phần cũng có thể làm sập toàn bộ ứng dụng (kể cả các phần không liên quan).
-- Sau khi sửa xong 1 phần, PHẢI kiểm tra lại toàn bộ các trang khác trong web (không chỉ phần vừa sửa) để đảm bảo không có phần nào bị ảnh hưởng dây chuyền.
-- Nếu tính năng mới đủ lớn (có form, modal, hoặc logic phức tạp riêng), cân nhắc tách thành 1 component Vue riêng (file `.vue` độc lập) thay vì nhồi thêm vào `App.vue`, để giảm rủi ro và dễ kiểm tra hơn.
+- Cấu trúc hiện tại (xem mục "Cấu Trúc Mã Nguồn" trong README.md):
+  - Frontend: `App.vue` chỉ là khung (header, thanh tab, `<router-view>`, modal hồ sơ, toast); mỗi tab là 1 view trong `frontend/src/views/` (route khai báo ở `router.js`); state + gọi API nằm trong các store Pinia theo domain ở `frontend/src/stores/` (session, wallets, categories, transactions, budgets, reports, debts, goals, ai, admin).
+  - Backend: `main.py` chỉ tạo app; code nằm trong `backend/` (config, db, schemas, security, services...) và `backend/routers/` (mỗi nhóm API 1 file).
+- Template các view dùng trực tiếp state/hàm của MỌI store qua `useAppBindings()` (gộp phẳng) → tên state/hàm phải DUY NHẤT giữa các store (trùng tên sẽ báo lỗi ngay khi mở app). Thêm state/hàm mới thì đặt vào đúng store của domain và nhớ thêm vào `return { ... }` của store đó.
+- Store gọi sang store khác bằng `const xStore = useXStore()` ở đầu store rồi dùng `xStore.ten` bên trong hàm — KHÔNG đọc state của store khác ngay lúc khởi tạo store (gây vòng lặp).
+- Modal của 1 tab đặt trong view đó nhưng phải bọc `<Teleport to="#modal-root" defer>` (vì `main.realm-content` có z-index riêng, modal nằm trong đó sẽ bị header che).
+- Store và `styles/app.css` vẫn là phần dùng chung cho nhiều trang: sau khi sửa, PHẢI kiểm tra lại toàn bộ các trang khác trong web (không chỉ phần vừa sửa) để đảm bảo không có phần nào bị ảnh hưởng dây chuyền.
+- Nếu tính năng mới đủ lớn (có form, modal, hoặc logic phức tạp riêng), tạo view / component / store riêng thay vì nhồi thêm vào file có sẵn, để giảm rủi ro và dễ kiểm tra hơn.
 
 ### 3. KIỂM TRA CONSOLE TRƯỚC KHI BÁO ĐÃ XONG
 - Sau MỌI lần sửa code, bắt buộc phải mở trình duyệt, tải lại toàn bộ ứng dụng, và kiểm tra tab Console.

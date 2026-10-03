@@ -88,13 +88,13 @@
 
 <script>
 import { onMounted } from 'vue'
-import { useAppStore } from '../stores/app'
+import { useBudgetStore } from '../stores/budgets'
 import { useAppBindings } from '../composables/useAppBindings'
 
 export default {
   name: 'BudgetsView',
   setup() {
-    const store = useAppStore()
+    const store = useBudgetStore()
     onMounted(() => store.loadBudgets())
     return useAppBindings()
   },

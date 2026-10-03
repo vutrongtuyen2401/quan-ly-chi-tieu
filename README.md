@@ -31,8 +31,10 @@ frontend/src/
   main.js                  # Tạo app, Pinia, router, guard trang admin
   App.vue                  # Khung: nền, header, thanh tab, <router-view>, modal hồ sơ, toast
   router.js                # Mỗi tab là một route (#/transactions, #/stats, ...)
-  stores/app.js            # Store Pinia: state + gọi API
-  composables/useAppBindings.js
+  api.js                   # Axios dùng chung (gắn token, tự đăng xuất khi 401)
+  stores/                  # Store Pinia theo domain: session, wallets, categories, transactions,
+                           # budgets, reports, debts, goals, ai, admin
+  composables/useAppBindings.js  # Gộp state/hàm của các store cho template
   views/                   # LoginView + 11 view theo tab (DashboardView, TransactionsView, ...)
   components/              # ChartComponents, XianxiaBackdrop
   utils/format.js          # Định dạng tiền, ngày theo giờ địa phương, escape HTML

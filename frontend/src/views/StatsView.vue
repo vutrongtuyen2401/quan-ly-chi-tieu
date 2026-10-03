@@ -111,7 +111,7 @@
 
 <script>
 import { onMounted } from 'vue'
-import { useAppStore } from '../stores/app'
+import { useReportStore } from '../stores/reports'
 import { useAppBindings } from '../composables/useAppBindings'
 import ChartComponent from '../components/ChartComponents.vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
@@ -120,7 +120,7 @@ export default {
   name: 'StatsView',
   components: { ChartComponent, VueDatePicker },
   setup() {
-    const store = useAppStore()
+    const store = useReportStore()
     onMounted(() => {
       store.onStatsDateChange()
       store.loadCompare()
