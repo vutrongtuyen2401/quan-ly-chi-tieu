@@ -83,7 +83,7 @@
         </div>
         <div class="input-group-xianxia">
           <label>🔑 Khẩu Quyết (Mật khẩu)</label>
-          <input v-model="authForm.password" type="password" placeholder="••••••" />
+          <input v-model="authForm.password" type="password" placeholder="Tối thiểu 6 ký tự..." />
         </div>
         <div class="input-group-xianxia">
           <label>🪔 Bản Mệnh Hồn Đăng (Bí mật bảo mật)</label>
@@ -133,7 +133,7 @@
         </div>
         <div class="input-group-xianxia">
           <label>🔑 Khẩu Quyết Mới</label>
-          <input v-model="resetForm.new_password" type="password" placeholder="Tối thiểu 4 ký tự..." @keyup.enter="doResetPassword" />
+          <input v-model="resetForm.new_password" type="password" placeholder="Tối thiểu 6 ký tự..." @keyup.enter="doResetPassword" />
         </div>
         <button class="btn-jade" @click="doResetPassword" :disabled="loading || !resetForm.token || !resetForm.new_password">
           {{ loading ? '⏳ Đang đổi...' : '✨ Đổi Khẩu Quyết Mới' }}
@@ -2321,6 +2321,10 @@ export default {
     }
 
     async function doRegister() {
+      if (!authForm.value.password || authForm.value.password.length < 6) {
+        errorMsg.value = 'Mật khẩu phải có ít nhất 6 ký tự.'
+        return
+      }
       if (!authForm.value.soul_lamp || authForm.value.soul_lamp.trim().length < 3) {
         errorMsg.value = 'Bản Mệnh Hồn Đăng không được để trống và phải có ít nhất 3 ký tự.'
         return
@@ -2389,6 +2393,10 @@ export default {
     async function doResetPassword() {
       if (!resetForm.value.token || !resetForm.value.new_password) {
         errorMsg.value = 'Vui lòng nhập đầy đủ mã xác thực và mật khẩu mới!'
+        return
+      }
+      if (resetForm.value.new_password.length < 6) {
+        errorMsg.value = 'Mật khẩu mới phải có ít nhất 6 ký tự.'
         return
       }
       loading.value = true
