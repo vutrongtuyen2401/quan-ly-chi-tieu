@@ -52,6 +52,8 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
    ```
    Backend sẽ chạy tại: `http://localhost:8000` (API Docs: `http://localhost:8000/docs`).
 
+   *(File cơ sở dữ liệu `app.db` không được lưu trên Git. Lần chạy đầu tiên, server sẽ tự tạo `app.db` và nạp dữ liệu mẫu, kèm tài khoản admin `admin@gmail.com` với mật khẩu lấy từ `SEED_ADMIN_PASSWORD` trong `.env`; nếu để trống, mật khẩu được sinh ngẫu nhiên và in ra console).*
+
 ### Bước 3: Cài đặt Frontend (Vue 3)
 1. Mở terminal mới, di chuyển vào thư mục `frontend`:
    ```bash
@@ -84,6 +86,8 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
 - `SEED_ADMIN_SOUL_LAMP`: (Tùy chọn) Bản Mệnh Hồn Đăng cho tài khoản seed `admin@gmail.com`.
 - `DATABASE_PATH`: (Tùy chọn) Đường dẫn file SQLite (mặc định: `app.db`).
 - `HOST`: (Tùy chọn) Địa chỉ lắng nghe của backend (mặc định: `127.0.0.1`; đặt `0.0.0.0` để mở cho máy khác trong mạng LAN).
+- `APP_ENV`: `development` (mặc định) hoặc `production`. Ở `production`, mã reset mật khẩu **chỉ** được gửi qua email và không bao giờ trả trong API; nếu chưa cấu hình SMTP, chức năng quên mật khẩu trả lỗi 503. Ở `development` mà chưa cấu hình SMTP, mã được trả trực tiếp để test.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` (`starttls` | `ssl` | `none`): Cấu hình SMTP để gửi mã reset mật khẩu (ví dụ Gmail: `smtp.gmail.com`, `587`, `starttls`, dùng App Password). Khi đã đặt `SMTP_HOST` thì mã luôn được gửi qua email, kể cả ở `development`.
 
 ---
 

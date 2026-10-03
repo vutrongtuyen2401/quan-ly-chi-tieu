@@ -12,6 +12,7 @@ app.db
 *.db-wal
 *.db-shm
 *.db.bak
+*.db-journal
 
 # Environment variables
 .env

@@ -122,6 +122,7 @@
         <div v-if="devResetToken" class="dev-token-notice">
           <span>⚡ Mã xác thực: <strong>{{ devResetToken }}</strong></span>
         </div>
+        <p v-else class="hint-text" style="margin-bottom: 14px;">📧 Mã xác thực đã được gửi tới email của bạn. Kiểm tra cả thư mục Spam.</p>
         <div class="input-group-xianxia">
           <label>📧 Linh Bưu (Email)</label>
           <input v-model="resetForm.email" type="email" disabled class="disabled-input" />
@@ -2372,12 +2373,13 @@ export default {
           email: forgotForm.value.email,
           soul_lamp: forgotForm.value.soul_lamp.trim()
         })
-        devResetToken.value = data.reset_token
+        // Production: mã được gửi qua email, response không chứa reset_token
+        devResetToken.value = data.reset_token || ''
         resetForm.value.email = forgotForm.value.email
-        resetForm.value.token = data.reset_token
+        resetForm.value.token = data.reset_token || ''
         resetForm.value.new_password = ''
         authMode.value = 'reset'
-        showToast('🔑 Đã tạo mã xác thực khôi phục!')
+        showToast(data.email_sent ? '📧 Mã xác thực đã được gửi tới email của bạn!' : '🔑 Đã tạo mã xác thực khôi phục!')
       } catch (err) {
         errorMsg.value = err.response?.data?.detail || 'Thông tin xác thực không chính xác, vui lòng kiểm tra lại'
       }
