@@ -4,5 +4,5 @@ python-multipart
 pyjwt
 bcrypt
 python-dotenv
-google-generativeai
+google-genai
 openpyxl

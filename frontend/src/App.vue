@@ -3450,7 +3450,7 @@ export default {
 
       chatLoading.value = true
       try {
-        const { data } = await api.post('/api/ai/chat', { message: msg }, { timeout: 15000 })
+        const { data } = await api.post('/api/ai/chat', { message: msg }, { timeout: 35000 })  // backend thử tối đa 3 mô hình × 10 giây
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
         chatMessages.value.push({ role: 'ai', text: data.response })
         loadSuggestedQuestions()

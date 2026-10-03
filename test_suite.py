@@ -30,6 +30,7 @@ os.environ["SMTP_HOST"] = ""
 
 import main
 from main import app, init_db, create_token
+from backend import db as db_module, mailer
 
 
 class ComprehensiveTestSuite(unittest.TestCase):
@@ -40,7 +41,7 @@ class ComprehensiveTestSuite(unittest.TestCase):
         cls.db_path = cls.temp_db.name
         cls.temp_db.close()
 
-        main.DATABASE = cls.db_path
+        db_module.DATABASE = cls.db_path
         init_db()
         cls.client = TestClient(app)
 
@@ -720,6 +721,67 @@ class ComprehensiveTestSuite(unittest.TestCase):
         res = self.client.post("/api/ai/chat", headers=headers, json={"message": "   "})
         self.assertEqual(res.status_code, 422)
 
+    def test_22_gemini_fallback_and_errors(self):
+        """Gemini (google-genai): thử lần lượt mô hình, báo rõ khi thiếu / sai API key — không gọi mạng thật"""
+        from backend import gemini
+        from fastapi import HTTPException
+
+        calls = []
+
+        class FakeModels:
+            def __init__(self, behaviours):
+                self.behaviours = behaviours
+
+            def generate_content(self, model, contents, config=None):
+                calls.append(model)
+                result = self.behaviours[model]
+                if isinstance(result, Exception):
+                    raise result
+                return mock.Mock(text=result)
+
+        first, second = gemini.GEMINI_MODELS[0], gemini.GEMINI_MODELS[1]
+        fake = mock.Mock(models=FakeModels({first: TimeoutError("chậm"), second: "Xin chào đạo hữu"}))
+        with mock.patch.object(gemini, "GEMINI_API_KEY", "test-key"), mock.patch.object(gemini, "_client", fake):
+            self.assertEqual(gemini.generate_text("hỏi"), "Xin chào đạo hữu")
+        self.assertEqual(calls, [first, second])
+
+        class BadKey(Exception):
+            code = 400
+        bad = mock.Mock(models=FakeModels({m: BadKey("API key not valid") for m in gemini.GEMINI_MODELS}))
+        with mock.patch.object(gemini, "GEMINI_API_KEY", "bad-key"), mock.patch.object(gemini, "_client", bad):
+            with self.assertRaises(HTTPException) as ctx:
+                gemini.generate_text("hỏi")
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertIn("không hợp lệ", ctx.exception.detail)
+
+        with mock.patch.object(gemini, "GEMINI_API_KEY", ""):
+            with self.assertRaises(HTTPException) as ctx:
+                gemini.generate_text("hỏi")
+        self.assertEqual(ctx.exception.status_code, 503)
+
+        # Qua API chat: key sai → 503 kèm thông báo tiếng Việt
+        headers, _ = self._register("gemini_api@gmail.com")
+        with mock.patch.object(gemini, "GEMINI_API_KEY", "bad-key"), mock.patch.object(gemini, "_client", bad):
+            res = self.client.post("/api/ai/chat", headers=headers, json={"message": "Tháng này chi bao nhiêu?"})
+        self.assertEqual(res.status_code, 503)
+        self.assertIn("GEMINI_API_KEY", res.json()["detail"])
+
+    def test_21_amounts_rounded_to_whole_vnd(self):
+        headers, _ = self._register("rounding@gmail.com")
+        w = self.client.get("/api/wallets", headers=headers).json()[0]
+        c = next(c for c in self.client.get("/api/categories", headers=headers).json() if c["category_type"] == "EXPENSE")
+        for _ in range(3):  # 0.1 + 0.2 kiểu số thực sẽ lệch; làm tròn về đồng thì không
+            self.client.post("/api/transactions", headers=headers, json={
+                "wallet_id": w["id"], "category_id": c["id"], "amount": 1000.4,
+                "transaction_type": "EXPENSE", "transaction_date": "2026-10-01"})
+        after = next(x for x in self.client.get("/api/wallets", headers=headers).json() if x["id"] == w["id"])
+        self.assertEqual(after["balance"], w["balance"] - 3000)
+        res = self.client.post("/api/transactions", headers=headers, json={
+            "wallet_id": w["id"], "category_id": c["id"], "amount": 0.3,
+            "transaction_type": "EXPENSE", "transaction_date": "2026-10-01"})
+        self.assertEqual(res.status_code, 422)
+        self.assertIn("1 đồng", res.json()["detail"])
+
     # ──────────────────────────────────────────────
     # 10. GỬI MÃ RESET QUA EMAIL (SMTP / PRODUCTION MODE)
     # ──────────────────────────────────────────────
@@ -734,10 +796,10 @@ class ComprehensiveTestSuite(unittest.TestCase):
         email, lamp = "smtp_user@gmail.com", "SmtpLamp123"
         self._register_reset_user(email, lamp)
         sent = {}
-        with mock.patch.object(main, "IS_PRODUCTION", True), \
-             mock.patch.object(main, "SMTP_HOST", "smtp.test.local"), \
-             mock.patch.object(main, "SMTP_FROM", "noreply@test.local"), \
-             mock.patch.object(main, "send_reset_email", side_effect=lambda to, tok: sent.update(to=to, token=tok)):
+        with mock.patch.object(mailer, "IS_PRODUCTION", True), \
+             mock.patch.object(mailer, "SMTP_HOST", "smtp.test.local"), \
+             mock.patch.object(mailer, "SMTP_FROM", "noreply@test.local"), \
+             mock.patch.object(mailer, "send_reset_email", side_effect=lambda to, tok: sent.update(to=to, token=tok)):
             res = self.client.post("/api/auth/forgot-password", json={"email": email, "soul_lamp": lamp})
         self.assertEqual(res.status_code, 200)
         data = res.json()
@@ -757,7 +819,7 @@ class ComprehensiveTestSuite(unittest.TestCase):
         """Production nhưng chưa cấu hình SMTP: trả 503, không lộ mã, không tạo mã"""
         email, lamp = "nosmtp_user@gmail.com", "NoSmtpLamp123"
         self._register_reset_user(email, lamp)
-        with mock.patch.object(main, "IS_PRODUCTION", True), mock.patch.object(main, "SMTP_HOST", ""):
+        with mock.patch.object(mailer, "IS_PRODUCTION", True), mock.patch.object(mailer, "SMTP_HOST", ""):
             res = self.client.post("/api/auth/forgot-password", json={"email": email, "soul_lamp": lamp})
         self.assertEqual(res.status_code, 503)
         self.assertNotIn("reset_token", res.json())
@@ -769,10 +831,10 @@ class ComprehensiveTestSuite(unittest.TestCase):
         """Gửi email thất bại: trả 503 và mã vừa tạo bị vô hiệu hóa"""
         email, lamp = "smtpfail_user@gmail.com", "SmtpFailLamp123"
         self._register_reset_user(email, lamp)
-        with mock.patch.object(main, "IS_PRODUCTION", True), \
-             mock.patch.object(main, "SMTP_HOST", "smtp.test.local"), \
-             mock.patch.object(main, "SMTP_FROM", "noreply@test.local"), \
-             mock.patch.object(main, "send_reset_email", side_effect=OSError("connection refused")):
+        with mock.patch.object(mailer, "IS_PRODUCTION", True), \
+             mock.patch.object(mailer, "SMTP_HOST", "smtp.test.local"), \
+             mock.patch.object(mailer, "SMTP_FROM", "noreply@test.local"), \
+             mock.patch.object(mailer, "send_reset_email", side_effect=OSError("connection refused")):
             res = self.client.post("/api/auth/forgot-password", json={"email": email, "soul_lamp": lamp})
         self.assertEqual(res.status_code, 503)
         self.assertNotIn("reset_token", res.json())
@@ -782,14 +844,14 @@ class ComprehensiveTestSuite(unittest.TestCase):
 
     def test_10d_send_reset_email_builds_message(self):
         """send_reset_email dùng STARTTLS, đăng nhập và gửi đúng người nhận + mã"""
-        with mock.patch.object(main, "SMTP_HOST", "smtp.test.local"), \
-             mock.patch.object(main, "SMTP_PORT", 587), \
-             mock.patch.object(main, "SMTP_USER", "user@test.local"), \
-             mock.patch.object(main, "SMTP_PASSWORD", "secret"), \
-             mock.patch.object(main, "SMTP_FROM", "noreply@test.local"), \
-             mock.patch.object(main, "SMTP_SECURITY", "starttls"), \
-             mock.patch.object(main.smtplib, "SMTP") as smtp_cls:
-            main.send_reset_email("target@gmail.com", "ABC123")
+        with mock.patch.object(mailer, "SMTP_HOST", "smtp.test.local"), \
+             mock.patch.object(mailer, "SMTP_PORT", 587), \
+             mock.patch.object(mailer, "SMTP_USER", "user@test.local"), \
+             mock.patch.object(mailer, "SMTP_PASSWORD", "secret"), \
+             mock.patch.object(mailer, "SMTP_FROM", "noreply@test.local"), \
+             mock.patch.object(mailer, "SMTP_SECURITY", "starttls"), \
+             mock.patch.object(mailer.smtplib, "SMTP") as smtp_cls:
+            mailer.send_reset_email("target@gmail.com", "ABC123")
         smtp_cls.assert_called_once_with("smtp.test.local", 587, timeout=15)
         server = smtp_cls.return_value
         server.starttls.assert_called_once()
