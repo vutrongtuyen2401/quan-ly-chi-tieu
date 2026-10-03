@@ -52,6 +52,8 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
    ```
    Backend sẽ chạy tại: `http://localhost:8000` (API Docs: `http://localhost:8000/docs`).
 
+   *(File cơ sở dữ liệu `app.db` không được lưu trên Git. Lần chạy đầu tiên, server sẽ tự tạo `app.db` và nạp dữ liệu mẫu, kèm tài khoản admin `admin@gmail.com` với mật khẩu lấy từ `SEED_ADMIN_PASSWORD` trong `.env`, mặc định là `admin123`).*
+
 ### Bước 3: Cài đặt Frontend (Vue 3)
 1. Mở terminal mới, di chuyển vào thư mục `frontend`:
    ```bash
