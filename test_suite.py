@@ -16,12 +16,16 @@ import os
 import unittest
 import sqlite3
 import tempfile
+from unittest import mock
 from fastapi.testclient import TestClient
 
 # Thiết lập biến môi trường test trước khi import main
 os.environ["JWT_SECRET"] = "test_jwt_secret_key_for_unit_tests_12345"
 os.environ["ALLOWED_ORIGINS"] = "http://localhost:5173"
 os.environ["SEED_ADMIN_PASSWORD"] = "admin_test_pass_123"
+# Ép chế độ dev không SMTP để test luồng mặc định (không bị .env local ảnh hưởng)
+os.environ["APP_ENV"] = "development"
+os.environ["SMTP_HOST"] = ""
 
 import main
 from main import app, init_db, create_token
@@ -561,6 +565,85 @@ class ComprehensiveTestSuite(unittest.TestCase):
         # Export Excel
         excel_res = self.client.get("/api/reports/export?format=excel", headers=headers)
         self.assertEqual(excel_res.status_code, 200)
+
+    # ──────────────────────────────────────────────
+    # 10. GỬI MÃ RESET QUA EMAIL (SMTP / PRODUCTION MODE)
+    # ──────────────────────────────────────────────
+    def _register_reset_user(self, email, soul_lamp):
+        res = self.client.post("/api/auth/register", json={
+            "email": email, "password": "old_pass_123", "full_name": "Hàn Lập", "soul_lamp": soul_lamp
+        })
+        self.assertEqual(res.status_code, 200)
+
+    def test_10a_production_sends_email_and_hides_token(self):
+        """Production + SMTP: mã được gửi qua email, KHÔNG có trong response, và dùng được để reset"""
+        email, lamp = "smtp_user@gmail.com", "SmtpLamp123"
+        self._register_reset_user(email, lamp)
+        sent = {}
+        with mock.patch.object(main, "IS_PRODUCTION", True), \
+             mock.patch.object(main, "SMTP_HOST", "smtp.test.local"), \
+             mock.patch.object(main, "SMTP_FROM", "noreply@test.local"), \
+             mock.patch.object(main, "send_reset_email", side_effect=lambda to, tok: sent.update(to=to, token=tok)):
+            res = self.client.post("/api/auth/forgot-password", json={"email": email, "soul_lamp": lamp})
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertNotIn("reset_token", data)
+        self.assertTrue(data["email_sent"])
+        self.assertEqual(sent["to"], email)
+        self.assertNotIn(sent["token"], res.text)
+
+        reset = self.client.post("/api/auth/reset-password", json={
+            "email": email, "token": sent["token"], "new_password": "new_pass_789"
+        })
+        self.assertEqual(reset.status_code, 200)
+        login = self.client.post("/api/auth/login", json={"email": email, "password": "new_pass_789"})
+        self.assertEqual(login.status_code, 200)
+
+    def test_10b_production_without_smtp_refuses(self):
+        """Production nhưng chưa cấu hình SMTP: trả 503, không lộ mã, không tạo mã"""
+        email, lamp = "nosmtp_user@gmail.com", "NoSmtpLamp123"
+        self._register_reset_user(email, lamp)
+        with mock.patch.object(main, "IS_PRODUCTION", True), mock.patch.object(main, "SMTP_HOST", ""):
+            res = self.client.post("/api/auth/forgot-password", json={"email": email, "soul_lamp": lamp})
+        self.assertEqual(res.status_code, 503)
+        self.assertNotIn("reset_token", res.json())
+        with main.get_db() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM password_reset_tokens WHERE email = ?", (email,)).fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_10c_smtp_failure_invalidates_token(self):
+        """Gửi email thất bại: trả 503 và mã vừa tạo bị vô hiệu hóa"""
+        email, lamp = "smtpfail_user@gmail.com", "SmtpFailLamp123"
+        self._register_reset_user(email, lamp)
+        with mock.patch.object(main, "IS_PRODUCTION", True), \
+             mock.patch.object(main, "SMTP_HOST", "smtp.test.local"), \
+             mock.patch.object(main, "SMTP_FROM", "noreply@test.local"), \
+             mock.patch.object(main, "send_reset_email", side_effect=OSError("connection refused")):
+            res = self.client.post("/api/auth/forgot-password", json={"email": email, "soul_lamp": lamp})
+        self.assertEqual(res.status_code, 503)
+        self.assertNotIn("reset_token", res.json())
+        with main.get_db() as conn:
+            unused = conn.execute("SELECT COUNT(*) FROM password_reset_tokens WHERE email = ? AND used = 0", (email,)).fetchone()[0]
+        self.assertEqual(unused, 0)
+
+    def test_10d_send_reset_email_builds_message(self):
+        """send_reset_email dùng STARTTLS, đăng nhập và gửi đúng người nhận + mã"""
+        with mock.patch.object(main, "SMTP_HOST", "smtp.test.local"), \
+             mock.patch.object(main, "SMTP_PORT", 587), \
+             mock.patch.object(main, "SMTP_USER", "user@test.local"), \
+             mock.patch.object(main, "SMTP_PASSWORD", "secret"), \
+             mock.patch.object(main, "SMTP_FROM", "noreply@test.local"), \
+             mock.patch.object(main, "SMTP_SECURITY", "starttls"), \
+             mock.patch.object(main.smtplib, "SMTP") as smtp_cls:
+            main.send_reset_email("target@gmail.com", "ABC123")
+        smtp_cls.assert_called_once_with("smtp.test.local", 587, timeout=15)
+        server = smtp_cls.return_value
+        server.starttls.assert_called_once()
+        server.login.assert_called_once_with("user@test.local", "secret")
+        msg = server.send_message.call_args[0][0]
+        self.assertEqual(msg["To"], "target@gmail.com")
+        self.assertEqual(msg["From"], "noreply@test.local")
+        self.assertIn("ABC123", msg.get_content())
 
 
 if __name__ == "__main__":
