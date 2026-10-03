@@ -96,6 +96,8 @@ class ComprehensiveTestSuite(unittest.TestCase):
         res_prof = self.client.get("/api/user/profile", headers=headers)
         self.assertEqual(res_prof.status_code, 200)
         self.assertEqual(res_prof.json()["email"], "tu_si_1@gmail.com")
+        self.assertEqual(res_prof.json()["role"], "user")
+        self.assertEqual(res_prof.json()["is_active"], 1)
 
         # Update profile name
         res_update = self.client.put("/api/user/profile", json={"full_name": "Bạch Đại Lão"}, headers=headers)
