@@ -71,7 +71,8 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
 
 ## 👤 Tài Khoản Mẫu (Seed Data)
 - **Linh Bưu (Email)**: `admin@gmail.com`
-- **Khẩu Quyết (Mật khẩu)**: Được sinh ngẫu nhiên khi khởi tạo cơ sở dữ liệu lần đầu và in trực tiếp ra console terminal. Bạn cũng có thể thiết lập mật khẩu cố định qua biến `SEED_ADMIN_PASSWORD` trong file `.env`.
+- **Khẩu Quyết (Mật khẩu)** và **Bản Mệnh Hồn Đăng**: Được sinh ngẫu nhiên khi khởi tạo cơ sở dữ liệu lần đầu và in trực tiếp ra console terminal. Bạn cũng có thể thiết lập giá trị cố định qua biến `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_SOUL_LAMP` trong file `.env`.
+- File `app.db` không còn được đưa lên git (chứa dữ liệu và mã băm mật khẩu). Máy mới clone về sẽ tự tạo DB trống khi chạy `python main.py`.
 
 ---
 
@@ -80,6 +81,16 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
 - `ALLOWED_ORIGINS`: Danh sách tên miền CORS được phép truy cập (mặc định: `http://localhost:5173`).
 - `GEMINI_API_KEY`: Khóa API Google Gemini cho tính năng AI OCR và trợ lý Khí Linh.
 - `SEED_ADMIN_PASSWORD`: (Tùy chọn) Mật khẩu cho tài khoản seed `admin@gmail.com`.
+- `SEED_ADMIN_SOUL_LAMP`: (Tùy chọn) Bản Mệnh Hồn Đăng cho tài khoản seed `admin@gmail.com`.
+- `DATABASE_PATH`: (Tùy chọn) Đường dẫn file SQLite (mặc định: `app.db`).
+- `HOST`: (Tùy chọn) Địa chỉ lắng nghe của backend (mặc định: `127.0.0.1`; đặt `0.0.0.0` để mở cho máy khác trong mạng LAN).
+
+---
+
+## 🧪 Kiểm Thử
+```bash
+python -m unittest test_suite -v
+```
 
 ---
 
@@ -93,5 +104,5 @@ Dự án đã tích hợp thành công **GitHub Spec-Kit**:
 7. **🎯 Hạn Mức Tu Luyện**: Thiết lập ngân sách hàng tháng, tự động cảnh báo *"Tẩu Hỏa Nhập Ma"*.
 8. **📈 Thiên Cơ Thống Kê**: Biểu đồ xu hướng 6 tháng, chi tiêu 4 tuần, so sánh 2 tháng side-by-side.
 9. **💬 Khí Linh AI & Khai Thị Tiết Kiệm**: Trợ lý tư vấn tài chính Gemini và đề xuất 5 mẹo tiết kiệm thông minh.
-10. **🛡️ An Ninh & Bảo Mật**: Rate limiting chống brute-force đăng nhập, đặt lại mật khẩu bằng mã OTP, CORS & JWT bảo mật cao.
+10. **🛡️ An Ninh & Bảo Mật**: Rate limiting chống brute-force đăng nhập & khôi phục mật khẩu, đặt lại mật khẩu bằng mã OTP, kiểm tra quyền sở hữu dữ liệu ở mọi API, khóa tài khoản có hiệu lực ngay lập tức, CORS & JWT.
 

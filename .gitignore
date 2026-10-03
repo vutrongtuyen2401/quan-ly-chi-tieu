@@ -6,9 +6,12 @@ venv/
 .venv/
 env/
 
-# Database
-# Un-comment if you don't want to upload test database
-# app.db
+# Database (chứa dữ liệu & mã băm mật khẩu người dùng — không đưa lên git)
+app.db
+*.db
+*.db-wal
+*.db-shm
+*.db.bak
 
 # Environment variables
 .env
@@ -29,3 +32,5 @@ scratch/
 .codex/
 xianxia.db
 *.bak
+.kilo/
+test_screenshots/

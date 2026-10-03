@@ -8,7 +8,16 @@ import sys
 import sqlite3
 import shutil
 import datetime
+import secrets
 import bcrypt
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def seed_value(env_name):
+    """Đọc giá trị từ .env, để trống thì sinh ngẫu nhiên (không dùng mật khẩu mặc định dễ đoán)."""
+    return os.getenv(env_name, "").strip() or secrets.token_urlsafe(9)
 
 # Đảm bảo mã hóa UTF-8 cho console Windows
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
@@ -17,7 +26,7 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-DB_PATH = "app.db"
+DB_PATH = os.getenv("DATABASE_PATH", "app.db")
 BACKUP_PATH = "app.db.before_reset.bak"
 
 def run_reset():
@@ -70,11 +79,15 @@ def run_reset():
 
         print("\n🌱 BƯỚC 3: Tạo tài khoản Admin và User demo...")
         # Hash mật khẩu an toàn theo bcrypt chuẩn project
-        admin_pw_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode()
-        admin_soul_hash = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode()
-        
-        user_pw_hash = bcrypt.hashpw(b"user123", bcrypt.gensalt()).decode()
-        user_soul_hash = bcrypt.hashpw(b"user123", bcrypt.gensalt()).decode()
+        admin_pw = seed_value("SEED_ADMIN_PASSWORD")
+        admin_soul = seed_value("SEED_ADMIN_SOUL_LAMP")
+        user_pw = seed_value("SEED_USER_PASSWORD")
+        user_soul = seed_value("SEED_USER_SOUL_LAMP")
+        admin_pw_hash = bcrypt.hashpw(admin_pw.encode(), bcrypt.gensalt()).decode()
+        admin_soul_hash = bcrypt.hashpw(admin_soul.encode(), bcrypt.gensalt()).decode()
+
+        user_pw_hash = bcrypt.hashpw(user_pw.encode(), bcrypt.gensalt()).decode()
+        user_soul_hash = bcrypt.hashpw(user_soul.encode(), bcrypt.gensalt()).decode()
 
         cursor.execute("""
             INSERT INTO users (id, email, password_hash, full_name, soul_lamp_hash, role, is_active)
@@ -86,8 +99,9 @@ def run_reset():
             VALUES (2, 'user@gmail.com', ?, 'Đạo Hữu User', ?, 'user', 1)
         """, (user_pw_hash, user_soul_hash))
 
-        print("  -> Admin: admin@gmail.com | Password: admin123 | Role: admin (ID: 1)")
-        print("  -> User:  user@gmail.com  | Password: user123  | Role: user  (ID: 2)")
+        print(f"  -> Admin: admin@gmail.com | Password: {admin_pw} | Bản Mệnh Hồn Đăng: {admin_soul} | Role: admin (ID: 1)")
+        print(f"  -> User:  user@gmail.com  | Password: {user_pw} | Bản Mệnh Hồn Đăng: {user_soul} | Role: user  (ID: 2)")
+        print("  ℹ️  Đặt SEED_ADMIN_PASSWORD / SEED_USER_PASSWORD (và *_SOUL_LAMP) trong .env để cố định các giá trị này.")
 
         print("\n💳 BƯỚC 4: Khởi tạo danh sách Ví Linh Thạch mẫu...")
         # Admin: Đúng 3 ví chính

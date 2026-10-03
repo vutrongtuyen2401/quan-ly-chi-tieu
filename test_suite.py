@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 os.environ["JWT_SECRET"] = "test_jwt_secret_key_for_unit_tests_12345"
 os.environ["ALLOWED_ORIGINS"] = "http://localhost:5173"
 os.environ["SEED_ADMIN_PASSWORD"] = "admin_test_pass_123"
+os.environ["SEED_ADMIN_SOUL_LAMP"] = "admin_soul_test_456"
 
 import main
 from main import app, init_db, create_token
@@ -165,10 +166,10 @@ class ComprehensiveTestSuite(unittest.TestCase):
         self.assertEqual(res_step4.json()["detail"], "Thông tin xác thực không chính xác, vui lòng kiểm tra lại")
 
     def test_04f_soul_lamp_step5_admin_forgot_password(self):
-        """Bước 5: Admin mặc định admin@gmail.com + soul_lamp 'admin' -> cấp mã reset thành công"""
+        """Bước 5: Admin mặc định admin@gmail.com + Bản Mệnh Hồn Đăng cấu hình qua SEED_ADMIN_SOUL_LAMP -> cấp mã reset thành công"""
         res = self.client.post("/api/auth/forgot-password", json={
             "email": "admin@gmail.com",
-            "soul_lamp": "admin"
+            "soul_lamp": os.environ["SEED_ADMIN_SOUL_LAMP"]
         })
         self.assertEqual(res.status_code, 200)
         self.assertIn("reset_token", res.json())
@@ -561,6 +562,157 @@ class ComprehensiveTestSuite(unittest.TestCase):
         # Export Excel
         excel_res = self.client.get("/api/reports/export?format=excel", headers=headers)
         self.assertEqual(excel_res.status_code, 200)
+
+    # ──────────────────────────────────────────────
+    # 9. BẢO MẬT & TÍNH TOÀN VẸN DỮ LIỆU (REGRESSION)
+    # ──────────────────────────────────────────────
+    def _register(self, email):
+        res = self.client.post("/api/auth/register", json={
+            "email": email, "password": "password123", "full_name": "Kiểm Thử", "soul_lamp": "LampKiemThu"
+        })
+        self.assertEqual(res.status_code, 200, res.text)
+        data = res.json()
+        return {"Authorization": f"Bearer {data['token']}"}, data["user_id"]
+
+    def test_12_cannot_touch_other_users_wallet(self):
+        a_headers, _ = self._register("idor_a@gmail.com")
+        b_headers, _ = self._register("idor_b@gmail.com")
+        wa = self.client.get("/api/wallets", headers=a_headers).json()
+        wb = self.client.get("/api/wallets", headers=b_headers).json()
+        ca = self.client.get("/api/categories", headers=a_headers).json()
+        cb = self.client.get("/api/categories", headers=b_headers).json()
+        income_cat_a = next(c for c in ca if c["category_type"] == "INCOME")
+        victim = wb[0]
+
+        # Tạo giao dịch vào ví / danh mục của người khác -> 404
+        res = self.client.post("/api/transactions", headers=a_headers, json={
+            "wallet_id": victim["id"], "category_id": income_cat_a["id"], "amount": 1000,
+            "transaction_type": "INCOME", "transaction_date": "2026-10-01"})
+        self.assertEqual(res.status_code, 404)
+        res = self.client.post("/api/transactions", headers=a_headers, json={
+            "wallet_id": wa[0]["id"], "category_id": cb[0]["id"], "amount": 1000,
+            "transaction_type": "EXPENSE", "transaction_date": "2026-10-01"})
+        self.assertEqual(res.status_code, 404)
+
+        # Sửa giao dịch của mình sang ví người khác -> 404 và số dư ví nạn nhân không đổi
+        txn = self.client.post("/api/transactions", headers=a_headers, json={
+            "wallet_id": wa[0]["id"], "category_id": income_cat_a["id"], "amount": 1,
+            "transaction_type": "INCOME", "transaction_date": "2026-10-01"}).json()
+        res = self.client.put(f"/api/transactions/{txn['id']}", headers=a_headers,
+                              json={"wallet_id": victim["id"], "amount": 999999})
+        self.assertEqual(res.status_code, 404)
+        victim_after = next(w for w in self.client.get("/api/wallets", headers=b_headers).json() if w["id"] == victim["id"])
+        self.assertEqual(victim_after["balance"], victim["balance"])
+
+        # Chuyển tiền / rút mục tiêu về ví người khác -> 404
+        res = self.client.post("/api/wallets/transfer", headers=a_headers, json={
+            "from_wallet_id": wa[0]["id"], "to_wallet_id": victim["id"], "amount": 100})
+        self.assertEqual(res.status_code, 404)
+        goal = self.client.post("/api/saving-goals", headers=a_headers, json={
+            "target_name": "Quỹ", "target_amount": 1000, "current_amount": 500}).json()
+        res = self.client.post(f"/api/saving-goals/{goal['id']}/withdraw", headers=a_headers,
+                               json={"amount": 100, "wallet_id": victim["id"]})
+        self.assertEqual(res.status_code, 404)
+
+    def test_13_input_validation(self):
+        headers, _ = self._register("validate@gmail.com")
+        w = self.client.get("/api/wallets", headers=headers).json()[0]
+        c = next(c for c in self.client.get("/api/categories", headers=headers).json() if c["category_type"] == "EXPENSE")
+        base = {"wallet_id": w["id"], "category_id": c["id"], "amount": 1000,
+                "transaction_type": "EXPENSE", "transaction_date": "2026-10-01"}
+        for bad in ({"amount": -500}, {"amount": 0}, {"transaction_date": "abc"},
+                    {"transaction_date": "2026-13-45"}, {"transaction_type": "GIFT"}):
+            res = self.client.post("/api/transactions", headers=headers, json={**base, **bad})
+            self.assertEqual(res.status_code, 422, bad)
+            self.assertIsInstance(res.json()["detail"], str)  # frontend hiển thị được thông báo
+        # Danh mục THU không dùng được cho giao dịch CHI
+        inc = next(c for c in self.client.get("/api/categories", headers=headers).json() if c["category_type"] == "INCOME")
+        res = self.client.post("/api/transactions", headers=headers, json={**base, "category_id": inc["id"]})
+        self.assertEqual(res.status_code, 400)
+        # Đăng ký với mật khẩu quá ngắn / email sai
+        res = self.client.post("/api/auth/register", json={
+            "email": "short@gmail.com", "password": "123", "full_name": "x", "soul_lamp": "abc"})
+        self.assertEqual(res.status_code, 422)
+        res = self.client.post("/api/auth/register", json={
+            "email": "not-an-email", "password": "password123", "full_name": "x", "soul_lamp": "abc"})
+        self.assertEqual(res.status_code, 422)
+
+    def test_14_delete_wallet_and_category_in_use(self):
+        headers, _ = self._register("delete_guard@gmail.com")
+        w = self.client.get("/api/wallets", headers=headers).json()[0]
+        c = next(c for c in self.client.get("/api/categories", headers=headers).json() if c["category_type"] == "EXPENSE")
+        txn = self.client.post("/api/transactions", headers=headers, json={
+            "wallet_id": w["id"], "category_id": c["id"], "amount": 5000,
+            "transaction_type": "EXPENSE", "transaction_date": "2026-10-01"}).json()
+        res = self.client.delete(f"/api/wallets/{w['id']}", headers=headers)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("giao dịch", res.json()["detail"])
+        res = self.client.delete(f"/api/categories/{c['id']}", headers=headers)
+        self.assertEqual(res.status_code, 400)
+        # Xóa giao dịch xong thì xóa được
+        self.client.delete(f"/api/transactions/{txn['id']}", headers=headers)
+        self.assertEqual(self.client.delete(f"/api/categories/{c['id']}", headers=headers).status_code, 200)
+        self.assertEqual(self.client.delete(f"/api/wallets/{w['id']}", headers=headers).status_code, 200)
+
+    def test_15_profile_role_and_locked_token(self):
+        headers, uid = self._register("locked_token@gmail.com")
+        prof = self.client.get("/api/user/profile", headers=headers).json()
+        self.assertEqual(prof["role"], "user")
+
+        admin_headers = {"Authorization": f"Bearer {create_token(user_id=1, email='admin@gmail.com', role='admin')}"}
+        self.assertEqual(self.client.get("/api/user/profile", headers=admin_headers).json()["role"], "admin")
+
+        # Khóa tài khoản -> token cũ bị từ chối ngay
+        self.client.put(f"/api/admin/users/{uid}/toggle-active", headers=admin_headers)
+        self.assertEqual(self.client.get("/api/wallets", headers=headers).status_code, 401)
+        self.client.put(f"/api/admin/users/{uid}/toggle-active", headers=admin_headers)
+        self.assertEqual(self.client.get("/api/wallets", headers=headers).status_code, 200)
+
+        # Token giả mạo role=admin của user thường không có quyền admin (role đọc từ DB)
+        forged = {"Authorization": f"Bearer {create_token(user_id=uid, email='locked_token@gmail.com', role='admin')}"}
+        self.assertEqual(self.client.get("/api/admin/stats", headers=forged).status_code, 403)
+
+    def test_16_login_email_case_insensitive(self):
+        self._register("CaseUser@Gmail.com")
+        res = self.client.post("/api/auth/login", json={"email": "caseuser@gmail.com", "password": "password123"})
+        self.assertEqual(res.status_code, 200)
+        res = self.client.post("/api/auth/login", json={"email": "CASEUSER@GMAIL.COM", "password": "password123"})
+        self.assertEqual(res.status_code, 200)
+
+    def test_17_recurring_catch_up_and_month_end(self):
+        headers, _ = self._register("recurring_catchup@gmail.com")
+        w = self.client.get("/api/wallets", headers=headers).json()[0]
+        c = next(c for c in self.client.get("/api/categories", headers=headers).json() if c["category_type"] == "EXPENSE")
+        today = main.datetime.date.today()
+        start = main.datetime.date(today.year - 1, 1, 31)
+        rec = self.client.post("/api/recurring-transactions", headers=headers, json={
+            "wallet_id": w["id"], "category_id": c["id"], "amount": 1000, "transaction_type": "EXPENSE",
+            "frequency": "monthly", "next_run_date": start.isoformat(), "note": "Tiền trọ"}).json()
+        txns = self.client.get(f"/api/transactions?category_id={c['id']}&limit=200", headers=headers).json()
+        dates = sorted(t["transaction_date"] for t in txns["data"])
+        expected = (today.year - start.year) * 12 + today.month - start.month + (1 if today.day >= 28 else 0)
+        self.assertGreaterEqual(len(dates), expected)  # bù đủ mọi kỳ bị lỡ, không chỉ 1 kỳ
+        self.assertIn(f"{start.year}-02-28", dates)     # tháng 2 kẹp về ngày cuối tháng
+        self.assertIn(f"{start.year}-03-31", dates)     # tháng sau quay lại đúng ngày 31
+        recs = self.client.get("/api/recurring-transactions", headers=headers).json()
+        self.assertGreater(next(r for r in recs if r["id"] == rec["id"])["next_run_date"], today.isoformat())
+        # Gọi lại không sinh trùng
+        again = self.client.get(f"/api/transactions?category_id={c['id']}&limit=200", headers=headers).json()
+        self.assertEqual(again["total_count"], txns["total_count"])
+
+    def test_18_debt_update_and_chat_validation(self):
+        headers, _ = self._register("debt_update@gmail.com")
+        d = self.client.post("/api/debts", headers=headers, json={
+            "debt_type": "LEND", "person_name": "Hàn Lập", "amount": 100000, "due_date": ""}).json()
+        res = self.client.put(f"/api/debts/{d['id']}", headers=headers, json={
+            "debt_type": "LEND", "person_name": "Hàn Lập", "amount": 200000, "due_date": "",
+            "wallet_id": None, "note": "", "is_settled": 1})
+        self.assertEqual(res.status_code, 200, res.text)
+        debt = next(x for x in self.client.get("/api/debts", headers=headers).json()["debts"] if x["id"] == d["id"])
+        self.assertEqual(debt["amount"], 200000)
+        self.assertEqual(debt["is_settled"], 1)
+        res = self.client.post("/api/ai/chat", headers=headers, json={"message": "   "})
+        self.assertEqual(res.status_code, 422)
 
 
 if __name__ == "__main__":
