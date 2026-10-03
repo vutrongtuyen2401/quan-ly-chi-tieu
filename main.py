@@ -1607,29 +1607,6 @@ def delete_saving_goal(goal_id: int, user: dict = Depends(get_current_user)):
         return {"message": "Đã xóa mục tiêu tiết kiệm!"}
 
 
-class ProfileUpdateBody(BaseModel):
-    full_name: str
-
-
-@app.get("/api/user/profile")
-def get_profile(user: dict = Depends(get_current_user)):
-    with get_db() as conn:
-        u = conn.execute("SELECT id, email, full_name, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
-        if not u:
-            raise HTTPException(status_code=404, detail="Đạo Tâm không tồn tại.")
-        return dict(u)
-
-
-@app.put("/api/user/profile")
-def update_profile(body: ProfileUpdateBody, user: dict = Depends(get_current_user)):
-    name = body.full_name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Đạo hiệu không được để trống.")
-    with get_db() as conn:
-        conn.execute("UPDATE users SET full_name = ? WHERE id = ?", (name, user["user_id"]))
-        return {"message": "Đạo hiệu đã được cập nhật thành công!", "full_name": name}
-
-
 # ──────────────────────────────────────────────
 # AI ROUTES (Google Gemini)
 # ──────────────────────────────────────────────
