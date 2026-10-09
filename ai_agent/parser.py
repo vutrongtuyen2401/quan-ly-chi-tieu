@@ -241,7 +241,10 @@ class VietnameseFinancialParser:
         clean = text.lower().strip()
         clean = re.sub(r"[.!?,:;]+$", "", clean).strip()
 
-        # 0. Tra cứu trạng thái hạn mức / ngân sách / sổ nợ / số dư / mục tiêu (READ) không phải là advice
+        # 0. Tra cứu trạng thái hạn mức / ngân sách / sổ nợ / số dư / mục tiêu / truyền âm cầu viện (READ) không phải là advice
+        if cls.is_low_funds_support_query(clean):
+            return False
+
         status_read_keywords = [
             "hạn mức chi tiêu thế nào", "hạn mức thế nào", "ngân sách thế nào", "ngân sách ra sao",
             "tiến độ mục tiêu", "tiến độ tiết kiệm", "mục tiêu của ta thế nào", "mục tiêu của tôi thế nào",
@@ -316,6 +319,10 @@ class VietnameseFinancialParser:
         if cls.is_followup_query(clean):
             return False
 
+        # Nếu là câu hỏi Truyền Âm Cầu Viện / sắp hết tiền / danh bạ người thân -> KHÔNG phải đối thoại phiếm
+        if cls.is_low_funds_support_query(clean):
+            return False
+
         # Từ khóa tài chính cá nhân cốt lõi - nếu có thì KHÔNG phải general conversation
         fin_terms = [
             "chi tiêu", "chi tieu", "thu nhập", "thu nhap", "số dư", "so du", "ví", "vi",
@@ -366,6 +373,51 @@ class VietnameseFinancialParser:
             return True
 
         return False
+
+    @classmethod
+    def is_low_funds_support_query(cls, text: str) -> bool:
+        """Kiểm tra câu hỏi có liên quan đến Truyền Âm Cầu Viện, sắp hết tiền, xin tiền người thân hoặc Danh Bạ Hộ Đạo hay không"""
+        clean = text.lower().strip()
+        clean = re.sub(r"[.!?,:;]+$", "", clean).strip()
+
+        # Từ khóa định danh rõ ràng
+        keywords = [
+            "sắp hết tiền", "sap het tien",
+            "hết tiền rồi", "het tien roi",
+            "hết tiền", "het tien",
+            "sắp cạn tiền", "sap can tien",
+            "cạn tiền", "can tien",
+            "hết linh thạch", "het linh thach",
+            "sắp hết linh thạch", "sap het linh thach",
+            "linh thạch cạn kiệt", "linh thach can kiet",
+            "cuối tháng hết tiền", "cuoi thang het tien",
+            "cuối tháng sắp hết tiền", "cuoi thang sap het tien",
+            "xin tiền bố mẹ", "xin tien bo me",
+            "xin tiền ba mẹ", "xin tien ba me",
+            "xin tiền mẹ", "xin tien me",
+            "xin tiền bố", "xin tien bo",
+            "xin tiền ba", "xin tien ba",
+            "xin tiền phụ huynh", "xin tien phu huynh",
+            "xin tiền gia đình", "xin tien gia dinh",
+            "xin tiền người thân", "xin tien nguoi than",
+            "xin tiền", "xin tien",
+            "gọi ai xin tiền", "goi ai xin tien",
+            "gọi ai để xin tiền", "goi ai de xin tien",
+            "gọi ai xin", "goi ai xin",
+            "gọi ai cứu viện", "goi ai cuu vien",
+            "cầu viện ai", "cau vien ai",
+            "ai cho xin tiền", "ai cho xin tien",
+            "số điện thoại người thân", "so dien thoai nguoi than",
+            "số người thân", "so nguoi than",
+            "sđt người thân", "sdt nguoi than",
+            "danh bạ hộ đạo", "danh ba ho dao",
+            "danh bạ người thân", "danh ba nguoi than",
+            "người thân hộ đạo", "nguoi than ho dao",
+            "truyền âm cầu viện", "truyen am cau vien",
+            "cầu viện", "cau vien",
+            "hộ đạo", "ho dao",
+        ]
+        return any(kw in clean for kw in keywords)
 
     @classmethod
     def is_budget_intent(cls, text: str) -> bool:

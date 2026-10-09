@@ -841,29 +841,51 @@ function getSettleButtonClass(debt) {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--space-md, 18px);
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl, 16px);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.debt-metrics-grid:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 1024px) {
+  .debt-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .debt-metrics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .debt-metric-card {
   position: relative;
   background: var(--surface-container-low, #131b2e);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-xl, 14px);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   padding: var(--space-lg, 20px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: var(--space-sm, 12px);
   overflow: hidden;
-  transition: all 0.25s ease;
+  transition: background 0.25s ease;
 }
 
 .debt-metric-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  transform: none;
+  background: rgba(26, 36, 61, 0.95);
 }
 
 .metric-card-glow {

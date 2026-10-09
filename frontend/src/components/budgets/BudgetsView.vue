@@ -1197,8 +1197,19 @@ const donutStrokeClass = computed(() => {
   z-index: 1;
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));
-  gap: 1rem;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl, 16px);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   margin-bottom: 1.5rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.budget-metrics-grid:hover {
+  border-color: rgba(125, 214, 204, 0.2);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
 
 @media (min-width: 640px) {
@@ -1216,20 +1227,20 @@ const donutStrokeClass = computed(() => {
 .budget-metric-card {
   position: relative;
   background: #171f33;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 0.75rem;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: background 0.2s ease;
 }
 
 .budget-metric-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(125, 214, 204, 0.2);
+  transform: none;
+  background: #1e2840;
 }
 
 .metric-card-glow {

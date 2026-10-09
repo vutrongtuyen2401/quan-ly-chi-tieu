@@ -754,13 +754,24 @@ function getGoalAdvice(goal) {
   border-color: var(--color-primary, #7dd6cc);
 }
 
-/* ─── 4 METRICS GRID ─── */
+/* ─── 4 METRICS GRID (COMBINED AS 1 CARD) ─── */
 .goals-metrics-grid {
   position: relative;
   z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-md, 16px);
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl, 16px);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.goals-metrics-grid:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
 
 @media (min-width: 640px) {
@@ -781,18 +792,18 @@ function getGoalAdvice(goal) {
   flex-direction: column;
   justify-content: space-between;
   padding: var(--space-md, 16px) var(--space-lg, 20px);
-  background: rgba(23, 31, 51, 0.7);
+  background: rgba(23, 31, 51, 0.75);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-xl, 16px);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   overflow: hidden;
-  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  transition: background 0.25s ease;
 }
 
 .goal-metric-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transform: none;
+  background: rgba(30, 41, 67, 0.95);
 }
 
 .metric-card-glow {

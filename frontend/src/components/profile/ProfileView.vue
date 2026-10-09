@@ -37,6 +37,19 @@
             @save-soul-lamp="$emit('save-soul-lamp', $event)"
           />
 
+          <!-- Danh Bạ Hộ Đạo (Truyền Âm Cầu Viện) -->
+          <SupportContactsCard
+            :contacts="supportContacts"
+            :settings="supportSettings"
+            :loading="loadingSupport"
+            :formatVND="formatVND"
+            @create-contact="$emit('create-contact', $event)"
+            @update-contact="$emit('update-contact', $event)"
+            @delete-contact="$emit('delete-contact', $event)"
+            @toggle-contact="$emit('toggle-contact', $event)"
+            @save-settings="$emit('save-settings', $event)"
+          />
+
           <!-- Đổi Mật Khẩu Master -->
           <PasswordChangeCard
             :loading-password="loadingPassword"
@@ -105,6 +118,7 @@ import ProfileHeader from './ProfileHeader.vue'
 import ProfileIdentityCard from './ProfileIdentityCard.vue'
 import SoulLampCard from './SoulLampCard.vue'
 import PasswordChangeCard from './PasswordChangeCard.vue'
+import SupportContactsCard from '../support/SupportContactsCard.vue'
 
 export default {
   name: 'ProfileView',
@@ -112,7 +126,8 @@ export default {
     ProfileHeader,
     ProfileIdentityCard,
     SoulLampCard,
-    PasswordChangeCard
+    PasswordChangeCard,
+    SupportContactsCard
   },
   props: {
     isModal: {
@@ -151,12 +166,40 @@ export default {
       type: Boolean,
       default: false
     },
+    supportContacts: {
+      type: Array,
+      default: () => []
+    },
+    supportSettings: {
+      type: Object,
+      default: () => ({
+        enabled: true,
+        low_balance_threshold: 500000,
+        allowance_day: 1,
+        message_template: ''
+      })
+    },
+    loadingSupport: {
+      type: Boolean,
+      default: false
+    },
     formatVND: {
       type: Function,
       default: null
     }
   },
-  emits: ['close', 'save-profile', 'save-soul-lamp', 'change-password', 'logout'],
+  emits: [
+    'close',
+    'save-profile',
+    'save-soul-lamp',
+    'change-password',
+    'logout',
+    'create-contact',
+    'update-contact',
+    'delete-contact',
+    'toggle-contact',
+    'save-settings'
+  ],
   setup(props, { emit }) {
     function handleBackdropClick() {
       if (props.isModal) {

@@ -495,6 +495,8 @@ class AgentCore:
             p_name = VietnameseFinancialParser.extract_person_name(message)
             if p_name:
                 tool_args["person_name"] = p_name
+        elif domain == "support":
+            tool_name = "low_funds_support"
         else:
             tool_name = "financial_overview"
             tool_args["period"] = "this_month"
@@ -683,6 +685,10 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
 
         # 3. Giao dịch mới nhất / gần nhất
         if VietnameseFinancialParser.is_latest_transaction_query(message):
+            return True
+
+        # 3b. Truyền Âm Cầu Viện / Sắp hết tiền / Danh bạ người thân
+        if VietnameseFinancialParser.is_low_funds_support_query(message):
             return True
 
         # 4. Follow-up query khi có context trước đó
@@ -3029,6 +3035,10 @@ Câu hỏi của {user_name}: {clean_msg}"""
         # Tra cứu thu nhập / tổng thu
         if any(kw in raw for kw in ["thu bao nhiêu", "thu nhập tháng", "tháng này ta thu", "tháng này thu bao nhiêu", "tổng thu", "thu được bao nhiêu", "khoản thu tháng này"]):
             return {"tool": "financial_overview", "arguments": {"period": period or "this_month"}}
+
+        # Tra cứu Truyền Âm Cầu Viện / Sắp hết tiền / Danh Bạ Hộ Đạo
+        if VietnameseFinancialParser.is_low_funds_support_query(message):
+            return {"tool": "low_funds_support", "arguments": {}}
 
         if any(kw in raw for kw in ["hạn mức", "han muc", "ngân sách", "ngan sach", "vượt hạn mức"]):
             tool_target = "get_budget_status" if "hạn mức chi tiêu thế nào" in raw else "budget_status"

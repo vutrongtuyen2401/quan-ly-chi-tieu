@@ -648,12 +648,22 @@ const getCategoryPercentage = (val) => {
   box-shadow: 0 4px 14px rgba(125, 214, 204, 0.35);
 }
 
-/* ─── SECTION B: KPI METRICS GRID (4 CARDS) ─── */
+/* ─── SECTION B: KPI METRICS GRID (4 CARDS COMBINED AS 1 CARD) ─── */
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--gutter, 24px);
+  gap: 1px;
+  background: var(--tier-1-border, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--tier-1-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-xl, 16px);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   z-index: 1;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.metric-grid:hover {
+  border-color: rgba(125, 214, 204, 0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
 }
 
 .kpi-card {
@@ -663,16 +673,17 @@ const getCategoryPercentage = (val) => {
   justify-content: space-between;
   padding: var(--space-lg, 24px);
   background: var(--color-surface-container-low, #131b2e);
-  border: 1px solid var(--tier-1-border, rgba(255, 255, 255, 0.08));
-  border-radius: var(--radius-xl, 16px);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   backdrop-filter: blur(16px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  transition: all 0.25s ease;
+  transition: background 0.2s ease;
 }
 .kpi-card:hover {
-  border-color: rgba(125, 214, 204, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  background: rgba(26, 36, 61, 0.95);
+  border-color: transparent;
+  transform: none;
+  box-shadow: none;
 }
 
 .kpi-header {
@@ -1347,7 +1358,7 @@ const getCategoryPercentage = (val) => {
   }
   .metric-grid {
     grid-template-columns: 1fr;
-    gap: var(--gutter-mobile, 16px);
+    gap: 1px;
   }
   .welcome-card {
     padding: var(--space-md, 16px);

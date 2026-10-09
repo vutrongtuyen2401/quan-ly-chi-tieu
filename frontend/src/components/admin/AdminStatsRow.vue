@@ -109,7 +109,18 @@ export default {
 .admin-stats-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-md, 1rem);
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg, 1rem);
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-stats-grid:hover {
+  border-color: rgba(125, 214, 204, 0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
 }
 
 @media (min-width: 768px) {
@@ -120,23 +131,22 @@ export default {
 
 .stat-card {
   position: relative;
-  border-radius: var(--radius-lg, 1rem);
+  border-radius: 0;
   padding: var(--space-lg, 1.5rem);
   background: rgba(19, 27, 46, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  border: none;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: var(--space-sm, 0.5rem);
   overflow: hidden;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease;
 }
 
 .stat-card:hover {
-  background: rgba(23, 31, 51, 0.95);
-  border-color: rgba(125, 214, 204, 0.25);
-  transform: translateY(-1px);
+  background: rgba(26, 36, 61, 0.95);
+  transform: none;
 }
 
 .glow-orb {

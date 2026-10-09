@@ -2245,6 +2245,54 @@ async def handle_get_user_profile(user_id: int, **kwargs) -> ToolResult:
         )
 
 
+# READ: low_funds_support (Truyền Âm Cầu Viện)
+async def handle_low_funds_support(user_id: int, **kwargs) -> ToolResult:
+    import main
+    with main.get_db() as conn:
+        status = main.compute_low_funds_status(conn, user_id)
+
+    level = status.get("level", "SAFE")
+    total_balance = status.get("total_balance", 0.0)
+    runway_days = status.get("runway_days")
+    days_left = status.get("days_left", 0)
+    suggested_amount = status.get("suggested_amount", 0.0)
+    contacts = status.get("contacts", [])
+    next_allowance_date = status.get("next_allowance_date", "")
+
+    date_display = next_allowance_date
+    if next_allowance_date and "-" in next_allowance_date:
+        parts = next_allowance_date.split("-")
+        if len(parts) == 3:
+            date_display = f"{parts[2]}/{parts[1]}"
+
+    runway_text = f", dự kiến đủ chi tiêu khoảng {runway_days} ngày" if runway_days is not None else ""
+
+    lines = []
+    if level == "NO_DATA":
+        lines.append("Ký Chủ hiện chưa khởi tạo Túi Càn Khôn (ví tiền) nào trong hệ thống, do đó Khí Linh chưa thể đánh giá tình trạng linh thạch. Hãy vào Túi Càn Khôn để tạo ví trước nhé!")
+    elif level == "SAFE":
+        lines.append(f"Ngân khố của Ký Chủ hiện đang ở mức AN TOÀN (SAFE). Tổng số dư khả dụng là {total_balance:,.0f} ₫{runway_text}, còn {days_left} ngày tới kỳ nhận trợ cấp tiếp theo ({date_display}), chưa có dấu hiệu sắp cạn kiệt.")
+    elif level == "WARNING":
+        lines.append(f"⚠️ CẢNH BÁO LINH THẠCH HAO HỤT (WARNING): Tổng số dư hiện tại là {total_balance:,.0f} ₫{runway_text}, trong khi còn {days_left} ngày nữa mới tới ngày trợ cấp ({date_display}). Ký Chủ nên cân nhắc xin hỗ trợ thêm khoảng {suggested_amount:,.0f} ₫.")
+    elif level == "CRITICAL":
+        lines.append(f"🚨 NGUY CẤP: LINH THẠCH CẠN KIỆT (CRITICAL)! Tổng số dư hiện tại là {total_balance:,.0f} ₫{runway_text}, còn {days_left} ngày tới ngày trợ cấp ({date_display}). Khí Linh khuyến nghị Ký Chủ nên xin hỗ trợ khẩn cấp khoảng {suggested_amount:,.0f} ₫.")
+
+    if contacts:
+        contact_items = [f"- {c['contact_name']} ({c.get('relationship_label', 'Người thân')}): {c['phone']}" for c in contacts]
+        lines.append("\nDanh sách người thân trong Danh Bạ Hộ Đạo:")
+        lines.extend(contact_items)
+        lines.append("💡 Ký Chủ có thể mở trang Tổng Quan (Dashboard) để bấm Gọi điện hoặc Gửi tin nhắn soạn sẵn ngay lập tức!")
+    else:
+        lines.append("\n💡 Hiện Ký Chủ chưa lưu số người thân nào. Hãy vào mục Hồ Sơ > Danh Bạ Hộ Đạo để thêm số người thân hỗ trợ khi cần truyền âm cầu viện nhé!")
+
+    message = "\n".join(lines)
+    return ToolResult(
+        success=True,
+        data=status,
+        message=message
+    )
+
+
 # WRITE: update_user_profile
 async def handle_update_user_profile(user_id: int, full_name: str, **kwargs) -> ToolResult:
     import main
@@ -3343,6 +3391,21 @@ def build_default_tool_registry() -> ToolRegistry:
         required_role="admin",
         summary_generator=lambda a: f"⚠️ **QUẢN TRỊ - Thay Đổi Phân Quyền**: Gán vai trò '{a.get('new_role')}' cho User ID #{a.get('target_user_id')}",
         handler=handle_change_user_role
+    ))
+
+    # 12. SUPPORT DOMAIN (Truyền Âm Cầu Viện)
+    reg.register(Tool(
+        name="low_funds_support",
+        description="Tra cứu tình trạng thiếu hụt linh thạch (Truyền Âm Cầu Viện), mức độ cảnh báo hết tiền, số ngày đủ chi tiêu, số tiền nên xin hỗ trợ và danh sách người thân trong Danh Bạ Hộ Đạo.",
+        domain="support",
+        parameters={
+            "type": "object",
+            "properties": {}
+        },
+        action_type=ToolActionType.READ,
+        risk_level=RiskLevel.LOW,
+        requires_confirmation=False,
+        handler=handle_low_funds_support
     ))
 
     return reg

@@ -1066,13 +1066,24 @@ const categoryComparisonRows = computed(() => {
   color: #ffffff;
 }
 
-/* ─── TOP KPI SUMMARY (4 CARDS) ─── */
+/* ─── TOP KPI SUMMARY (4 CARDS COMBINED AS 1 CARD) ─── */
 .kpi-summary-grid {
   position: relative;
   z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.kpi-summary-grid:hover {
+  border-color: rgba(125, 214, 204, 0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
 
 @media (min-width: 640px) {
@@ -1092,20 +1103,20 @@ const categoryComparisonRows = computed(() => {
   overflow: hidden;
   background: rgba(23, 31, 51, 0.85);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 12px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: background 0.2s ease;
 }
 
 .kpi-metric-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(125, 214, 204, 0.25);
+  transform: none;
+  background: rgba(30, 41, 67, 0.95);
 }
 
 .kpi-glow {
