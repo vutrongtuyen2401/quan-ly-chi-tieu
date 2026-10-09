@@ -677,15 +677,27 @@ function resetForm() {
   transform: translateY(-1px);
 }
 
-/* ─── SUMMARY METRICS (3 CARDS) ─── */
+/* ─── SUMMARY METRICS (3 CARDS COMBINED AS 1 CARD) ─── */
 .categories-metrics-grid {
   position: relative;
   z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1rem;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   margin-bottom: 1.5rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
+
+.categories-metrics-grid:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
 @media (min-width: 640px) {
   .categories-metrics-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -698,15 +710,16 @@ function resetForm() {
   background: rgba(23, 31, 51, 0.72);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1rem;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   padding: 1.25rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: background 0.2s ease;
 }
+
 .category-metric-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.16);
+  transform: none;
+  background: rgba(30, 41, 67, 0.92);
 }
 
 .metric-glow {

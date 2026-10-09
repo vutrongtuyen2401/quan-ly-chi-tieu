@@ -18,6 +18,8 @@ import time
 import csv
 import io
 import math
+import calendar
+import re
 import logging
 import traceback
 from contextlib import contextmanager
@@ -95,7 +97,7 @@ app.add_middleware(
 # ──────────────────────────────────────────────
 @contextmanager
 def get_db():
-    conn = sqlite3.connect(DATABASE)
+    conn = sqlite3.connect(DATABASE, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -248,7 +250,36 @@ def init_db():
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+
+            /* Bảng support_contacts (Danh Bạ Hộ Đạo) */
+            CREATE TABLE IF NOT EXISTS support_contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                contact_name TEXT NOT NULL,
+                relationship TEXT CHECK(relationship IN ('FATHER','MOTHER','SIBLING','RELATIVE','FRIEND','OTHER')) NOT NULL,
+                phone TEXT NOT NULL,
+                priority INTEGER DEFAULT 1,
+                note TEXT DEFAULT '',
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            /* Bảng support_settings (Cài Đặt Cảnh Báo Sắp Hết Tiền) */
+            CREATE TABLE IF NOT EXISTS support_settings (
+                user_id INTEGER PRIMARY KEY,
+                enabled INTEGER DEFAULT 1,
+                low_balance_threshold REAL DEFAULT 500000,
+                allowance_day INTEGER DEFAULT 1,
+                message_template TEXT DEFAULT '',
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
         """)
+
+        # Index trên (user_id) cho support_contacts
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_support_contacts_user ON support_contacts(user_id)")
+
 
         # Migration: Ensure role, is_active, soul_lamp_hash, and token_version columns exist on users table
         user_cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
@@ -379,6 +410,8 @@ def init_db():
         conn.execute("DELETE FROM budgets WHERE user_id NOT IN (SELECT id FROM users)")
         conn.execute("DELETE FROM invoice_ocr_logs WHERE user_id NOT IN (SELECT id FROM users)")
         conn.execute("DELETE FROM chat_sessions WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM support_contacts WHERE user_id NOT IN (SELECT id FROM users)")
+        conn.execute("DELETE FROM support_settings WHERE user_id NOT IN (SELECT id FROM users)")
 
         conn.commit()
 
@@ -526,6 +559,28 @@ class SavingGoalDepositBody(BaseModel):
     amount: float
     wallet_id: Optional[int] = None
     operation_id: Optional[str] = None
+
+class SupportContactBody(BaseModel):
+    contact_name: str
+    relationship: str
+    phone: str
+    priority: int = 1
+    note: Optional[str] = ""
+    is_active: Optional[int] = 1
+
+class SupportContactUpdateBody(BaseModel):
+    contact_name: Optional[str] = None
+    relationship: Optional[str] = None
+    phone: Optional[str] = None
+    priority: Optional[int] = None
+    note: Optional[str] = None
+    is_active: Optional[int] = None
+
+class SupportSettingsBody(BaseModel):
+    enabled: Optional[int] = 1
+    low_balance_threshold: Optional[float] = 500000.0
+    allowance_day: Optional[int] = 1
+    message_template: Optional[str] = ""
 
 
 # ──────────────────────────────────────────────
@@ -2654,6 +2709,508 @@ def change_user_role(user_id: int, body: RoleUpdateBody, admin: dict = Depends(r
             raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (body.role, user_id))
         return {"message": f"Đã cập nhật vai trò của {target['email']} thành {body.role}!", "user_id": user_id, "role": body.role}
+
+
+# ──────────────────────────────────────────────
+# SUPPORT CONTACTS & LOW FUNDS ALERT (TRUYỀN ÂM CẦU VIỆN)
+# ──────────────────────────────────────────────
+SUPPORT_RELATIONSHIP_LABELS = {
+    "FATHER": "Bố",
+    "MOTHER": "Mẹ",
+    "SIBLING": "Anh/Chị/Em",
+    "RELATIVE": "Họ hàng",
+    "FRIEND": "Bạn bè",
+    "OTHER": "Khác",
+}
+
+DEFAULT_SUPPORT_MESSAGE_TEMPLATE = (
+    "{xung_ho} ơi, tháng này con chi tiêu hơi quá tay, hiện chỉ còn {so_du}, "
+    "mà còn {so_ngay} ngày nữa mới tới ngày nhận tiền. "
+    "{xung_ho} cho con xin thêm khoảng {so_tien} được không ạ? Con cảm ơn {xung_ho} ạ!"
+)
+
+
+def format_vnd(amount: float | int) -> str:
+    """Định dạng tiền tệ tiếng Việt: 1.550.000 ₫"""
+    amt_int = int(round(amount))
+    return f"{amt_int:,}".replace(",", ".") + " ₫"
+
+
+def normalize_vn_phone(raw: str) -> str:
+    """Chuẩn hóa số điện thoại di động Việt Nam.
+    Bỏ khoảng trắng, '.', '-', '(', ')'.
+    Chấp nhận tiền tố 0, +84, 84; đầu số di động 3|5|7|8|9.
+    Trả về định dạng 0xxxxxxxxx (10 chữ số).
+    Sai định dạng -> HTTPException 400 với thông báo tiếng Việt.
+    """
+    if not raw or not isinstance(raw, str):
+        raise HTTPException(
+            status_code=400,
+            detail="Số điện thoại không được để trống."
+        )
+    cleaned = re.sub(r"[\s.\-()]", "", raw.strip())
+    match = re.match(r"^(?:0|\+84|84)([35789]\d{8})$", cleaned)
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail="Số điện thoại không hợp lệ. Vui lòng nhập số di động Việt Nam (10 chữ số, ví dụ 0912345678)."
+        )
+    return "0" + match.group(1)
+
+
+def get_or_create_support_settings(conn, user_id: int) -> dict:
+    """Lấy hoặc khởi tạo cài đặt cảnh báo sắp hết tiền cho user_id."""
+    row = conn.execute("SELECT * FROM support_settings WHERE user_id = ?", (user_id,)).fetchone()
+    if not row:
+        conn.execute("""
+            INSERT INTO support_settings (user_id, enabled, low_balance_threshold, allowance_day, message_template, updated_at)
+            VALUES (?, 1, 500000.0, 1, '', datetime('now'))
+        """, (user_id,))
+        row = conn.execute("SELECT * FROM support_settings WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row)
+
+
+def compute_low_funds_status(conn, user_id: int, today: Optional[datetime.date] = None) -> dict:
+    """Tính toán thuần túy trạng thái sắp hết tiền theo công thức xác định Phần 1.4."""
+    if today is None:
+        today = datetime.date.today()
+    today_str = today.strftime("%Y-%m-%d")
+
+    # Gọi process_recurring_transactions trước khi tính, giống /api/reports/summary
+    process_recurring_transactions(conn, user_id)
+
+    settings = get_or_create_support_settings(conn, user_id)
+    enabled = bool(settings["enabled"])
+    threshold = float(settings["low_balance_threshold"])
+    allowance_day = int(settings["allowance_day"])
+    user_tpl = (settings.get("message_template") or "").strip()
+    template_to_use = user_tpl if user_tpl else DEFAULT_SUPPORT_MESSAGE_TEMPLATE
+
+    # 1. total_balance: Tổng balance tất cả ví của user
+    bal_row = conn.execute("SELECT COALESCE(SUM(balance), 0) FROM wallets WHERE user_id = ?", (user_id,)).fetchone()
+    total_balance = float(bal_row[0]) if bal_row else 0.0
+
+    # 2. next_allowance_date: Ngày nhận tiền kế tiếp sau hôm nay theo allowance_day (1-28)
+    _, max_days_cur = calendar.monthrange(today.year, today.month)
+    safe_day_cur = min(allowance_day, max_days_cur)
+    cand_cur = datetime.date(today.year, today.month, safe_day_cur)
+
+    if cand_cur > today:
+        next_allowance_date = cand_cur
+    else:
+        next_year = today.year + (today.month // 12)
+        next_month = (today.month % 12) + 1
+        _, max_days_next = calendar.monthrange(next_year, next_month)
+        safe_day_next = min(allowance_day, max_days_next)
+        next_allowance_date = datetime.date(next_year, next_month, safe_day_next)
+
+    # 3. days_left: next_allowance_date - hôm nay
+    days_left = (next_allowance_date - today).days
+
+    # 4. avg_daily_expense:
+    # Nếu từ đầu tháng tới nay >= 7 ngày và đã có chi: tổng chi tháng này / số ngày đã qua.
+    # Ngược lại: tổng chi 30 ngày gần nhất / 30. Không có chi -> 0.
+    cur_month_str = today.strftime("%Y-%m")
+    m_exp_row = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0) FROM transactions
+        WHERE user_id = ? AND transaction_type = 'EXPENSE'
+          AND strftime('%Y-%m', transaction_date) = ?
+          AND transaction_date <= ?
+    """, (user_id, cur_month_str, today_str)).fetchone()
+    month_expense = float(m_exp_row[0]) if m_exp_row else 0.0
+
+    if today.day >= 7 and month_expense > 0:
+        avg_daily_expense = month_expense / float(today.day)
+    else:
+        start_30 = (today - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+        p30_row = conn.execute("""
+            SELECT COALESCE(SUM(amount), 0) FROM transactions
+            WHERE user_id = ? AND transaction_type = 'EXPENSE'
+              AND transaction_date >= ? AND transaction_date <= ?
+        """, (user_id, start_30, today_str)).fetchone()
+        past_30_expense = float(p30_row[0]) if p30_row else 0.0
+        if past_30_expense > 0:
+            avg_daily_expense = past_30_expense / 30.0
+        else:
+            avg_daily_expense = 0.0
+
+    # 5. upcoming_fixed:
+    # Tổng (a) recurring EXPENSE đang bật trong [hôm nay, next_allowance_date)
+    # và (b) nợ BORROW chưa trả trong khoảng đó
+    upcoming_fixed = 0.0
+    upcoming_count = 0
+
+    rec_rows = conn.execute("""
+        SELECT amount, frequency, next_run_date
+        FROM recurring_transactions
+        WHERE user_id = ? AND is_active = 1 AND transaction_type = 'EXPENSE'
+    """, (user_id,)).fetchall()
+
+    for r in rec_rows:
+        amount = float(r["amount"])
+        freq = r["frequency"]
+        try:
+            r_date = datetime.datetime.strptime(r["next_run_date"], "%Y-%m-%d").date()
+        except Exception:
+            continue
+
+        loop_guard = 0
+        while r_date < today and loop_guard < 50:
+            loop_guard += 1
+            if freq == "weekly":
+                r_date += datetime.timedelta(days=7)
+            else:
+                ny = r_date.year + (r_date.month // 12)
+                nm = (r_date.month % 12) + 1
+                _, md = calendar.monthrange(ny, nm)
+                r_date = datetime.date(ny, nm, min(r_date.day, md, 28))
+
+        while r_date < next_allowance_date and loop_guard < 100:
+            loop_guard += 1
+            if r_date >= today:
+                upcoming_fixed += amount
+                upcoming_count += 1
+            if freq == "weekly":
+                r_date += datetime.timedelta(days=7)
+            else:
+                ny = r_date.year + (r_date.month // 12)
+                nm = (r_date.month % 12) + 1
+                _, md = calendar.monthrange(ny, nm)
+                r_date = datetime.date(ny, nm, min(r_date.day, md, 28))
+
+    next_allowance_str = next_allowance_date.strftime("%Y-%m-%d")
+    debt_rows = conn.execute("""
+        SELECT amount, due_date FROM debts
+        WHERE user_id = ? AND debt_type = 'BORROW' AND is_settled = 0
+          AND due_date IS NOT NULL AND due_date != ''
+          AND due_date >= ? AND due_date < ?
+    """, (user_id, today_str, next_allowance_str)).fetchall()
+
+    for d in debt_rows:
+        upcoming_fixed += float(d["amount"])
+        upcoming_count += 1
+
+    # 6. projected_need: avg_daily_expense * days_left + upcoming_fixed
+    projected_need = avg_daily_expense * days_left + upcoming_fixed
+
+    # 7. runway_days: total_balance / avg_daily_expense (null nếu avg == 0), làm tròn 1 chữ số thập phân
+    if avg_daily_expense > 0:
+        runway_days = round(total_balance / avg_daily_expense, 1)
+    else:
+        runway_days = None
+
+    # 8. shortfall: max(0, projected_need - total_balance)
+    shortfall = max(0.0, projected_need - total_balance)
+
+    # 9. suggested_amount: max(shortfall, threshold - total_balance) làm tròn lên bội số 50.000 ₫; không âm
+    raw_suggested = max(0.0, max(shortfall, threshold - total_balance))
+    if raw_suggested > 0:
+        suggested_amount = int(math.ceil(raw_suggested / 50000.0) * 50000)
+    else:
+        suggested_amount = 0
+
+    wallet_count_row = conn.execute("SELECT COUNT(*) FROM wallets WHERE user_id = ?", (user_id,)).fetchone()
+    has_wallets = (wallet_count_row[0] > 0) if wallet_count_row else False
+
+    # 10. Phân mức (CRITICAL / WARNING / SAFE / NO_DATA):
+    if not has_wallets:
+        level = "NO_DATA"
+    else:
+        is_critical = False
+        if total_balance <= 0:
+            is_critical = True
+        elif runway_days is not None and runway_days < (days_left * 0.5):
+            is_critical = True
+        elif total_balance < (threshold * 0.5):
+            is_critical = True
+
+        if is_critical:
+            level = "CRITICAL"
+        elif total_balance < threshold or shortfall > 0:
+            level = "WARNING"
+        else:
+            level = "SAFE"
+
+    # 11. reasons:
+    reasons = []
+    if level == "NO_DATA":
+        reasons.append("Chưa có ví nào nên chưa thể đánh giá. Hãy tạo ví trong Túi Càn Khôn.")
+    elif level == "SAFE":
+        reasons.append(
+            f"Số dư hiện tại {format_vnd(total_balance)} an toàn, đủ chi tiêu tới ngày nhận tiền tiếp theo ({next_allowance_date.strftime('%d/%m')})."
+        )
+    else:
+        if total_balance <= 0:
+            reasons.append(f"Số dư hiện tại đã cạn kiệt ({format_vnd(total_balance)}).")
+        elif total_balance < threshold:
+            reasons.append(f"Số dư {format_vnd(total_balance)} thấp hơn ngưỡng cảnh báo {format_vnd(threshold)}.")
+
+        if runway_days is not None and runway_days < days_left:
+            runway_disp = int(runway_days) if runway_days.is_integer() else runway_days
+            reasons.append(
+                f"Với mức chi trung bình {format_vnd(avg_daily_expense)}/ngày, số dư chỉ đủ khoảng {runway_disp} ngày, "
+                f"trong khi còn {days_left} ngày nữa mới tới ngày nhận tiền ({next_allowance_date.strftime('%d/%m')})."
+            )
+
+        if upcoming_count > 0:
+            reasons.append(
+                f"Có {upcoming_count} khoản cố định sắp tới hạn, tổng {format_vnd(upcoming_fixed)}."
+            )
+
+        if shortfall > 0 and not any("mức chi trung bình" in r for r in reasons):
+            reasons.append(f"Dự kiến thiếu khoảng {format_vnd(shortfall)} cho các khoản chi tiêu sắp tới.")
+
+        if not reasons:
+            reasons.append(f"Số dư {format_vnd(total_balance)} cần được bổ sung để đảm bảo an toàn tài chính.")
+
+    # 12. contacts: chỉ gồm người is_active=1, sắp theo priority rồi id
+    contact_rows = conn.execute("""
+        SELECT id, contact_name, relationship, phone, priority, note
+        FROM support_contacts
+        WHERE user_id = ? AND is_active = 1
+        ORDER BY priority ASC, id ASC
+    """, (user_id,)).fetchall()
+
+    contacts = []
+    for c in contact_rows:
+        rel = c["relationship"]
+        rel_label = SUPPORT_RELATIONSHIP_LABELS.get(rel, "Khác")
+        c_name = c["contact_name"]
+        if rel == "FATHER":
+            xung_ho = "Bố"
+        elif rel == "MOTHER":
+            xung_ho = "Mẹ"
+        else:
+            xung_ho = c_name
+
+        msg = template_to_use.replace("{xung_ho}", xung_ho)
+        msg = msg.replace("{so_du}", format_vnd(total_balance))
+        msg = msg.replace("{so_ngay}", str(days_left))
+        msg = msg.replace("{so_tien}", format_vnd(suggested_amount))
+
+        contacts.append({
+            "id": c["id"],
+            "contact_name": c_name,
+            "relationship": rel,
+            "relationship_label": rel_label,
+            "phone": c["phone"],
+            "priority": c["priority"],
+            "note": c["note"] or "",
+            "message": msg,
+        })
+
+    return {
+        "enabled": enabled,
+        "level": level,
+        "total_balance": round(total_balance, 2),
+        "avg_daily_expense": round(avg_daily_expense, 2),
+        "days_left": days_left,
+        "next_allowance_date": next_allowance_date.strftime("%Y-%m-%d"),
+        "runway_days": runway_days,
+        "upcoming_fixed": round(upcoming_fixed, 2),
+        "projected_need": round(projected_need, 2),
+        "shortfall": round(shortfall, 2),
+        "suggested_amount": suggested_amount,
+        "threshold": round(threshold, 2),
+        "reasons": reasons,
+        "contacts": contacts,
+    }
+
+
+# ── ENDPOINTS ──────────────────────────────────
+@app.get("/api/support-contacts")
+def get_support_contacts(user: dict = Depends(get_current_user)):
+    """Lấy danh sách người thân trong Danh Bạ Hộ Đạo của người dùng."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT id, user_id, contact_name, relationship, phone, priority, note, is_active, created_at
+            FROM support_contacts
+            WHERE user_id = ?
+            ORDER BY priority ASC, id ASC
+        """, (user["user_id"],)).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["relationship_label"] = SUPPORT_RELATIONSHIP_LABELS.get(d["relationship"], "Khác")
+            result.append(d)
+        return result
+
+
+@app.post("/api/support-contacts")
+def create_support_contact(body: SupportContactBody, user: dict = Depends(get_current_user)):
+    """Thêm người thân vào Danh Bạ Hộ Đạo."""
+    name = (body.contact_name or "").strip()
+    if not (1 <= len(name) <= 50):
+        raise HTTPException(status_code=400, detail="Tên người thân phải từ 1 đến 50 ký tự.")
+
+    if body.relationship not in SUPPORT_RELATIONSHIP_LABELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Mối quan hệ không hợp lệ. Chọn một trong: {', '.join(SUPPORT_RELATIONSHIP_LABELS.keys())}."
+        )
+
+    if not (1 <= body.priority <= 99):
+        raise HTTPException(status_code=400, detail="Thứ tự ưu tiên phải từ 1 đến 99.")
+
+    note = (body.note or "").strip()
+    if len(note) > 200:
+        raise HTTPException(status_code=400, detail="Ghi chú không được vượt quá 200 ký tự.")
+
+    phone = normalize_vn_phone(body.phone)
+    is_active = 1 if body.is_active is None or body.is_active else 0
+
+    with get_db() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM support_contacts WHERE user_id = ?", (user["user_id"],)).fetchone()[0]
+        if count >= 10:
+            raise HTTPException(status_code=400, detail="Đã đạt giới hạn tối đa 10 người thân trong danh bạ.")
+
+        existing = conn.execute("SELECT id FROM support_contacts WHERE user_id = ? AND phone = ?", (user["user_id"], phone)).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="Số điện thoại này đã tồn tại trong danh bạ.")
+
+        conn.execute("""
+            INSERT INTO support_contacts (user_id, contact_name, relationship, phone, priority, note, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user["user_id"], name, body.relationship, phone, body.priority, note, is_active))
+
+        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        row = conn.execute("SELECT * FROM support_contacts WHERE id = ?", (new_id,)).fetchone()
+        res = dict(row)
+        res["relationship_label"] = SUPPORT_RELATIONSHIP_LABELS.get(res["relationship"], "Khác")
+        return res
+
+
+@app.put("/api/support-contacts/{contact_id}")
+def update_support_contact(contact_id: int, body: SupportContactUpdateBody, user: dict = Depends(get_current_user)):
+    """Cập nhật thông tin người thân trong Danh Bạ Hộ Đạo."""
+    with get_db() as conn:
+        contact = conn.execute("SELECT * FROM support_contacts WHERE id = ? AND user_id = ?", (contact_id, user["user_id"])).fetchone()
+        if not contact:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người thân hoặc không thuộc quyền sở hữu.")
+
+        name = contact["contact_name"]
+        if body.contact_name is not None:
+            name = body.contact_name.strip()
+            if not (1 <= len(name) <= 50):
+                raise HTTPException(status_code=400, detail="Tên người thân phải từ 1 đến 50 ký tự.")
+
+        rel = contact["relationship"]
+        if body.relationship is not None:
+            if body.relationship not in SUPPORT_RELATIONSHIP_LABELS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Mối quan hệ không hợp lệ. Chọn một trong: {', '.join(SUPPORT_RELATIONSHIP_LABELS.keys())}."
+                )
+            rel = body.relationship
+
+        phone = contact["phone"]
+        if body.phone is not None:
+            phone = normalize_vn_phone(body.phone)
+            dup = conn.execute("SELECT id FROM support_contacts WHERE user_id = ? AND phone = ? AND id != ?", (user["user_id"], phone, contact_id)).fetchone()
+            if dup:
+                raise HTTPException(status_code=400, detail="Số điện thoại này đã tồn tại trong danh bạ.")
+
+        priority = contact["priority"]
+        if body.priority is not None:
+            if not (1 <= body.priority <= 99):
+                raise HTTPException(status_code=400, detail="Thứ tự ưu tiên phải từ 1 đến 99.")
+            priority = body.priority
+
+        note = contact["note"] or ""
+        if body.note is not None:
+            note = body.note.strip()
+            if len(note) > 200:
+                raise HTTPException(status_code=400, detail="Ghi chú không được vượt quá 200 ký tự.")
+
+        is_active = contact["is_active"]
+        if body.is_active is not None:
+            is_active = 1 if body.is_active else 0
+
+        conn.execute("""
+            UPDATE support_contacts
+            SET contact_name = ?, relationship = ?, phone = ?, priority = ?, note = ?, is_active = ?
+            WHERE id = ? AND user_id = ?
+        """, (name, rel, phone, priority, note, is_active, contact_id, user["user_id"]))
+
+        updated = conn.execute("SELECT * FROM support_contacts WHERE id = ?", (contact_id,)).fetchone()
+        res = dict(updated)
+        res["relationship_label"] = SUPPORT_RELATIONSHIP_LABELS.get(res["relationship"], "Khác")
+        return res
+
+
+@app.delete("/api/support-contacts/{contact_id}")
+def delete_support_contact(contact_id: int, user: dict = Depends(get_current_user)):
+    """Xóa người thân khỏi Danh Bạ Hộ Đạo."""
+    with get_db() as conn:
+        contact = conn.execute("SELECT id FROM support_contacts WHERE id = ? AND user_id = ?", (contact_id, user["user_id"])).fetchone()
+        if not contact:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người thân hoặc không thuộc quyền sở hữu.")
+
+        conn.execute("DELETE FROM support_contacts WHERE id = ? AND user_id = ?", (contact_id, user["user_id"]))
+        return {"message": "Đã xóa người thân thành công", "id": contact_id}
+
+
+@app.get("/api/support-settings")
+def get_support_settings_endpoint(user: dict = Depends(get_current_user)):
+    """Lấy cài đặt cảnh báo sắp hết tiền."""
+    with get_db() as conn:
+        st = get_or_create_support_settings(conn, user["user_id"])
+        return {
+            "enabled": bool(st["enabled"]),
+            "low_balance_threshold": float(st["low_balance_threshold"]),
+            "allowance_day": int(st["allowance_day"]),
+            "message_template": st["message_template"] or "",
+        }
+
+
+@app.put("/api/support-settings")
+def update_support_settings_endpoint(body: SupportSettingsBody, user: dict = Depends(get_current_user)):
+    """Cập nhật cài đặt cảnh báo sắp hết tiền."""
+    with get_db() as conn:
+        st = get_or_create_support_settings(conn, user["user_id"])
+
+        enabled = st["enabled"]
+        if body.enabled is not None:
+            enabled = 1 if body.enabled else 0
+
+        threshold = float(st["low_balance_threshold"])
+        if body.low_balance_threshold is not None:
+            if not (0 <= body.low_balance_threshold <= 1_000_000_000):
+                raise HTTPException(status_code=400, detail="Ngưỡng cảnh báo phải nằm trong khoảng 0 đến 1.000.000.000 ₫.")
+            threshold = float(body.low_balance_threshold)
+
+        allowance_day = int(st["allowance_day"])
+        if body.allowance_day is not None:
+            if not (1 <= body.allowance_day <= 28):
+                raise HTTPException(status_code=400, detail="Ngày nhận tiền hằng tháng phải từ 1 đến 28.")
+            allowance_day = int(body.allowance_day)
+
+        template = st["message_template"] or ""
+        if body.message_template is not None:
+            if len(body.message_template) > 500:
+                raise HTTPException(status_code=400, detail="Mẫu tin nhắn không được vượt quá 500 ký tự.")
+            template = body.message_template
+
+        conn.execute("""
+            UPDATE support_settings
+            SET enabled = ?, low_balance_threshold = ?, allowance_day = ?, message_template = ?, updated_at = datetime('now')
+            WHERE user_id = ?
+        """, (enabled, threshold, allowance_day, template, user["user_id"]))
+
+        updated = conn.execute("SELECT * FROM support_settings WHERE user_id = ?", (user["user_id"],)).fetchone()
+        return {
+            "enabled": bool(updated["enabled"]),
+            "low_balance_threshold": float(updated["low_balance_threshold"]),
+            "allowance_day": int(updated["allowance_day"]),
+            "message_template": updated["message_template"] or "",
+        }
+
+
+@app.get("/api/support/low-funds-status")
+def get_low_funds_status_endpoint(user: dict = Depends(get_current_user)):
+    """Lấy trạng thái sắp hết tiền, danh sách người thân và tin nhắn soạn sẵn."""
+    with get_db() as conn:
+        return compute_low_funds_status(conn, user["user_id"])
 
 
 # ──────────────────────────────────────────────

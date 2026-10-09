@@ -99,6 +99,14 @@
     <main class="realm-content">
       <!-- ═══════ TAB 1: DASHBOARD (STITCH CELESTIAL MODERN) ═══════ -->
       <section v-if="activeTab === 'dashboard'" class="tab-panel">
+        <LowFundsAlert
+          v-if="showLowFundsAlert"
+          :status="lowFundsStatus"
+          :format-v-n-d="formatVND"
+          @open-contacts="showProfileModal = true"
+          @dismiss="dismissLowFundsAlert"
+          @record-income="handleRecordIncome"
+        />
         <DashboardView
           :summary="summary"
           :budget-alerts="budgetAlerts"
@@ -315,10 +323,18 @@
           :loading-profile="loadingProfile"
           :loading-soul-lamp="loadingSoulLamp"
           :loading-password="loadingPassword"
-          :format-v-n-d="formatVND"
+          :support-contacts="supportContacts"
+          :support-settings="supportSettings"
+          :loading-support="loadingSupport"
+          :formatVND="formatVND"
           @save-profile="saveProfile"
           @save-soul-lamp="saveSoulLamp"
           @change-password="changePassword"
+          @create-contact="createSupportContact"
+          @update-contact="updateSupportContact"
+          @delete-contact="deleteSupportContact"
+          @toggle-contact="toggleSupportContact"
+          @save-settings="saveSupportSettings"
           @logout="doLogout"
         />
       </section>
@@ -339,11 +355,19 @@
       :loading-profile="loadingProfile"
       :loading-soul-lamp="loadingSoulLamp"
       :loading-password="loadingPassword"
-      :format-v-n-d="formatVND"
+      :support-contacts="supportContacts"
+      :support-settings="supportSettings"
+      :loading-support="loadingSupport"
+      :formatVND="formatVND"
       @close="showProfileModal = false"
       @save-profile="saveProfile"
       @save-soul-lamp="saveSoulLamp"
       @change-password="changePassword"
+      @create-contact="createSupportContact"
+      @update-contact="updateSupportContact"
+      @delete-contact="deleteSupportContact"
+      @toggle-contact="toggleSupportContact"
+      @save-settings="saveSupportSettings"
       @logout="doLogout"
     />
 
@@ -690,6 +714,7 @@ import ResetPasswordCard from './components/auth/ResetPasswordCard.vue'
 import ProfileView from './components/profile/ProfileView.vue'
 import AdminPanel from './components/admin/AdminPanel.vue'
 import KnowledgePanel from './components/khi-linh/KnowledgePanel.vue'
+import LowFundsAlert from './components/support/LowFundsAlert.vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
@@ -718,7 +743,8 @@ export default {
     ResetPasswordCard,
     ProfileView,
     AdminPanel,
-    KnowledgePanel
+    KnowledgePanel,
+    LowFundsAlert
   },
   setup() {
     // ─── STATE ────────────────────
@@ -745,6 +771,27 @@ export default {
     const showProfileModal = ref(false)
     const profileForm = ref({ full_name: '' })
     const soulLampForm = ref({ current_password: '', new_soul_lamp: '' })
+
+    // Support Contacts state (Truyền Âm Cầu Viện)
+    const supportContacts = ref([])
+    const supportSettings = ref({
+      enabled: true,
+      low_balance_threshold: 500000,
+      allowance_day: 1,
+      message_template: ''
+    })
+    const loadingSupport = ref(false)
+
+    // Low Funds Alert state (Truyền Âm Cầu Viện - Giai đoạn 3)
+    const lowFundsStatus = ref(null)
+    const lowFundsSnooze = ref((() => {
+      try {
+        const raw = localStorage.getItem('lowFundsSnooze')
+        return raw ? JSON.parse(raw) : null
+      } catch {
+        return null
+      }
+    })())
 
     // Edit Modals state
     const showEditWalletModal = ref(false)
@@ -1050,6 +1097,26 @@ export default {
         if (adminFilter.value.status === 'locked' && u.is_active !== 0) return false
         return true
       })
+    })
+
+    const showLowFundsAlert = computed(() => {
+      if (!lowFundsStatus.value) return false
+      if (!lowFundsStatus.value.enabled) return false
+      const level = lowFundsStatus.value.level
+      if (level !== 'WARNING' && level !== 'CRITICAL') return false
+
+      if (lowFundsSnooze.value) {
+        const d = new Date()
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        if (lowFundsSnooze.value.date === today) {
+          // Nếu level tăng từ WARNING lên CRITICAL thì hiện lại
+          if (level === 'CRITICAL' && lowFundsSnooze.value.level === 'WARNING') {
+            return true
+          }
+          return false
+        }
+      }
+      return true
     })
 
     // ─── THEME TOGGLE ─────────────
@@ -1369,6 +1436,132 @@ export default {
       } catch {}
     }
 
+    // ─── SUPPORT CONTACTS (TRUYỀN ÂM CẦU VIỆN) ─────────────
+    async function loadSupportContacts() {
+      try {
+        const { data } = await api.get('/api/support-contacts')
+        supportContacts.value = Array.isArray(data) ? data : []
+      } catch {}
+    }
+
+    async function loadSupportSettings() {
+      try {
+        const { data } = await api.get('/api/support-settings')
+        if (data) {
+          supportSettings.value = {
+            enabled: data.enabled ?? true,
+            low_balance_threshold: data.low_balance_threshold ?? 500000,
+            allowance_day: data.allowance_day ?? 1,
+            message_template: data.message_template ?? ''
+          }
+        }
+      } catch {}
+    }
+
+    async function loadLowFundsStatus() {
+      try {
+        const { data } = await api.get('/api/support/low-funds-status')
+        lowFundsStatus.value = data
+      } catch {
+        lowFundsStatus.value = null
+      }
+    }
+
+    function dismissLowFundsAlert() {
+      const d = new Date()
+      const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const snoozeData = {
+        date: today,
+        level: lowFundsStatus.value?.level || 'WARNING'
+      }
+      lowFundsSnooze.value = snoozeData
+      try {
+        localStorage.setItem('lowFundsSnooze', JSON.stringify(snoozeData))
+      } catch (e) {
+        console.warn('Cannot save lowFundsSnooze to localStorage', e)
+      }
+    }
+
+    function handleRecordIncome() {
+      if (txnForm && txnForm.value) {
+        txnForm.value.transaction_type = 'INCOME'
+      }
+      switchTab('transactions')
+    }
+
+    async function createSupportContact(payload) {
+      loadingSupport.value = true
+      try {
+        const { data } = await api.post('/api/support-contacts', payload)
+        showToast(data?.message || '✨ Đã thêm người thân vào Danh Bạ Hộ Đạo!')
+        await loadSupportContacts()
+        await loadLowFundsStatus()
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi khi thêm người thân!', 'error')
+      } finally {
+        loadingSupport.value = false
+      }
+    }
+
+    async function updateSupportContact(payload) {
+      if (!payload?.id) return
+      loadingSupport.value = true
+      try {
+        const { data } = await api.put(`/api/support-contacts/${payload.id}`, payload)
+        showToast(data?.message || '✨ Đã cập nhật người thân thành công!')
+        await loadSupportContacts()
+        await loadLowFundsStatus()
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi khi cập nhật người thân!', 'error')
+      } finally {
+        loadingSupport.value = false
+      }
+    }
+
+    async function toggleSupportContact({ id, is_active }) {
+      if (!id) return
+      loadingSupport.value = true
+      try {
+        const { data } = await api.put(`/api/support-contacts/${id}`, { is_active })
+        showToast(data?.message || (is_active ? '✅ Đã kích hoạt cảnh báo!' : '⏸️ Đã tạm dừng cảnh báo!'))
+        await loadSupportContacts()
+        await loadLowFundsStatus()
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi khi thay đổi trạng thái!', 'error')
+      } finally {
+        loadingSupport.value = false
+      }
+    }
+
+    async function deleteSupportContact(id) {
+      if (!id) return
+      loadingSupport.value = true
+      try {
+        const { data } = await api.delete(`/api/support-contacts/${id}`)
+        showToast(data?.message || '🗑️ Đã xóa khỏi Danh Bạ Hộ Đạo!')
+        await loadSupportContacts()
+        await loadLowFundsStatus()
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi khi xóa người thân!', 'error')
+      } finally {
+        loadingSupport.value = false
+      }
+    }
+
+    async function saveSupportSettings(settingsData) {
+      loadingSupport.value = true
+      try {
+        const { data } = await api.put('/api/support-settings', settingsData)
+        showToast(data?.message || '✨ Đã lưu cài đặt cảnh báo thành công!')
+        await loadSupportSettings()
+        await loadLowFundsStatus()
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Lỗi khi lưu cài đặt!', 'error')
+      } finally {
+        loadingSupport.value = false
+      }
+    }
+
     // ─── ADMIN MANAGEMENT (CHƯỞNG MÔN CÁC) ────
     async function loadAdminStats() {
       if (userRole.value !== 'admin') return
@@ -1423,6 +1616,7 @@ export default {
         loadDebts(), loadSavingGoals(),
         loadRecurring(), loadSummary(), loadBudgets(), checkBudgetAlerts(),
         loadTrend(), loadWeekly(), loadSuggestedQuestions(),
+        loadSupportContacts(), loadSupportSettings(), loadLowFundsStatus(),
       ])
       if (userRole.value === 'admin') {
         loadAdminStats()
@@ -1752,6 +1946,7 @@ export default {
         showEditBudgetModal.value = false
         await loadBudgets()
         await checkBudgetAlerts()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi cập nhật!', 'error')
       }
@@ -1805,6 +2000,7 @@ export default {
         showEditWalletModal.value = false
         await loadWallets()
         await loadSummary()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi cập nhật ví!', 'error')
       }
@@ -1876,6 +2072,9 @@ export default {
         showToast('📜 Đã ghi nhận khoản nợ thành công!')
         debtForm.value = { debt_type: 'BORROW', person_name: '', amount: null, due_date: '', wallet_id: '', note: '' }
         await loadDebts()
+        await loadWallets()
+        await loadSummary()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi ghi sổ nợ!', 'error')
       } finally {
@@ -1917,6 +2116,9 @@ export default {
         showToast('✨ Đã cập nhật khoản nợ!')
         showEditDebtModal.value = false
         await loadDebts()
+        await loadWallets()
+        await loadSummary()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi cập nhật khoản nợ!', 'error')
       } finally {
@@ -1929,6 +2131,9 @@ export default {
         const { data } = await api.post(`/api/debts/${d.id}/settle`)
         showToast(data.message || 'Đã cập nhật trạng thái tất toán!')
         await loadDebts()
+        await loadWallets()
+        await loadSummary()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi tất toán khoản nợ!', 'error')
       }
@@ -1940,6 +2145,9 @@ export default {
         await api.delete(`/api/debts/${id}`)
         showToast('🗑️ Đã xóa khoản nợ khỏi sổ!')
         await loadDebts()
+        await loadWallets()
+        await loadSummary()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi khi xóa khoản nợ!', 'error')
       }
@@ -2025,6 +2233,7 @@ export default {
         await loadTransactions()
         await loadWallets()
         await loadSummary()
+        await loadLowFundsStatus()
       } catch {}
     }
 
@@ -2040,6 +2249,7 @@ export default {
         walletForm.value = { wallet_name: '', balance: 0, wallet_type: 'cash' }
         await loadWallets()
         await loadSummary()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi tạo ví!', 'error')
       }
@@ -2069,6 +2279,7 @@ export default {
         transferForm.value = { from_wallet_id: null, to_wallet_id: null, amount: 0 }
         await loadWallets()
         await loadSummary()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi chuyển tiền!', 'error')
       }
@@ -2114,6 +2325,7 @@ export default {
         showToast('🎯 Hạn mức tu luyện đã thiết lập!')
         await loadBudgets()
         await checkBudgetAlerts()
+        await loadLowFundsStatus()
       } catch (err) {
         showToast(err.response?.data?.detail || 'Lỗi!', 'error')
       }
@@ -2284,6 +2496,7 @@ export default {
         loadSummary(),
         loadBudgets(),
         checkBudgetAlerts(),
+        loadLowFundsStatus(),
         loadDebts(),
         loadSavingGoals(),
         loadTrend(),
@@ -2427,6 +2640,12 @@ export default {
       handleOCRUpload, handleOCRDrop, scanInvoice, confirmOCRTransaction, resetOCR,
       sendChat,
       isKhiLinhOpen, onKhiLinhTransactionCompleted,
+      // support contacts (Truyền Âm Cầu Viện)
+      supportContacts, supportSettings, loadingSupport,
+      loadSupportContacts, loadSupportSettings, createSupportContact,
+      updateSupportContact, toggleSupportContact, deleteSupportContact, saveSupportSettings,
+      lowFundsStatus, lowFundsSnooze, showLowFundsAlert,
+      loadLowFundsStatus, dismissLowFundsAlert, handleRecordIncome,
     }
   }
 }

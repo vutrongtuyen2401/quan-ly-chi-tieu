@@ -356,6 +356,30 @@
       "source_files": ["frontend/src/App.vue", "main.py", "ai_agent/tools.py"]
     },
     {
+      "id": "cap_truyen_am_cau_vien",
+      "name": "Low Funds Support (Truyền Âm Cầu Viện)",
+      "vietnamese_name": "Truyền Âm Cầu Viện / Danh Bạ Hộ Đạo",
+      "category": "FEATURE",
+      "status": "ACTIVE",
+      "purpose": "Hỗ trợ khẩn cấp khi linh thạch sắp cạn: phân tích tốc độ tiêu xài (daily_burn_rate), dự phóng chi phí tới kỳ nhận trợ cấp tiếp theo, tính toán số ngày còn đủ tiêu (runway_days) và đưa ra mức cảnh báo (SAFE, WARNING, CRITICAL) cùng danh bạ người thân để liên hệ hỗ trợ kịp thời.",
+      "UI_location": "Banner cảnh báo trên trang Tổng Quan (activeTab === 'dashboard') và quản lý danh bạ trong modal Hồ Sơ > Danh Bạ Hộ Đạo",
+      "available_actions": [
+        "Xem cảnh báo mức độ cạn kiệt linh thạch và số ngày còn đủ tiêu",
+        "Xem số tiền nên xin hỗ trợ bổ sung",
+        "Lưu trữ tối đa 10 liên hệ người thân trong Danh Bạ Hộ Đạo (tên, quan hệ, SĐT)",
+        "Gọi điện thoại nhanh hoặc gửi tin nhắn SMS soạn sẵn theo mẫu",
+        "Sao chép số điện thoại hoặc lời nhắn",
+        "Tạm ẩn cảnh báo trong ngày hôm nay (Để sau / Snooze)"
+      ],
+      "read_capabilities": ["low_funds_support"],
+      "write_capabilities": [],
+      "related_features": ["cap_dashboard", "cap_wallets", "cap_security_auth"],
+      "user_workflow": "Cài đặt ngày nhận trợ cấp hàng tháng và danh bạ người thân trong Hồ Sơ > Danh Bạ Hộ Đạo. Khi số dư sắp cạn, banner cảnh báo xuất hiện trên trang Tổng Quan để liên hệ hỗ trợ.",
+      "limitations": "Khí Linh AI chỉ có quyền tra cứu thông tin (read-only), không tự động gọi điện hay gửi tin nhắn SMS thay cho người dùng.",
+      "permissions": ["user", "admin"],
+      "source_files": ["frontend/src/components/support/LowFundsAlert.vue", "frontend/src/components/profile/SupportContactsCard.vue", "main.py", "ai_agent/tools.py"]
+    },
+    {
       "id": "cap_stock_trading",
       "name": "Automated Stock Trading",
       "vietnamese_name": "Giao Dịch Cổ Phiếu Tự Động",
