@@ -132,7 +132,31 @@ def _match_wallet_name(query: str, target: str) -> bool:
             return True
         if re.search(rf"\b{re.escape(clean_q)}\b", clean_t) or re.search(rf"\b{re.escape(clean_t)}\b", clean_q):
             return True
+    # Khớp theo khóa rút gọn để chịu được lỗi nhận dạng giọng nói:
+    # 'Vietcom Bank', 'Việt com bank', 'tài khoản vietcombank' -> 'vietcombank'
+    key_q = _wallet_compact_key(q)
+    key_t = _wallet_compact_key(t)
+    if key_q and key_t:
+        if key_q == key_t:
+            return True
+        if min(len(key_q), len(key_t)) >= 5 and (key_q in key_t or key_t in key_q):
+            return True
     return False
+
+
+_WALLET_GENERIC_PREFIX = re.compile(
+    r"^(?:(?:linh\s*mach|linh\s*thach|tui\s*can\s*khon|tui|vi|tai\s*khoan|the|ngan\s*hang)\s+)+"
+)
+
+
+def _wallet_compact_key(text: str) -> str:
+    """Chuẩn hóa tên ví: bỏ dấu, bỏ tiền tố chung (linh mạch, túi, ví, tài khoản...), bỏ khoảng trắng."""
+    from .knowledge.builder import remove_accents
+    s = remove_accents((text or "").lower()).replace("đ", "d").strip()
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = _WALLET_GENERIC_PREFIX.sub("", s)
+    return s.replace(" ", "")
 
 
 class AgentMode(str, Enum):

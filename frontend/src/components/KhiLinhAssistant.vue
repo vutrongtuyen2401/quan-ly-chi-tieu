@@ -433,6 +433,11 @@ export default {
     let hasUserInteracted = false
     let lastProcessedTranscript = ''
     let lastProcessedTime = 0
+    let ttsEndedAt = 0
+    let resumeAfterTTSTimer = null
+    const SILENCE_TIMEOUT_MS = 10000
+    // Sau khi TTS kết thúc, bỏ qua tiếng vọng của chính Khí Linh trong khoảng này
+    const ECHO_GUARD_MS = 1500
 
     // ─── TTS (SPEECH SYNTHESIS) STATE ─────────────
     const ttsEnabled = ref(localStorage.getItem('khilinh_tts') !== 'false') // default ON
@@ -649,9 +654,12 @@ export default {
       clearSilenceTimer()
       if (!isLiveActive.value) return
 
+      // Không đếm khi Khí Linh đang xử lý hoặc đang nói
+      if (isProcessing.value || isSpeakingTTS.value) return
+
       silenceTimer = setTimeout(async () => {
         await handleSilenceTimeout()
-      }, 10000)
+      }, SILENCE_TIMEOUT_MS)
     }
 
     function clearSilenceTimer() {
@@ -692,7 +700,28 @@ export default {
       }
     }
 
+    function normalizeSpeech(text) {
+      return (text || '')
+        .toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    }
+
+    // Kiểm tra câu nhận dạng có phải tiếng vọng của câu Khí Linh vừa đọc hay không
+    function isEchoOfLastSpeech(transcript) {
+      if (!lastSpokenText.value) return false
+      if (!isSpeakingTTS.value && Date.now() - ttsEndedAt > ECHO_GUARD_MS) return false
+      const heard = normalizeSpeech(transcript).split(' ').filter(Boolean)
+      if (!heard.length) return false
+      const spoken = new Set(normalizeSpeech(lastSpokenText.value).split(' '))
+      const overlap = heard.filter(w => spoken.has(w)).length
+      return overlap / heard.length >= 0.6
+    }
+
     function cancelCurrentTTS() {
+      clearTimeout(resumeAfterTTSTimer)
       clearTTSWatchdog()
       currentUtteranceId++
       if (synth) {
@@ -707,7 +736,9 @@ export default {
         recognitionInstance = new SpeechRec()
         recognitionInstance.lang = 'vi-VN'
         recognitionInstance.continuous = false
-        recognitionInstance.interimResults = false
+        // interim chỉ dùng để biết người dùng đang nói (giữ đồng hồ im lặng), lệnh vẫn lấy từ kết quả final
+        recognitionInstance.interimResults = true
+        recognitionInstance.maxAlternatives = 3
 
         recognitionInstance.onstart = () => {
           isRecognitionRunning = true
@@ -721,30 +752,31 @@ export default {
           }
         }
 
-        // Voice Barge-in detection: Intercept user speech during TTS playback
+        // Người dùng bắt đầu nói: tạm dừng đồng hồ im lặng để không bị tắt giữa câu
         recognitionInstance.onspeechstart = () => {
-          if (isSpeakingTTS.value) {
-            cancelCurrentTTS()
-            agentState.value = 'LISTENING'
-          }
+          if (isLiveActive.value && !isSpeakingTTS.value) clearSilenceTimer()
         }
 
         recognitionInstance.onresult = (event) => {
-          // Barge-in: Cancel TTS if still speaking
-          if (isSpeakingTTS.value) {
-            cancelCurrentTTS()
-            agentState.value = 'LISTENING'
-          }
+          // Mic tắt trong lúc TTS phát; kết quả lọt vào lúc này là tiếng vọng -> bỏ qua
+          if (isSpeakingTTS.value || isProcessing.value) return
 
           let transcript = ''
+          let hasInterim = false
           for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              transcript += event.results[i][0].transcript
+            const res = event.results[i]
+            if (res.isFinal) {
+              transcript += pickBestAlternative(res)
+            } else {
+              hasInterim = true
             }
           }
 
+          if (hasInterim && isLiveActive.value) clearSilenceTimer()
+
           const cleanMsg = transcript.trim()
           if (!cleanMsg) return
+          if (isEchoOfLastSpeech(cleanMsg)) return
 
           // Case 1: In SLEEPING mode -> listen for wake word "Hệ thống"
           if (!isLiveActive.value) {
@@ -795,7 +827,9 @@ export default {
         recognitionInstance.onend = () => {
           isRecognitionRunning = false
           isListening.value = false
-          if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
+          if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING' && !isSpeakingTTS.value) {
+            // Người dùng ngừng nói mà không có lệnh -> đếm lại 10s im lặng
+            if (isLiveActive.value && !silenceTimer) startSilenceTimer()
             scheduleRestartRecognition()
           }
         }
@@ -804,12 +838,30 @@ export default {
       }
     }
 
+    // Trong các phương án nhận dạng, ưu tiên phương án có tên ví/thao tác tài chính quen thuộc
+    const DOMAIN_HINTS = ['vietcombank', 'momo', 'tien mat', 'linh mach', 'chuyen', 'xac nhan', 'huy', 'nghin', 'trieu']
+    function pickBestAlternative(result) {
+      let best = result[0]?.transcript || ''
+      let bestScore = -1
+      for (let k = 0; k < result.length; k++) {
+        const alt = result[k]
+        const norm = normalizeSpeech(alt.transcript).replace(/\s+/g, '')
+        const hits = DOMAIN_HINTS.filter(h => norm.includes(h.replace(/\s+/g, ''))).length
+        const score = hits + (alt.confidence || 0)
+        if (score > bestScore) {
+          bestScore = score
+          best = alt.transcript
+        }
+      }
+      return best
+    }
+
     function scheduleRestartRecognition() {
       clearTimeout(restartTimer)
       restartTimer = setTimeout(() => {
         // Must restart in LIVE mode (continuous command listening)
         // AND in SLEEPING mode (wake-word "Hệ thống" listening)
-        if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
+        if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING' && !isSpeakingTTS.value) {
           if (agentState.value === 'CLOSED') {
             agentState.value = 'SLEEPING'
           }
@@ -821,6 +873,8 @@ export default {
     function startRecognition() {
       if (!recognitionInstance || isRecognitionRunning) return
       if (agentState.value === 'PROCESSING' || agentState.value === 'EXECUTING') return
+      // Không mở mic khi Khí Linh đang nói để tránh tự nghe lại chính mình
+      if (isSpeakingTTS.value) return
 
       try {
         isRecognitionRunning = true
@@ -859,6 +913,8 @@ export default {
     // ─── AGENTCORE DISPATCH & LIFECYCLE ───
     async function handleVoiceAction(rawText) {
       if (!rawText || !rawText.trim()) return
+      // Chặn gửi chồng lệnh khi yêu cầu trước chưa xong (nguyên nhân lặp giao dịch)
+      if (isProcessing.value) return
 
       const cleanText = rawText.trim()
       lastUserUtterance.value = cleanText
@@ -991,45 +1047,39 @@ export default {
         utter.rate = 1.05
         utter.pitch = 1.05
         currentUtterance = utter
+        lastSpokenText.value = cleanSpeech
 
-        // Watchdog timer: If browser drops onend, guarantee recovery of STT
-        const safetyDuration = Math.max(4000, cleanSpeech.length * 150 + 2500)
-        ttsWatchdogTimer = setTimeout(() => {
+        // Tắt mic trong lúc đọc: nếu không, mic nghe lại câu "Đã chuyển ... từ ... sang ..." hay
+        // "Trả lời Xác nhận hoặc Hủy" của chính Khí Linh rồi gửi đi như lệnh mới.
+        isSpeakingTTS.value = true
+        stopRecognition()
+
+        const finishSpeaking = () => {
           if (myUtteranceId !== currentUtteranceId) return
           clearTTSWatchdog()
           currentUtterance = null
           isSpeakingTTS.value = false
-          resumeListeningDirectly()
-          startSilenceTimer()
-        }, safetyDuration)
+          ttsEndedAt = Date.now()
+          // Đợi tiếng loa tắt hẳn rồi mới mở mic lại
+          clearTimeout(resumeAfterTTSTimer)
+          resumeAfterTTSTimer = setTimeout(() => {
+            if (myUtteranceId !== currentUtteranceId) return
+            resumeListeningDirectly()
+            startSilenceTimer()
+          }, 300)
+        }
+
+        // Watchdog timer: If browser drops onend, guarantee recovery of STT
+        const safetyDuration = Math.max(4000, cleanSpeech.length * 150 + 2500)
+        ttsWatchdogTimer = setTimeout(finishSpeaking, safetyDuration)
 
         utter.onstart = () => {
           if (myUtteranceId !== currentUtteranceId) return
           agentState.value = 'SPEAKING'
-          isSpeakingTTS.value = true
-          // Keep recognition active for user barge-in interruption
-          if (!isRecognitionRunning && isLiveActive.value) {
-            startRecognition()
-          }
         }
 
-        utter.onend = () => {
-          if (myUtteranceId !== currentUtteranceId) return
-          clearTTSWatchdog()
-          currentUtterance = null
-          isSpeakingTTS.value = false
-          resumeListeningDirectly()
-          startSilenceTimer()
-        }
-
-        utter.onerror = () => {
-          if (myUtteranceId !== currentUtteranceId) return
-          clearTTSWatchdog()
-          currentUtterance = null
-          isSpeakingTTS.value = false
-          resumeListeningDirectly()
-          startSilenceTimer()
-        }
+        utter.onend = finishSpeaking
+        utter.onerror = finishSpeaking
 
         synth.speak(utter)
       } catch (e) {
@@ -1377,8 +1427,7 @@ export default {
   width: min(78vw, 1060px);
   max-height: 85vh;
   background: rgba(23, 31, 51, 0.95);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  /* Nền đã gần đặc (0.95) nên bỏ backdrop-filter: nhìn như cũ nhưng không phải blur lại mỗi khung hình */
   border-radius: 1rem;
   border: 1px solid rgba(125, 214, 204, 0.3);
   outline: 1px solid rgba(255, 255, 255, 0.1);
@@ -1502,6 +1551,8 @@ export default {
   height: 100%;
   background: var(--color-primary, #7dd6cc);
   border-radius: 2px;
+  transform-origin: center;
+  will-change: transform;
   animation: waveDance 1.2s ease-in-out infinite;
 }
 .bar-1 { animation-delay: 0.1s; }
@@ -1510,9 +1561,10 @@ export default {
 .bar-4 { animation-delay: 0.2s; }
 .bar-5 { animation-delay: 0.4s; }
 
+/* Dùng scaleY thay cho height để chạy trên GPU, không tính lại bố cục */
 @keyframes waveDance {
-  0%, 100% { height: 4px; }
-  50% { height: 18px; }
+  0%, 100% { transform: scaleY(0.22); }
+  50% { transform: scaleY(1); }
 }
 
 .sys-tool-btn {
@@ -1561,7 +1613,6 @@ export default {
 
 .outer-system-console {
   background: rgba(6, 14, 32, 0.9);
-  backdrop-filter: blur(24px);
   border-radius: 0.75rem;
   border: 1px solid rgba(125, 214, 204, 0.2);
   box-shadow: inset 0 0 20px rgba(196, 193, 251, 0.05), 0 12px 36px rgba(0,0,0,0.5);

@@ -55,7 +55,9 @@ class VietnameseFinancialParser:
         "chính xác", "chinh xac", "đúng rồi", "dung roi", "đúng thế", "dung the", "đúng vậy", "dung vay", "chính nó", "chinh no",
         # Duyệt / hợp lý
         "duyệt", "duyet", "duyệt đi", "duyet di", "duyệt luôn", "duyet luon", "duyệt nhé", "duyet nhe",
-        "hợp lý", "hop ly", "hợp lý đấy", "hop ly day"
+        "hợp lý", "hop ly", "hợp lý đấy", "hop ly day",
+        # Đáp lời ngắn tự nhiên khi nói bằng giọng (chỉ khớp nguyên câu)
+        "có", "có ạ", "có nhé", "vâng", "vâng ạ", "dạ", "dạ vâng", "dạ có", "dạ được", "đúng", "đúng ạ"
     }
 
     CANCEL_KEYWORDS = {

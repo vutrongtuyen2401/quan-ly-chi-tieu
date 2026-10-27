@@ -326,6 +326,7 @@
           :support-contacts="supportContacts"
           :support-settings="supportSettings"
           :loading-support="loadingSupport"
+          :testing-email="testingSupportEmail"
           :formatVND="formatVND"
           @save-profile="saveProfile"
           @save-soul-lamp="saveSoulLamp"
@@ -335,6 +336,7 @@
           @delete-contact="deleteSupportContact"
           @toggle-contact="toggleSupportContact"
           @save-settings="saveSupportSettings"
+          @test-email="testSupportEmail"
           @logout="doLogout"
         />
       </section>
@@ -358,6 +360,7 @@
       :support-contacts="supportContacts"
       :support-settings="supportSettings"
       :loading-support="loadingSupport"
+      :testing-email="testingSupportEmail"
       :formatVND="formatVND"
       @close="showProfileModal = false"
       @save-profile="saveProfile"
@@ -368,6 +371,7 @@
       @delete-contact="deleteSupportContact"
       @toggle-contact="toggleSupportContact"
       @save-settings="saveSupportSettings"
+      @test-email="testSupportEmail"
       @logout="doLogout"
     />
 
@@ -778,9 +782,14 @@ export default {
       enabled: true,
       low_balance_threshold: 500000,
       allowance_day: 1,
-      message_template: ''
+      message_template: '',
+      notify_email: '',
+      email_enabled: false,
+      smtp_configured: false,
+      last_notified_at: ''
     })
     const loadingSupport = ref(false)
+    const testingSupportEmail = ref(false)
 
     // Low Funds Alert state (Truyền Âm Cầu Viện - Giai đoạn 3)
     const lowFundsStatus = ref(null)
@@ -1452,10 +1461,26 @@ export default {
             enabled: data.enabled ?? true,
             low_balance_threshold: data.low_balance_threshold ?? 500000,
             allowance_day: data.allowance_day ?? 1,
-            message_template: data.message_template ?? ''
+            message_template: data.message_template ?? '',
+            notify_email: data.notify_email ?? '',
+            email_enabled: Boolean(data.email_enabled),
+            smtp_configured: Boolean(data.smtp_configured),
+            last_notified_at: data.last_notified_at ?? ''
           }
         }
       } catch {}
+    }
+
+    async function testSupportEmail() {
+      testingSupportEmail.value = true
+      try {
+        const { data } = await api.post('/api/support/test-email')
+        showToast(data?.message || '📧 Đã gửi email thử!')
+      } catch (err) {
+        showToast(err.response?.data?.detail || 'Không gửi được email thử!', 'error')
+      } finally {
+        testingSupportEmail.value = false
+      }
     }
 
     async function loadLowFundsStatus() {
@@ -2489,20 +2514,30 @@ export default {
     }
 
     // ─── KHÍ LINH EVENT HANDLER ───
-    async function onKhiLinhTransactionCompleted(payload) {
-      await Promise.all([
-        loadWallets(),
-        loadTransactions(true),
-        loadSummary(),
-        loadBudgets(),
-        checkBudgetAlerts(),
-        loadLowFundsStatus(),
-        loadDebts(),
-        loadSavingGoals(),
-        loadTrend(),
-        loadWeekly()
-      ])
-      showToast('✨ Khí Linh đã đồng bộ thành công vào sổ sách!', 'success')
+    // Gộp các lần đồng bộ dồn dập thành 1 lượt và dời ra sau khung hình hiện tại để không giật giao diện
+    let khiLinhSyncPromise = null
+    function onKhiLinhTransactionCompleted(payload) {
+      if (khiLinhSyncPromise) return khiLinhSyncPromise
+      khiLinhSyncPromise = new Promise(resolve => setTimeout(resolve, 250))
+        .then(() => Promise.all([
+          loadWallets(),
+          loadTransactions(true),
+          loadSummary(),
+          loadBudgets(),
+          checkBudgetAlerts(),
+          loadLowFundsStatus(),
+          loadDebts(),
+          loadSavingGoals(),
+          loadTrend(),
+          loadWeekly()
+        ]))
+        .then(() => {
+          showToast('✨ Khí Linh đã đồng bộ thành công vào sổ sách!', 'success')
+        })
+        .finally(() => {
+          khiLinhSyncPromise = null
+        })
+      return khiLinhSyncPromise
     }
 
     function scrollChat() {
@@ -2581,7 +2616,20 @@ export default {
         checkNavScroll()
       })
       window.addEventListener('resize', checkNavScroll)
+      // Khi đang cuộn: tạm dừng hiệu ứng nền để các thẻ kính mờ không phải tính lại blur mỗi khung hình
+      window.addEventListener('scroll', markScrolling, { passive: true, capture: true })
     })
+
+    let scrollIdleTimer = null
+    function markScrolling() {
+      const root = document.documentElement
+      if (!scrollIdleTimer) root.classList.add('is-scrolling')
+      clearTimeout(scrollIdleTimer)
+      scrollIdleTimer = setTimeout(() => {
+        root.classList.remove('is-scrolling')
+        scrollIdleTimer = null
+      }, 180)
+    }
 
     onErrorCaptured((err, instance, info) => {
       console.error('Captured Vue Render Error:', err, info)
@@ -2641,7 +2689,7 @@ export default {
       sendChat,
       isKhiLinhOpen, onKhiLinhTransactionCompleted,
       // support contacts (Truyền Âm Cầu Viện)
-      supportContacts, supportSettings, loadingSupport,
+      supportContacts, supportSettings, loadingSupport, testingSupportEmail, testSupportEmail,
       loadSupportContacts, loadSupportSettings, createSupportContact,
       updateSupportContact, toggleSupportContact, deleteSupportContact, saveSupportSettings,
       lowFundsStatus, lowFundsSnooze, showLowFundsAlert,
@@ -5162,5 +5210,28 @@ body[data-theme='modern'] .dp__menu {
 
 @media (max-width: 768px) {
   .chat-container { height: calc(100vh - 240px); min-height: 400px; }
+}
+
+/* ─── HIỆU NĂNG HOẠT ẢNH (60 FPS) ─────────
+   Giữ nguyên toàn bộ hiệu ứng, chỉ đưa chúng lên lớp GPU và giảm việc vẽ lại. */
+.xianxia-backdrop { contain: strict; }
+.sun-aura-glow,
+.sea-of-clouds,
+.cloud-cluster,
+.spirit-particle {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* Khi Khí Linh mở (nền bị làm mờ) hoặc khi đang cuộn: tạm dừng hoạt ảnh nền
+   để blur/kính mờ không phải tính lại mỗi khung hình */
+.app-realm.app-realm-behind-overlay *,
+body:has(.app-realm-behind-overlay) .xianxia-backdrop *,
+html.is-scrolling .xianxia-backdrop * {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xianxia-backdrop * { animation: none !important; }
 }
 </style>

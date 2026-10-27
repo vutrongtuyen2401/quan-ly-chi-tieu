@@ -1592,7 +1592,8 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
 
             # 1.B. Kiểm tra nếu người dùng đưa ra một mệnh lệnh mới hoàn toàn không liên quan (Unrelated New Intent)
             # hoặc câu hỏi tra cứu đọc dữ liệu độc lập (Context Isolation)
-            is_unrelated = (
+            # Câu xác nhận rõ ràng ("xác nhận giao dịch") không bao giờ là ý định mới, kể cả khi chứa từ "giao dịch"
+            is_unrelated = not VietnameseFinancialParser.is_confirmation(clean_msg) and (
                 VietnameseFinancialParser.is_unrelated_new_intent(clean_msg, pending.get("tool_name"))
                 or self._is_multi_tool_read_query(clean_msg)
                 or self._is_pure_personal_read_query(clean_msg)

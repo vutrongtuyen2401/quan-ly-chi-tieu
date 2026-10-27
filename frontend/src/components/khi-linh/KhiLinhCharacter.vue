@@ -277,7 +277,15 @@ export default {
   justify-content: center;
   pointer-events: none;
   z-index: 2;
+  will-change: transform;
   animation: klAuraRotate 24s linear infinite;
+}
+
+/* Đưa lõi nhân vật và quầng sáng lên lớp GPU để hoạt ảnh lơ lửng/thở không phải vẽ lại */
+.kl-character-core,
+.kl-ambient-glow {
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .kl-aura-rings-svg {
