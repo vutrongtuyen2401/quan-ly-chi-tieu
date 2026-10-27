@@ -42,12 +42,14 @@
             :contacts="supportContacts"
             :settings="supportSettings"
             :loading="loadingSupport"
+            :testing-email="testingEmail"
             :formatVND="formatVND"
             @create-contact="$emit('create-contact', $event)"
             @update-contact="$emit('update-contact', $event)"
             @delete-contact="$emit('delete-contact', $event)"
             @toggle-contact="$emit('toggle-contact', $event)"
             @save-settings="$emit('save-settings', $event)"
+            @test-email="$emit('test-email')"
           />
 
           <!-- Đổi Mật Khẩu Master -->
@@ -176,10 +178,18 @@ export default {
         enabled: true,
         low_balance_threshold: 500000,
         allowance_day: 1,
-        message_template: ''
+        message_template: '',
+        notify_email: '',
+        email_enabled: false,
+        smtp_configured: false,
+        last_notified_at: ''
       })
     },
     loadingSupport: {
+      type: Boolean,
+      default: false
+    },
+    testingEmail: {
       type: Boolean,
       default: false
     },
@@ -198,7 +208,8 @@ export default {
     'update-contact',
     'delete-contact',
     'toggle-contact',
-    'save-settings'
+    'save-settings',
+    'test-email'
   ],
   setup(props, { emit }) {
     function handleBackdropClick() {

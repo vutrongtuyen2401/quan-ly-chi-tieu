@@ -356,6 +356,59 @@
             </div>
           </div>
 
+          <!-- Thông báo qua email -->
+          <div class="email-notify-block">
+            <div class="settings-field-row">
+              <div class="field-meta">
+                <span class="setting-title">Gửi Email Khi Sắp Hết Tiền</span>
+                <span class="setting-desc">Hệ thống tự gửi email (kèm số người thân để bấm gọi) về Gmail thật của bạn, điện thoại sẽ hiện thông báo qua app Gmail</span>
+              </div>
+              <label class="switch-toggle">
+                <input type="checkbox" v-model="localSettings.email_enabled" :disabled="!localSettings.notify_email" />
+                <span class="slider-round"></span>
+              </label>
+            </div>
+
+            <div class="form-field">
+              <label class="field-label" for="setting-notify-email">
+                <span>Email Nhận Thông Báo</span>
+                <span class="field-hint">Nên dùng Gmail thật đang cài trên điện thoại</span>
+              </label>
+              <input
+                id="setting-notify-email"
+                v-model.trim="localSettings.notify_email"
+                type="email"
+                inputmode="email"
+                autocomplete="email"
+                class="stitch-input"
+                maxlength="254"
+                placeholder="vidu@gmail.com"
+              />
+            </div>
+
+            <div v-if="!localSettings.smtp_configured" class="email-status-note is-warning" role="status">
+              <span class="material-symbols-outlined text-[16px]">warning</span>
+              <span>Máy chủ chưa cấu hình gửi email. Điền <code class="code-tag">SMTP_USER</code> và <code class="code-tag">SMTP_PASSWORD</code> trong file <code class="code-tag">.env</code> rồi khởi động lại backend.</span>
+            </div>
+            <div v-else-if="localSettings.last_notified_at" class="email-status-note" role="status">
+              <span class="material-symbols-outlined text-[16px]">mark_email_read</span>
+              <span>Lần gửi cảnh báo gần nhất: {{ formatDateTime(localSettings.last_notified_at) }}</span>
+            </div>
+
+            <div class="email-test-row">
+              <button
+                type="button"
+                class="btn-reset-template"
+                :disabled="!canSendTestEmail"
+                @click="$emit('test-email')"
+              >
+                <span class="material-symbols-outlined text-[14px]">forward_to_inbox</span>
+                <span>{{ testingEmail ? 'Đang gửi...' : 'Gửi Email Thử' }}</span>
+              </button>
+              <span v-if="emailUnsaved" class="field-hint">Lưu cài đặt trước rồi mới gửi thử</span>
+            </div>
+          </div>
+
           <!-- Save Settings Action -->
           <div class="settings-actions-row">
             <button type="submit" class="btn-save-settings" :disabled="loading">
@@ -385,10 +438,18 @@ export default {
         enabled: true,
         low_balance_threshold: 500000,
         allowance_day: 1,
-        message_template: ''
+        message_template: '',
+        notify_email: '',
+        email_enabled: false,
+        smtp_configured: false,
+        last_notified_at: ''
       })
     },
     loading: {
+      type: Boolean,
+      default: false
+    },
+    testingEmail: {
       type: Boolean,
       default: false
     },
@@ -402,7 +463,8 @@ export default {
     'update-contact',
     'delete-contact',
     'toggle-contact',
-    'save-settings'
+    'save-settings',
+    'test-email'
   ],
   setup(props, { emit }) {
     const showAddForm = ref(false)
@@ -420,27 +482,52 @@ export default {
     })
 
     // Local clone of settings to avoid direct prop mutation
-    const localSettings = ref({
-      enabled: props.settings?.enabled ?? true,
-      low_balance_threshold: props.settings?.low_balance_threshold ?? 500000,
-      allowance_day: props.settings?.allowance_day ?? 1,
-      message_template: props.settings?.message_template ?? ''
-    })
+    function cloneSettings(src) {
+      return {
+        enabled: src?.enabled ?? true,
+        low_balance_threshold: src?.low_balance_threshold ?? 500000,
+        allowance_day: src?.allowance_day ?? 1,
+        message_template: src?.message_template ?? '',
+        notify_email: src?.notify_email ?? '',
+        email_enabled: Boolean(src?.email_enabled),
+        smtp_configured: Boolean(src?.smtp_configured),
+        last_notified_at: src?.last_notified_at ?? ''
+      }
+    }
+    const localSettings = ref(cloneSettings(props.settings))
 
     watch(
       () => props.settings,
       (newVal) => {
         if (newVal) {
-          localSettings.value = {
-            enabled: newVal.enabled ?? true,
-            low_balance_threshold: newVal.low_balance_threshold ?? 500000,
-            allowance_day: newVal.allowance_day ?? 1,
-            message_template: newVal.message_template ?? ''
-          }
+          localSettings.value = cloneSettings(newVal)
         }
       },
       { deep: true }
     )
+
+    // Chưa có email thì không thể bật gửi email
+    watch(
+      () => localSettings.value.notify_email,
+      (val) => {
+        if (!val) localSettings.value.email_enabled = false
+      }
+    )
+
+    const emailUnsaved = computed(() =>
+      (localSettings.value.notify_email || '') !== (props.settings?.notify_email || '')
+    )
+    const canSendTestEmail = computed(() =>
+      !props.testingEmail &&
+      localSettings.value.smtp_configured &&
+      Boolean(props.settings?.notify_email) &&
+      !emailUnsaved.value
+    )
+
+    function formatDateTime(iso) {
+      const d = new Date(iso)
+      return isNaN(d.getTime()) ? iso : d.toLocaleString('vi-VN')
+    }
 
     const relationshipOptions = [
       { value: 'MOTHER', label: 'Mẹ', icon: 'favorite' },
@@ -594,11 +681,16 @@ export default {
         enabled: Boolean(localSettings.value.enabled),
         low_balance_threshold: Math.max(0, Number(localSettings.value.low_balance_threshold) || 0),
         allowance_day: Math.min(28, Math.max(1, Number(localSettings.value.allowance_day) || 1)),
-        message_template: (localSettings.value.message_template || '').trim()
+        message_template: (localSettings.value.message_template || '').trim(),
+        notify_email: (localSettings.value.notify_email || '').trim(),
+        email_enabled: Boolean(localSettings.value.email_enabled && localSettings.value.notify_email)
       })
     }
 
     return {
+      emailUnsaved,
+      canSendTestEmail,
+      formatDateTime,
       showAddForm,
       editingId,
       formError,
@@ -1253,6 +1345,41 @@ input:checked + .slider-round:before {
 .setting-desc {
   font-size: 11.5px;
   color: var(--color-on-surface-variant, #bdc9c6);
+}
+
+.email-notify-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.email-status-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-on-surface-variant, #bdc9c6);
+}
+
+.email-status-note.is-warning {
+  color: var(--color-tertiary, #e3c370);
+}
+
+.email-test-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.email-test-row button:disabled,
+.switch-toggle input:disabled + .slider-round {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .settings-form-grid {

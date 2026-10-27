@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 import datetime
+from unittest import mock
 from fastapi.testclient import TestClient
 
 # Ensure UTF-8 output
@@ -311,6 +312,11 @@ class TestSupportContacts(unittest.TestCase):
     def test_compute_low_funds_status_fixed_date(self):
         """Kiểm tra hàm compute_low_funds_status với ngày cố định 2026-10-09 và các mức độ"""
         fixed_today = datetime.date(2026, 10, 9)
+        # process_recurring_transactions dùng ngày thật; nếu không tắt, khi chạy test sau 10/10
+        # khoản định kỳ dựng bên dưới sẽ bị tự thực thi và không còn nằm trong upcoming_fixed.
+        patcher = mock.patch.object(main, "process_recurring_transactions", lambda conn, user_id: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
         # Thêm 2 người thân cho User A: Bố (FATHER) và Bạn (FRIEND)
         self.client.post("/api/support-contacts", json={
@@ -623,6 +629,152 @@ class TestSupportContactsAIAgent(unittest.IsolatedAsyncioTestCase):
                 # Không được có tool ghi
                 tool_def = self.registry.get(resp.tool_executed)
                 self.assertEqual(tool_def.action_type, ToolActionType.READ)
+
+
+class TestLowFundsEmailNotification(unittest.TestCase):
+    """Thông báo email khi sắp hết tiền. send_email luôn được giả lập, không gửi email thật."""
+
+    def setUp(self):
+        TestSupportContacts.setUp(self)  # dùng chung DB tạm + 2 user, không kế thừa test cũ
+        self._orig_smtp = (main.SMTP_HOST, main.SMTP_FROM)
+        main.SMTP_HOST, main.SMTP_FROM = "smtp.test.local", "sender@test.local"
+        main._test_email_last_sent.clear()
+        self.sent = []
+        patcher = mock.patch.object(main, "send_email", side_effect=lambda to, subj, text, html=None: self.sent.append((to, subj, text, html)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        main.SMTP_HOST, main.SMTP_FROM = self._orig_smtp
+        TestSupportContacts.tearDown(self)
+
+    def _set_balance(self, amount):
+        with main.get_db() as conn:
+            conn.execute("DELETE FROM transactions WHERE user_id = ?", (self.user_a_id,))
+            conn.execute("DELETE FROM wallets WHERE user_id = ?", (self.user_a_id,))
+            conn.execute("INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, 'Ví test', ?, 'cash')",
+                         (self.user_a_id, amount))
+
+    def _enable_email(self, email="that@gmail.com"):
+        res = self.client.put("/api/support-settings", json={"notify_email": email, "email_enabled": 1}, headers=self.headers_a)
+        self.assertEqual(res.status_code, 200, res.text)
+        return res.json()
+
+    def test_settings_email_validation_and_partial_update(self):
+        """Email sai bị chặn; bật email khi chưa có địa chỉ bị chặn; PUT thiếu field không ghi đè field khác"""
+        self.client.put("/api/support-settings", json={"low_balance_threshold": 800000, "allowance_day": 10}, headers=self.headers_a)
+        for bad in ("abc", "a@b", "khong co @gmail.com"):
+            with self.subTest(bad=bad):
+                res = self.client.put("/api/support-settings", json={"notify_email": bad}, headers=self.headers_a)
+                self.assertEqual(res.status_code, 400)
+        res = self.client.put("/api/support-settings", json={"email_enabled": 1}, headers=self.headers_a)
+        self.assertEqual(res.status_code, 400)
+
+        data = self._enable_email("  that@gmail.com ")
+        self.assertEqual(data["notify_email"], "that@gmail.com")
+        self.assertTrue(data["email_enabled"])
+        self.assertTrue(data["smtp_configured"])
+        self.assertEqual(data["low_balance_threshold"], 800000.0)  # không bị reset về mặc định
+        self.assertEqual(data["allowance_day"], 10)
+
+        # User B không thấy email của User A
+        self.assertEqual(self.client.get("/api/support-settings", headers=self.headers_b).json()["notify_email"], "")
+
+    def test_notify_sends_once_then_dedupes(self):
+        """WARNING gửi 1 lần; gọi lại không gửi trùng; sau 24h gửi nhắc lại"""
+        self._set_balance(400000)  # < ngưỡng 500.000, > 250.000 -> WARNING
+        self.client.post("/api/support-contacts", json={"contact_name": "Bố", "relationship": "FATHER", "phone": "0912345678"}, headers=self.headers_a)
+        self._enable_email()
+        now = datetime.datetime(2026, 10, 9, 8, 0, 0)
+
+        r1 = main.check_and_notify_low_funds(self.user_a_id, now=now)
+        self.assertEqual(r1, {"sent": True, "reason": "sent"})
+        self.assertEqual(len(self.sent), 1)
+        to, subject, text, html = self.sent[0]
+        self.assertEqual(to, "that@gmail.com")
+        self.assertIn("Linh Thạch Sắp Cạn", subject)
+        self.assertIn("400.000 ₫", text)
+        self.assertIn("0912345678", text)
+        self.assertIn('href="tel:0912345678"', html)
+
+        r2 = main.check_and_notify_low_funds(self.user_a_id, now=now + datetime.timedelta(hours=2))
+        self.assertEqual(r2["reason"], "already_notified")
+        self.assertEqual(len(self.sent), 1)
+
+        r3 = main.check_and_notify_low_funds(self.user_a_id, now=now + datetime.timedelta(hours=25))
+        self.assertTrue(r3["sent"])
+        self.assertEqual(len(self.sent), 2)
+
+    def test_escalation_and_reset_after_recovery(self):
+        """WARNING -> CRITICAL gửi ngay; về SAFE thì xóa trạng thái; tụt lại thì gửi lại ngay"""
+        self._set_balance(400000)
+        self._enable_email()
+        now = datetime.datetime(2026, 10, 9, 8, 0, 0)
+        self.assertTrue(main.check_and_notify_low_funds(self.user_a_id, now=now)["sent"])
+
+        self._set_balance(100000)  # < 250.000 -> CRITICAL
+        self.assertTrue(main.check_and_notify_low_funds(self.user_a_id, now=now + datetime.timedelta(minutes=5))["sent"])
+        self.assertEqual(len(self.sent), 2)
+
+        self._set_balance(5000000)  # SAFE
+        self.assertEqual(main.check_and_notify_low_funds(self.user_a_id, now=now + datetime.timedelta(minutes=10))["reason"], "not_low")
+        self.assertEqual(self.client.get("/api/support-settings", headers=self.headers_a).json()["last_notified_level"], "")
+
+        self._set_balance(400000)
+        self.assertTrue(main.check_and_notify_low_funds(self.user_a_id, now=now + datetime.timedelta(minutes=15))["sent"])
+        self.assertEqual(len(self.sent), 3)
+
+    def test_no_send_when_disabled_or_unconfigured(self):
+        """Không gửi khi tắt email, chưa có SMTP, hoặc tắt cảnh báo"""
+        self._set_balance(100000)
+        self.assertEqual(main.check_and_notify_low_funds(self.user_a_id)["reason"], "disabled")
+        self._enable_email()
+        main.SMTP_HOST = ""
+        self.assertEqual(main.check_and_notify_low_funds(self.user_a_id)["reason"], "smtp_not_configured")
+        main.SMTP_HOST = "smtp.test.local"
+        self.client.put("/api/support-settings", json={"enabled": 0}, headers=self.headers_a)
+        self.assertEqual(main.check_and_notify_low_funds(self.user_a_id)["reason"], "disabled")
+        self.assertEqual(self.sent, [])
+
+    def test_send_failure_does_not_mark_notified(self):
+        """Gửi lỗi thì không ghi nhận đã gửi, lần sau thử lại"""
+        self._set_balance(100000)
+        self._enable_email()
+        with mock.patch.object(main, "send_email", side_effect=OSError("network down")):
+            self.assertEqual(main.check_and_notify_low_funds(self.user_a_id)["reason"], "send_failed")
+        self.assertEqual(self.client.get("/api/support-settings", headers=self.headers_a).json()["last_notified_level"], "")
+        self.assertTrue(main.check_and_notify_low_funds(self.user_a_id)["sent"])
+
+    def test_status_endpoint_triggers_background_notification(self):
+        """Gọi GET low-funds-status (frontend gọi sau mỗi thay đổi) sẽ gửi email nền"""
+        self._set_balance(100000)
+        self._enable_email()
+        res = self.client.get("/api/support/low-funds-status", headers=self.headers_a)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["level"], "CRITICAL")
+        self.assertEqual(len(self.sent), 1)
+
+    def test_scheduler_scan_only_enabled_users(self):
+        """Quét nền chỉ gửi cho user đã bật email"""
+        self._set_balance(100000)
+        self._enable_email()
+        with main.get_db() as conn:  # User B cũng sắp hết tiền nhưng không bật email
+            conn.execute("DELETE FROM wallets WHERE user_id = ?", (self.user_b_id,))
+            conn.execute("INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, 'Ví B', 1000, 'cash')", (self.user_b_id,))
+        self.assertEqual(main.run_low_funds_checks_for_all_users(), 1)
+        self.assertEqual([s[0] for s in self.sent], ["that@gmail.com"])
+
+    def test_test_email_endpoint(self):
+        """Gửi thử: 400 khi chưa có email, 200 khi có, 429 khi bấm liên tục, 503 khi chưa cấu hình SMTP"""
+        self.assertEqual(self.client.post("/api/support/test-email", headers=self.headers_a).status_code, 400)
+        self.client.put("/api/support-settings", json={"notify_email": "that@gmail.com"}, headers=self.headers_a)
+        res = self.client.post("/api/support/test-email", headers=self.headers_a)
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertIn("[Email thử]", self.sent[0][1])
+        self.assertEqual(self.client.post("/api/support/test-email", headers=self.headers_a).status_code, 429)
+        self.assertEqual(self.client.post("/api/support/test-email").status_code in (401, 403), True)
+        main.SMTP_HOST = ""
+        self.assertEqual(self.client.post("/api/support/test-email", headers=self.headers_b).status_code, 503)
 
 
 if __name__ == "__main__":
