@@ -2491,7 +2491,7 @@ export default {
 
       chatLoading.value = true
       try {
-        const { data } = await api.post('/api/ai/chat', { message: msg, mode: 'knowledge' }, { timeout: 25000 })
+        const { data } = await api.post('/api/ai/chat', { message: msg, mode: 'knowledge' }, { timeout: 35000 })
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
         chatMessages.value.push({ role: 'ai', text: data.response || 'Đã tiếp nhận mệnh lệnh.' })
         if (data.state === 'SUCCESS' && data.tool_executed) {

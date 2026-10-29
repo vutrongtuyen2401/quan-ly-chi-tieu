@@ -1989,15 +1989,19 @@ def delete_saving_goal(goal_id: int, user: dict = Depends(get_current_user)):
 # ──────────────────────────────────────────────
 def get_gemini_models_list(vision=False):
     """Trả về danh sách mô hình Gemini Flash ổn định, tốc độ phản hồi nhanh nhất"""
-    return [
+    custom_model = os.getenv("GEMINI_MODEL", "").strip()
+    default_models = [
         "gemini-flash-lite-latest",
-        "gemini-3.5-flash",
-        "gemini-flash-latest"
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash"
     ]
+    if custom_model:
+        return [custom_model] + [m for m in default_models if m != custom_model]
+    return default_models
 
 
 def _call_gemini_sync(contents, vision=False):
-    """Tự động thử lần lượt các model Gemini Flash với Timeout 6 giây mỗi lượt"""
+    """Tự động thử lần lượt các model Gemini Flash với Timeout có thể cấu hình (mặc định 15 giây mỗi lượt)"""
     if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
         raise HTTPException(
             status_code=500,
@@ -2008,14 +2012,18 @@ def _call_gemini_sync(contents, vision=False):
     genai.configure(api_key=GEMINI_API_KEY)
     
     models = get_gemini_models_list(vision=vision)
+    try:
+        timeout = int(os.getenv("GEMINI_TIMEOUT", "15"))
+    except (ValueError, TypeError):
+        timeout = 15
     last_error = None
     
     for model_name in models:
         try:
             t0 = time.time()
-            print(f"[Gemini API] Thử mô hình: {model_name}", flush=True)
+            print(f"[Gemini API] Thử mô hình: {model_name} (Timeout: {timeout}s)", flush=True)
             model = genai.GenerativeModel(model_name)
-            response = model.generate_content(contents, request_options={"timeout": 6})
+            response = model.generate_content(contents, request_options={"timeout": timeout})
             t1 = time.time()
             if response and response.text:
                 print(f"[Gemini API] Thành công với mô hình: {model_name} (Thời gian: {t1 - t0:.2f}s)", flush=True)

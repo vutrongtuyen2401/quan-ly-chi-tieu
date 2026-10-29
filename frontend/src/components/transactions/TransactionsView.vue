@@ -341,20 +341,23 @@
         <!-- Date Range Filter -->
         <div class="filter-date-group">
           <div class="filter-input-wrap">
-            <span class="input-sublabel">Từ Ngày</span>
+            <span class="input-sublabel">Từ</span>
             <input
               v-model="txnFilter.start_date"
               type="date"
               class="stitch-input-sm"
+              title="Từ ngày"
               @change="$emit('filter-change')"
             />
           </div>
+          <span class="date-separator">—</span>
           <div class="filter-input-wrap">
-            <span class="input-sublabel">Đến Ngày</span>
+            <span class="input-sublabel">Đến</span>
             <input
               v-model="txnFilter.end_date"
               type="date"
               class="stitch-input-sm"
+              title="Đến ngày"
               @change="$emit('filter-change')"
             />
           </div>
@@ -1211,27 +1214,35 @@ const visiblePages = computed(() => {
 }
 
 .filter-date-group {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-input-wrap {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.filter-input-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.date-separator {
+  color: var(--color-on-surface-variant, #bdc9c6);
+  font-size: 13px;
+  user-select: none;
+  opacity: 0.6;
 }
 
 .input-sublabel {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--color-on-surface-variant, #bdc9c6);
+  white-space: nowrap;
 }
 
 .stitch-input-sm, .stitch-select-sm {
   height: 36px;
+  line-height: 22px;
+  box-sizing: border-box;
   padding: 6px 10px;
   border-radius: var(--radius-DEFAULT, 8px);
   background: var(--color-surface-container-highest, #2d3449);
@@ -1241,6 +1252,7 @@ const visiblePages = computed(() => {
   font-family: var(--font-body);
   outline: none;
   transition: all 0.2s ease;
+  vertical-align: middle;
 }
 .stitch-input-sm:focus, .stitch-select-sm:focus {
   border-color: var(--color-primary, #7dd6cc);
@@ -1248,6 +1260,11 @@ const visiblePages = computed(() => {
 
 .filter-select-wrap {
   min-width: 140px;
+  display: inline-flex;
+  align-items: center;
+}
+.filter-select-wrap .stitch-select-sm {
+  width: 100%;
 }
 
 .filter-search-wrap {
@@ -1269,6 +1286,8 @@ const visiblePages = computed(() => {
 .stitch-search-input {
   width: 100%;
   height: 36px;
+  line-height: 22px;
+  box-sizing: border-box;
   padding: 6px 12px 6px 34px;
   border-radius: var(--radius-DEFAULT, 8px);
   background: var(--color-surface-container-highest, #2d3449);
@@ -1288,6 +1307,7 @@ const visiblePages = computed(() => {
   align-items: center;
   gap: 4px;
   height: 36px;
+  box-sizing: border-box;
   padding: 0 12px;
   border-radius: var(--radius-DEFAULT, 8px);
   background: var(--color-surface-container, #171f33);
@@ -1584,6 +1604,16 @@ const visiblePages = computed(() => {
   .filter-date-group {
     width: 100%;
     flex-direction: column;
+    gap: 8px;
+  }
+  .date-separator {
+    display: none;
+  }
+  .filter-input-wrap {
+    width: 100%;
+  }
+  .filter-input-wrap .stitch-input-sm {
+    flex: 1;
   }
   .filter-select-wrap, .filter-search-wrap {
     width: 100%;
