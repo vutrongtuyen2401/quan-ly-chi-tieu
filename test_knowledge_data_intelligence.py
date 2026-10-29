@@ -51,7 +51,7 @@ class TestKnowledgeDataIntelligence(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.tool_executed, "get_latest_transaction")
         self.assertIsNotNone(resp.tool_result)
         self.assertTrue(resp.tool_result.get("success", False))
-        self.assertIn("Ký Chủ", resp.text)
+        self.assertIn("Chủ Nhân", resp.text)
         self.assertNotIn("Đạo Hữu", resp.text)
         self.assertNotIn("Ta không có quyền truy cập trực tiếp", resp.text)
 

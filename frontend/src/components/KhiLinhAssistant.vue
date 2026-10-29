@@ -128,7 +128,7 @@
                   <div class="portal-micro micro-br"></div>
 
                   <!-- Chibi Portal Center with Sacred Aura Rings -->
-                  <div class="chibi-portal-character-wrap">
+                  <div class="chibi-portal-character-wrap" @click="handlePortalClick" :title="isSpeakingTTS ? 'Chạm để ngắt lời Khí Linh' : ''" :style="{ cursor: isSpeakingTTS ? 'pointer' : 'default' }">
                     <KhiLinhCharacter
                       size="portal"
                       :state="agentState"
@@ -270,7 +270,7 @@
 
                     <!-- Question Prompt -->
                     <p class="conf-question-text">
-                      Ký chủ có muốn xác nhận thực thi pháp lệnh này không?
+                      Chủ nhân có muốn xác nhận thực thi pháp lệnh này không?
                       <span class="conf-question-sub">(Nói "Xác nhận", "Hủy", hoặc nhấn nút bên dưới)</span>
                     </p>
 
@@ -324,7 +324,7 @@
                     </div>
                     <p class="standby-lead-text">
                       <span class="pulse-beacon-cyan"></span>
-                      Khí Linh đang thường trực lắng nghe. Ký chủ hãy trực tiếp truyền khẩu lệnh giọng nói.
+                      Khí Linh đang thường trực lắng nghe. Chủ nhân hãy trực tiếp truyền khẩu lệnh giọng nói.
                     </p>
                     <div class="standby-prompts-row">
                       <button class="prompt-chip" @click="handleVoiceAction('Tháng này ta đã chi bao nhiêu?')">
@@ -357,11 +357,12 @@
                     <button
                       id="btn-khilinh-mic"
                       class="btn-mic-stream-toggle"
-                      :class="{ active: isListening }"
+                      :class="{ active: isListening, 'is-speaking-bargein': isSpeakingTTS }"
                       @click="toggleManualListening"
-                      :title="isListening ? 'Đang lắng nghe liên tục' : 'Bật lắng nghe'"
+                      :title="isSpeakingTTS ? 'Khí Linh đang nói - Bấm để ngắt lời và nói chèn' : isListening ? 'Đang lắng nghe liên tục' : 'Bật lắng nghe'"
                     >
-                      <span v-if="isListening">🔴 Đang Nghe...</span>
+                      <span v-if="isSpeakingTTS">⚡ Nói Chèn (Ngắt Lời)</span>
+                      <span v-else-if="isListening">🔴 Đang Nghe...</span>
                       <span v-else>🎙️ Bật Mic</span>
                     </button>
                   </div>
@@ -605,7 +606,7 @@ export default {
         })
       } else {
         // Wake word only: short spoken wake response without LLM round-trip
-        const greeting = 'Dạ, Khí Linh nghe lệnh đạo hữu.'
+        const greeting = 'Dạ, Khí Linh nghe lệnh chủ nhân.'
         currentDisplayContent.value = greeting
         if (ttsEnabled.value) {
           speakAndResume(greeting)
@@ -758,8 +759,7 @@ export default {
         }
 
         recognitionInstance.onresult = (event) => {
-          // Mic tắt trong lúc TTS phát; kết quả lọt vào lúc này là tiếng vọng -> bỏ qua
-          if (isSpeakingTTS.value || isProcessing.value) return
+          if (isProcessing.value) return
 
           let transcript = ''
           let hasInterim = false
@@ -772,10 +772,21 @@ export default {
             }
           }
 
-          if (hasInterim && isLiveActive.value) clearSilenceTimer()
+          if (hasInterim && isLiveActive.value && !isSpeakingTTS.value) clearSilenceTimer()
 
           const cleanMsg = transcript.trim()
           if (!cleanMsg) return
+
+          // ─── CƠ CHẾ NÓI CHÈN (BARGE-IN) KHI KHÍ LINH ĐANG NÓI ───
+          if (isSpeakingTTS.value) {
+            // Nếu mic nghe lại tiếng vọng của chính Khí Linh thì bỏ qua
+            if (isEchoOfLastSpeech(cleanMsg)) return
+            // Người dùng thực sự nói chèn (lệnh mới hoặc từ ngắt lời):
+            console.log('[Barge-In] Người dùng nói chèn, lập tức ngắt lời Khí Linh:', cleanMsg)
+            cancelCurrentTTS()
+            agentState.value = 'LISTENING'
+          }
+
           if (isEchoOfLastSpeech(cleanMsg)) return
 
           // Case 1: In SLEEPING mode -> listen for wake word "Hệ thống"
@@ -827,9 +838,9 @@ export default {
         recognitionInstance.onend = () => {
           isRecognitionRunning = false
           isListening.value = false
-          if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING' && !isSpeakingTTS.value) {
-            // Người dùng ngừng nói mà không có lệnh -> đếm lại 10s im lặng
-            if (isLiveActive.value && !silenceTimer) startSilenceTimer()
+          if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
+            // Người dùng ngừng nói mà không có lệnh -> đếm lại 10s im lặng (chỉ khi không phát TTS)
+            if (isLiveActive.value && !silenceTimer && !isSpeakingTTS.value) startSilenceTimer()
             scheduleRestartRecognition()
           }
         }
@@ -859,9 +870,8 @@ export default {
     function scheduleRestartRecognition() {
       clearTimeout(restartTimer)
       restartTimer = setTimeout(() => {
-        // Must restart in LIVE mode (continuous command listening)
-        // AND in SLEEPING mode (wake-word "Hệ thống" listening)
-        if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING' && !isSpeakingTTS.value) {
+        // Tự động khởi động lại nhận dạng giọng nói kể cả khi đang nói để luôn sẵn sàng nghe nói chèn
+        if (agentState.value !== 'PROCESSING' && agentState.value !== 'EXECUTING') {
           if (agentState.value === 'CLOSED') {
             agentState.value = 'SLEEPING'
           }
@@ -873,8 +883,6 @@ export default {
     function startRecognition() {
       if (!recognitionInstance || isRecognitionRunning) return
       if (agentState.value === 'PROCESSING' || agentState.value === 'EXECUTING') return
-      // Không mở mic khi Khí Linh đang nói để tránh tự nghe lại chính mình
-      if (isSpeakingTTS.value) return
 
       try {
         isRecognitionRunning = true
@@ -900,6 +908,14 @@ export default {
     }
 
     function toggleManualListening() {
+      // Nếu Khí Linh đang nói -> bấm mic lập tức ngắt lời để nói chèn
+      if (isSpeakingTTS.value) {
+        cancelCurrentTTS()
+        agentState.value = 'LISTENING'
+        startRecognition()
+        startSilenceTimer()
+        return
+      }
       if (isListening.value) {
         stopRecognition()
       } else {
@@ -907,6 +923,15 @@ export default {
           startRecognition()
           startSilenceTimer()
         }
+      }
+    }
+
+    function handlePortalClick() {
+      if (isSpeakingTTS.value) {
+        cancelCurrentTTS()
+        agentState.value = 'LISTENING'
+        startRecognition()
+        startSilenceTimer()
       }
     }
 
@@ -1049,10 +1074,11 @@ export default {
         currentUtterance = utter
         lastSpokenText.value = cleanSpeech
 
-        // Tắt mic trong lúc đọc: nếu không, mic nghe lại câu "Đã chuyển ... từ ... sang ..." hay
-        // "Trả lời Xác nhận hoặc Hủy" của chính Khí Linh rồi gửi đi như lệnh mới.
+        // Bật cờ TTS và duy trì nhận dạng để người dùng có thể nói chèn (Barge-In) bất cứ lúc nào
         isSpeakingTTS.value = true
-        stopRecognition()
+        if (!isRecognitionRunning && isLiveActive.value) {
+          startRecognition()
+        }
 
         const finishSpeaking = () => {
           if (myUtteranceId !== currentUtteranceId) return
@@ -1167,7 +1193,7 @@ export default {
         case 'LISTENING': return 'Đang Lắng Nghe Khẩu Quyết...'
         case 'PROCESSING': return 'Đang xử lý'
         case 'SPEAKING': return 'Đang Truyền Âm Trả Lời...'
-        case 'CONFIRMING': return 'Chờ Ký Chủ Xác Nhận...'
+        case 'CONFIRMING': return 'Chờ Chủ Nhân Xác Nhận...'
         case 'EXECUTING': return 'Đang Thực Thi Pháp Quyết...'
         case 'TIMEOUT': return 'Hết Thời Gian Chờ (Đã Dọn Lệnh)...'
         case 'CLOSED': return 'Đã Đóng Thần Thức'
@@ -1188,7 +1214,7 @@ export default {
         return 'Đang xử lý: Đang đối chiếu dữ liệu tài chính với AgentCore...'
       }
       if (agentState.value === 'CONFIRMING') {
-        return 'Đang chờ lệnh "Xác nhận", "Hủy", hoặc sửa đổi từ Ký Chủ.'
+        return 'Đang chờ lệnh "Xác nhận", "Hủy", hoặc sửa đổi từ Chủ Nhân.'
       }
       if (agentState.value === 'AWAKENING') {
         return 'Thần thức thức tỉnh, sẵn sàng tiếp nhận mệnh lệnh.'
@@ -1248,6 +1274,8 @@ export default {
       activateLiveMode,
       deactivateLiveMode,
       toggleManualListening,
+      handlePortalClick,
+      isSpeakingTTS,
       toggleTTS,
       handleVoiceAction,
       getStateDescription,
@@ -2406,4 +2434,16 @@ export default {
     display: none !important;
   }
 }
+
+.btn-mic-stream-toggle.is-speaking-bargein {
+  background: rgba(239, 68, 68, 0.22) !important;
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+  animation: pulse-bargein 1.4s infinite ease-in-out;
+}
+@keyframes pulse-bargein {
+  0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0.3); transform: scale(1); }
+  50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.7); transform: scale(1.02); }
+}
+
 </style>

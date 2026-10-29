@@ -1995,9 +1995,10 @@ def get_gemini_models_list(vision=False):
     """Trả về danh sách mô hình Gemini Flash ổn định, tốc độ phản hồi nhanh nhất"""
     custom_model = os.getenv("GEMINI_MODEL", "").strip()
     default_models = [
+        "gemini-3.6-flash",
+        "gemini-3.7-flash",
         "gemini-flash-lite-latest",
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash"
+        "gemini-3.8-flash"
     ]
     if custom_model:
         return [custom_model] + [m for m in default_models if m != custom_model]
@@ -2009,7 +2010,7 @@ def _call_gemini_sync(contents, vision=False):
     if not GEMINI_API_KEY or GEMINI_API_KEY == "your_api_key_here":
         raise HTTPException(
             status_code=500,
-            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Đạo hữu hãy thêm chìa khóa API để đàm đạo cùng Khí Linh!"
+            detail="Chưa cấu hình GEMINI_API_KEY trong file .env. Chủ nhân hãy thêm chìa khóa API để đàm đạo cùng Khí Linh!"
         )
     
     import google.generativeai as genai
@@ -2043,7 +2044,7 @@ def _call_gemini_sync(contents, vision=False):
     print(f"[Gemini API Error] {repr(last_error)}", flush=True)
     raise HTTPException(
         status_code=504,
-        detail="Tiên Trí phản hồi quá lâu hoặc gặp trở ngại khi kết nối dịch vụ AI. Đạo hữu vui lòng thử lại sau."
+        detail="Tiên Trí phản hồi quá lâu hoặc gặp trở ngại khi kết nối dịch vụ AI. Chủ nhân vui lòng thử lại sau."
     )
 
 
@@ -2247,7 +2248,9 @@ async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
         t_db_1 = time.time()
 
     recent_history = ""
-    display_user = user.get("full_name") or "Ký Chủ"
+    display_user = user.get("full_name") or "Chủ Nhân"
+    if display_user.lower() in ("đạo hữu", "user", "ký chủ"):
+        display_user = "Chủ Nhân"
     if history_rows:
         history_items = list(reversed(history_rows))
         lines = []
@@ -2292,7 +2295,7 @@ async def ai_chat(body: ChatBody, user: dict = Depends(get_current_user)):
         logger.error(f"Lỗi xử lý AI Chat cho user {user.get('id', user.get('user_id'))}: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail="Tiên Trí tạm thời gặp trở ngại khi tiếp nhận thông tin. Đạo hữu vui lòng thử lại hoặc nêu rõ hơn."
+            detail="Tiên Trí tạm thời gặp trở ngại khi tiếp nhận thông tin. Chủ nhân vui lòng thử lại hoặc nêu rõ hơn."
         )
 
 

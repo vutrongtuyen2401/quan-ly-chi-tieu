@@ -206,6 +206,7 @@ class AgentCore:
         query_hint: Optional[str] = None,
         amount: Optional[int] = None,
         date_filter: Optional[str] = None,
+        wallet_name: Optional[str] = None,
         offset: int = 0
     ) -> Optional[Dict[str, Any]]:
         """Phân giải thực thể từ conversational action context hoặc truy vấn DB an toàn.
@@ -275,6 +276,9 @@ class AgentCore:
                 if date_filter:
                     query += " AND t.transaction_date = ?"
                     params.append(date_filter)
+                if wallet_name:
+                    query += " AND (w.wallet_name LIKE ? OR w.wallet_type LIKE ?)"
+                    params.extend([f"%{wallet_name}%", f"%{wallet_name}%"])
 
                 query += f" ORDER BY t.id DESC LIMIT 1 OFFSET {offset}"
                 row = conn.execute(query, tuple(params)).fetchone()
@@ -814,7 +818,7 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
         self,
         user_id: int,
         message: str,
-        user_name: str = "Ký Chủ",
+        user_name: str = "Chủ Nhân",
         user_role: str = "user"
     ) -> AgentResponse:
         """Thực thi kế hoạch đa công cụ đọc dữ liệu tài chính (Multi-Tool Execution & Synthesis)"""
@@ -1240,16 +1244,16 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
         self,
         tool_name: str,
         tool_res: Any,
-        user_name: str = "Ký Chủ",
+        user_name: str = "Chủ Nhân",
         message: str = "",
         tool_args: Optional[Dict[str, Any]] = None
     ) -> str:
         """Sinh câu trả lời tự nhiên, chính xác, súc tích từ kết quả có cấu trúc của ToolResult.
         TUYỆT ĐỐI KHÔNG BỊA ĐẶT, KHÔNG DÙNG SỐ TỰ NGHĨ. TOOL RESULT = SOURCE OF TRUTH.
-        Xưng hô: user_name (profile đạo hiệu nếu có, hoặc 'Ký Chủ', CẤM 'Đạo Hữu').
+        Xưng hô: user_name (profile tên nếu có, hoặc 'Chủ Nhân', CẤM 'Đạo Hữu' / 'Ký Chủ').
         """
         if not user_name or "đạo hữu" in user_name.lower():
-            user_name = "Ký Chủ"
+            user_name = "Chủ Nhân"
 
         if not tool_res or not getattr(tool_res, "success", False):
             return f"{user_name}, Khí Linh chưa thể truy xuất dữ liệu này lúc này."
@@ -1476,17 +1480,17 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
         self.current_state = AgentState.THINKING
 
         # Chuẩn hóa Đạo hiệu / User Name (Principle 14 & 15: AI phải dùng Đạo hiệu khi xưng hô, fallback 'Ký Chủ', cấm 'Đạo hữu')
-        if not user_name or not str(user_name).strip() or str(user_name).strip().lower() in ("đạo hữu", "user"):
+        if not user_name or not str(user_name).strip() or str(user_name).strip().lower() in ("đạo hữu", "user", "ký chủ"):
             import main
             try:
                 with main.get_db() as conn:
                     u_row = conn.execute("SELECT full_name FROM users WHERE id = ?", (user_id,)).fetchone()
-                    if u_row and u_row["full_name"] and u_row["full_name"].strip() and u_row["full_name"].strip().lower() not in ("đạo hữu", "user"):
+                    if u_row and u_row["full_name"] and u_row["full_name"].strip() and u_row["full_name"].strip().lower() not in ("đạo hữu", "user", "ký chủ"):
                         user_name = u_row["full_name"].strip()
                     else:
-                        user_name = "Ký Chủ"
+                        user_name = "Chủ Nhân"
             except Exception:
-                user_name = "Ký Chủ"
+                user_name = "Chủ Nhân"
         else:
             user_name = str(user_name).strip()
 
@@ -1496,7 +1500,7 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
             if user_name_lower.startswith("đạo hữu "):
                 user_name = user_name[8:].strip()
             elif user_name_lower == "đạo hữu":
-                user_name = "Ký Chủ"
+                user_name = "Chủ Nhân"
 
         # Chuẩn hóa AgentMode
         if isinstance(mode, AgentMode):
@@ -1509,7 +1513,7 @@ Hãy kết hợp hai nguồn thông tin trên thành một câu trả lời hoà
         # 0. PHÂN LUỒNG TRI THỨC VÀ KIỂM SOÁT QUYỀN HẠN KHÍ LINH AI LỚN (KNOWLEDGE MODE)
         # ─────────────────────────────────────────────────────────────
         if not user_name or "đạo hữu" in user_name.lower():
-            user_name = "Ký Chủ"
+            user_name = "Chủ Nhân"
 
         if agent_mode == AgentMode.KNOWLEDGE:
             # 0.A. Chặn xác nhận thao tác ghi dữ liệu từ chế độ Knowledge
@@ -2496,7 +2500,7 @@ Câu hỏi của {user_name}: {clean_msg}"""
                 error=tool_res.error
             )
 
-    async def _plan_action(self, user_id: int, message: str, user_role: str = "user", user_name: str = "Ký Chủ") -> Optional[Dict[str, Any]]:
+    async def _plan_action(self, user_id: int, message: str, user_role: str = "user", user_name: str = "Chủ Nhân") -> Optional[Dict[str, Any]]:
         """Lập kế hoạch hành động: phối hợp giữa phân loại ý định an toàn, trích xuất thực thể và Tool Registry"""
         raw = message.lower().strip()
 
@@ -2638,6 +2642,7 @@ Câu hỏi của {user_name}: {clean_msg}"""
             # 5. Xóa giao dịch / khoản chi / khoản thu (mặc định ưu tiên cao nhất cho financial operations)
             is_txn_delete = (
                 is_explicit_txn or
+                (amt is not None and amt > 0) or
                 (is_contextual_ref and not any([is_explicit_wallet, is_explicit_goal, is_explicit_budget, is_explicit_debt])) or
                 any(w in raw for w in ["nó", "cái đó", "cái vừa rồi"])
             )
@@ -2649,7 +2654,9 @@ Câu hỏi của {user_name}: {clean_msg}"""
                     target_txn = {"id": txn_id}
                 else:
                     is_preceding = any(w in raw for w in ["khoản kia", "khoan kia", "khoản trước", "không phải khoản đó", "không phải giao dịch đó"])
-                    target_txn = await self.resolve_contextual_entity(user_id, "transaction", amount=amt, date_filter=explicit_dt, offset=1 if is_preceding else 0)
+                    target_txn = await self.resolve_contextual_entity(
+                        user_id, "transaction", amount=amt, wallet_name=w_name, date_filter=explicit_dt, offset=1 if is_preceding else 0
+                    )
 
                 if target_txn:
                     args = {"transaction_id": target_txn["id"]}
@@ -2662,9 +2669,11 @@ Câu hỏi của {user_name}: {clean_msg}"""
                         "arguments": args
                     }
                 else:
+                    w_hint = f" trong ví {w_name}" if w_name else ""
+                    a_hint = f" {amt:,.0f} đ" if amt else ""
                     return {
                         "intent": "CLARIFICATION_NEEDED",
-                        "clarification_message": f"Khí Linh không tìm thấy giao dịch nào phù hợp gần đây để xóa. {user_name} có thể cung cấp mã ID hoặc nội dung giao dịch cụ thể không?"
+                        "clarification_message": f"Khí Linh không tìm thấy giao dịch nào{a_hint}{w_hint} gần đây để xóa. {user_name} có thể kiểm tra lại sổ nhật ký hoặc cung cấp mã ID không?"
                     }
 
         # 4.5.B. SỬA GIAO DỊCH / KHOẢN CHI / KHOẢN THU (UPDATE TRANSACTION)
@@ -3278,9 +3287,16 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
             "tool": "tên công cụ hoặc null",
             "arguments": {"key": "value"}
         }
-        res = await self.provider.parse_structured_intent(intent_prompt, schema=target_schema)
-        if isinstance(res, dict) and res.get("tool") and res["tool"] != "null":
-            return res
+        try:
+            res = await self.provider.parse_structured_intent(intent_prompt, schema=target_schema)
+            if isinstance(res, dict) and res.get("tool") and res["tool"] != "null":
+                return res
+        except Exception as e:
+            logger.warning(f"Lỗi hoặc timeout khi LLM discovery tool: {e}")
+            return {
+                "intent": "CLARIFICATION_NEEDED",
+                "clarification_message": f"Khí Linh chưa nhận diện rõ ý định này của {user_name}. {user_name} có thể nói rõ hơn thao tác cần thực hiện không?"
+            }
 
         return None
 
@@ -3494,7 +3510,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
         user_id: int,
         wallet_query: Optional[str],
         is_destination: bool = False,
-        user_name: str = "Ký Chủ"
+        user_name: str = "Chủ Nhân"
     ) -> Dict[str, Any]:
         """Phân giải thực thể ví cho giao dịch chuyển tiền (Transfer Wallet Entity Resolution).
         Trả về dictionary:
@@ -3654,7 +3670,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
         self,
         user_id: int,
         pending: Dict[str, Any],
-        user_name: str = "Ký Chủ"
+        user_name: str = "Chủ Nhân"
     ) -> Tuple[bool, Optional[str]]:
         """Kiểm tra xem hành động đang chờ đã đủ tất cả tham số bắt buộc để vào trạng thái CONFIRMING chưa.
         Trả về (is_complete, missing_param_name)
@@ -3814,7 +3830,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
         user_id: int,
         pending: Dict[str, Any],
         text: str,
-        user_name: str = "Ký Chủ"
+        user_name: str = "Chủ Nhân"
     ) -> Tuple[bool, str]:
         """Trộn tham số trả lời tiếp theo từ người dùng vào hành động đang chờ (Follow-up Parameter Merging).
         Trả về (success, message_or_error)
@@ -4206,7 +4222,7 @@ Hãy xác định công cụ phù hợp nhất và trích xuất đúng tên tha
         user_id: int,
         tool_name: str,
         args: Dict[str, Any],
-        user_name: str = "Ký Chủ"
+        user_name: str = "Chủ Nhân"
     ) -> Optional[str]:
         """Kiểm tra và phân giải thực thể động từ cơ sở dữ liệu.
         Nếu tìm thấy duy nhất 1 thực thể -> tự động gắn ID và tên chuẩn hóa.
