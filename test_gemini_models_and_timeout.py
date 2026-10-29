@@ -8,12 +8,12 @@ import main
 class TestGeminiModelsAndTimeout(unittest.TestCase):
 
     def test_default_models_list(self):
-        """Kiểm tra danh sách mô hình mặc định phải ưu tiên các bản phản hồi nhanh và ổn định (3.6-flash, 3.7-flash)"""
+        """Kiểm tra danh sách mô hình mặc định phải ưu tiên các bản phản hồi nhanh và ổn định (3.1-flash-lite, 3.5-flash-lite)"""
         with patch.dict(os.environ, {}, clear=False):
             if "GEMINI_MODEL" in os.environ:
                 del os.environ["GEMINI_MODEL"]
             models = main.get_gemini_models_list()
-            self.assertEqual(models[0], "gemini-3.6-flash")
+            self.assertEqual(models[0], "gemini-3.1-flash-lite")
             self.assertIn("gemini-3.7-flash", models)
             self.assertIn("gemini-3.8-flash", models)
             # gemini-flash-latest bị treo không nên nằm trong danh sách
@@ -24,7 +24,7 @@ class TestGeminiModelsAndTimeout(unittest.TestCase):
         with patch.dict(os.environ, {"GEMINI_MODEL": "gemini-custom-model"}):
             models = main.get_gemini_models_list()
             self.assertEqual(models[0], "gemini-custom-model")
-            self.assertIn("gemini-3.6-flash", models)
+            self.assertIn("gemini-3.1-flash-lite", models)
 
     def test_timeout_fallback_and_handling(self):
         """Kiểm tra logic gọi _call_gemini_sync với timeout và fallback mô hình kế tiếp"""

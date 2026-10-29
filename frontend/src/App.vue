@@ -2516,7 +2516,7 @@ export default {
 
       chatLoading.value = true
       try {
-        const { data } = await api.post('/api/ai/chat', { message: msg, mode: 'knowledge' }, { timeout: 35000 })
+        const { data } = await api.post('/api/ai/chat', { message: msg, mode: 'knowledge' }, { timeout: 45000 })
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
         chatMessages.value.push({ role: 'ai', text: data.response || 'Đã tiếp nhận mệnh lệnh.' })
         if (data.state === 'SUCCESS' && data.tool_executed) {
@@ -2525,7 +2525,7 @@ export default {
       } catch (err) {
         if (!Array.isArray(chatMessages.value)) chatMessages.value = []
         const errMsg = err.code === 'ECONNABORTED'
-          ? '🔮 Tiên Trí phản hồi quá lâu do nghẽn mạng, vui lòng thử lại.'
+          ? '🔮 Tiên Trí phản hồi quá lâu do nghẽn mạng, Chủ nhân vui lòng thử lại.'
           : (err.response?.data?.detail || 'Không thể kết nối với thần trí AI.')
         chatMessages.value.push({
           role: 'ai',

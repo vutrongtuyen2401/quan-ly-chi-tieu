@@ -267,13 +267,16 @@ class KnowledgeRAG:
         return False
 
     def build_grounded_prompt(self, query: str, retrieved_results: List[RetrievalResult], recent_history: str = "") -> str:
-        """Tạo system prompt giàu ngữ cảnh được kiểm chứng từ kết quả RAG"""
+        """Tạo system prompt giàu ngữ cảnh được kiểm chứng từ kết quả RAG, tối ưu độ dài để phản hồi thần tốc"""
         context_blocks = []
-        for idx, res in enumerate(retrieved_results, 1):
+        for idx, res in enumerate(retrieved_results[:3], 1):
             status_tag = f"[{res.chunk['status']}]"
+            content = res.chunk['content']
+            if len(content) > 600:
+                content = content[:600] + "... (đã lược bớt)"
             context_blocks.append(
                 f"--- Nguồn {idx}: {res.chunk['title']} (File: {res.chunk['source_file']}) {status_tag} ---\n"
-                f"{res.chunk['content']}\n"
+                f"{content}\n"
             )
 
         context_text = "\n".join(context_blocks)
@@ -287,18 +290,72 @@ QUY TẮC CỐT LÕI BẮT BUỘC:
 4. Đối với câu hỏi tổng quan "Hệ thống có những chức năng nào?": Hãy liệt kê đầy đủ các chức năng ACTIVE (Tổng Quan, Túi Càn Khôn, Giao Dịch, Danh Mục, Hạn Mức / Ngân Sách, Sổ Nợ, Mục Tiêu Tiết Kiệm, Giao Dịch Định Kỳ, OCR Hóa Đơn, Thống Kê & Báo Cáo, Khai Thị Tiết Kiệm, Bản Mệnh Hồn Đăng/Bảo Mật, Khí Linh Lớn & Nhỏ). Nhóm theo các trụ cột tài chính rõ ràng.
 5. Đối với câu hỏi về vai trò/quyền hạn: Khẳng định rõ Khí Linh AI Lớn là Knowledge Assistant (chỉ giải đáp, hướng dẫn, tra cứu dữ liệu chỉ đọc, KHÔNG CÓ QUYỀN thay đổi dữ liệu tài chính); còn Khí Linh Nhỏ (Live System Mode) là Action Agent mới có quyền thực thi.
 6. Khi giải thích khái niệm chung không thuộc riêng hệ thống (ví dụ "RAG là gì?"): Trình bày định nghĩa khái quát chung trước, sau đó phân biệt rõ cách hệ thống Càn Khôn áp dụng.
+7. XƯNG HÔ BẮT BUỘC: Luôn luôn xưng hô với người dùng là "Chủ Nhân". Tuyệt đối KHÔNG dùng "Ký Chủ", "Đạo Hữu", hay "bạn".
 
 TÀI LIỆU NGUỒN TRI THỨC (RETRIEVED CONTEXT):
 {context_text}
 
 {recent_history}
-CÂU HỎI CỦA KÝ CHỦ: {query}
+CÂU HỎI CỦA CHỦ NHÂN: {query}
 
 HÃY TRẢ LỜI ĐẦY ĐỦ, CHÍNH XÁC VÀ BÁM SÁT TÀI LIỆU TRÊN:"""
         return prompt
 
+    def synthesize_knowledge_fallback(self, query: str, retrieved_results: List[RetrievalResult]) -> str:
+        """Tự động đúc kết câu trả lời có cấu trúc từ các tài liệu nguồn khi LLM bên ngoài bị nghẽn mạng hoặc quá tải."""
+        q_low = query.lower()
+
+        # 1. Câu hỏi xin lời khuyên chi tiêu / quản lý tài chính / tiết kiệm
+        if any(w in q_low for w in ["lời khuyên", "chi tiêu", "tiết kiệm", "hợp lý", "chi sao", "khuyên"]):
+            return (
+                "Kính thưa **Chủ Nhân**, Khí Linh xin kính cẩn dâng lên những lời khuyên và quy tắc quản trị ngân khố được đúc kết từ thư tịch tri thức của Càn Khôn Linh Thạch Các:\n\n"
+                "1. **Phân bổ ngân sách theo Quy tắc 50/30/20**:\n"
+                "   - **50% Thiết yếu**: Dành cho chi phí duy trì sinh hoạt bắt buộc (ăn uống, đi lại, hóa đơn định kỳ, tiền nhà).\n"
+                "   - **30% Linh hoạt**: Chi cho nhu cầu cá nhân, sở thích, giao lưu hoặc nâng cao đời sống.\n"
+                "   - **20% Tích lũy**: Đưa vào Mục Tiêu Tiết Kiệm hoặc quỹ dự phòng rủi ro.\n\n"
+                "2. **Thiết lập Hạn Mức Ngân Sách**:\n"
+                "   - Chủ Nhân nên cài đặt hạn mức cho các danh mục dễ phát sinh bội chi (như Ẩm thực, Mua sắm). Khí Linh sẽ tự động cảnh báo khi chi tiêu chạm ngưỡng 80% hạn mức.\n\n"
+                "3. **Tất toán Sổ Nợ trước khi mở rộng chi dùng**:\n"
+                "   - Thường xuyên rà soát các khoản nợ cần thanh toán trong mục Sổ Nợ để tránh bị dồn ứ áp lực tài chính.\n\n"
+                "4. **Tích lũy trước, chi tiêu sau**:\n"
+                "   - Mỗi khi nhận được thu nhập mới, hãy trích ngay một phần vào Túi Tiết Kiệm trước khi phân bổ cho các nhu cầu khác.\n\n"
+                "Chủ Nhân có thể chuyển qua tab **Hạn Mức** hoặc **Mục Tiêu** để thiết lập cụ thể, hoặc hỏi Khí Linh về tình trạng chi tiêu của bất kỳ danh mục nào!"
+            )
+
+        # 2. Câu hỏi tổng quan về chức năng hệ thống
+        if any(w in q_low for w in ["chức năng", "tính năng", "có gì", "làm được gì"]):
+            return (
+                "Kính thưa **Chủ Nhân**, hệ thống **Càn Khôn Linh Thạch Các** hỗ trợ toàn diện các trụ cột quản lý tài chính cá nhân:\n\n"
+                "1. **Túi Càn Khôn (Đa Ví Tài Sản)**: Quản lý không giới hạn các ví tiền mặt, tài khoản ngân hàng, ví điện tử (Momo, ZaloPay, ViettelMoney) và sổ tiết kiệm, hỗ trợ chuyển tiền nội bộ giữa các ví.\n"
+                "2. **Sổ Giao Dịch**: Ghi nhận minh bạch mọi khoản thu chi, phân loại danh mục, lọc thời gian và xuất dữ liệu Excel/CSV.\n"
+                "3. **Linh Nhãn OCR**: Quét hóa đơn thu chi bằng ảnh để tự động trích xuất số tiền, ngày tháng và nội dung giao dịch.\n"
+                "4. **Hạn Mức Ngân Sách**: Giám sát ngưỡng chi tiêu theo từng danh mục, tự động cảnh báo khi vượt 80% và 100% hạn mức.\n"
+                "5. **Sổ Nợ (Công Nợ)**: Quản lý 2 chiều Cho Vay và Đi Vay, theo dõi hạn trả, tính toán số dư nợ còn lại và thanh toán linh hoạt.\n"
+                "6. **Mục Tiêu Tiết Kiệm & Định Kỳ**: Lập quỹ tích lũy linh thạch (mua sắm, du lịch, khẩn cấp) và lên lịch giao dịch tự động hàng ngày/hàng tháng.\n"
+                "7. **Thống Kê & Báo Cáo**: Phân tích biểu đồ xu hướng dòng tiền thu chi, cơ cấu danh mục và so sánh tài chính liên tháng.\n"
+                "8. **Khí Linh AI**: Gồm Khí Linh Lớn (Cố vấn tri thức toàn năng) và Khí Linh Nhỏ (Trợ lý giọng nói thực thi nhanh các thao tác)."
+            )
+
+        # 3. Tổng hợp từ các chunks đã truy xuất được
+        if retrieved_results:
+            lines = [f"Kính thưa **Chủ Nhân**, dựa trên thư tịch tri thức được ghi nhận trong Càn Khôn Linh Thạch Các:\n"]
+            for r in retrieved_results[:3]:
+                title = r.chunk.get("title", "").strip()
+                content = r.chunk.get("content", "").strip()
+                summary_content = content[:350].strip()
+                if len(content) > 350:
+                    summary_content += "..."
+                lines.append(f"### 📜 {title}\n{summary_content}\n")
+            lines.append("Chủ Nhân có thể nêu rõ thêm chi tiết hoặc yêu cầu Khí Linh hỗ trợ sâu hơn về từng danh mục cụ thể!")
+            return "\n".join(lines)
+
+        return (
+            "Kính thưa **Chủ Nhân**, Khí Linh đã tiếp nhận câu hỏi của Người. "
+            "Hiện tại dịch vụ AI bên ngoài đang có độ trễ lớn, Chủ Nhân có thể thử lại sau giây lát hoặc truy cập các mục tương ứng trên thanh điều hướng để tra cứu trực tiếp!"
+        )
+
     async def answer_question(self, query: str, provider, recent_history: str = "") -> Tuple[str, List[Dict[str, Any]]]:
-        """Quy trình RAG hoàn chỉnh: Truy xuất -> Lọc độ liên quan -> LLM Grounded Answer"""
+        """Quy trình RAG hoàn chỉnh: Truy xuất -> Lọc độ liên quan -> LLM Grounded Answer với Fallback tự chủ"""
         retrieved = self.retrieve(query, top_k=4, recent_history=recent_history)
 
         # 1. Xử lý câu hỏi về chức năng ngoài phạm vi / chưa hỗ trợ
@@ -336,13 +393,25 @@ HÃY TRẢ LỜI ĐẦY ĐỦ, CHÍNH XÁC VÀ BÁM SÁT TÀI LIỆU TRÊN:"""
             if not retrieved:
                 ans = (
                     "Khí Linh chưa tìm thấy thông tin đáng tin cậy trong kiến thức hiện tại của hệ thống về vấn đề này. "
-                    "Ký Chủ có thể hỏi về các tính năng hiện có của Càn Khôn Linh Thạch Các như Túi Càn Khôn, Giao Dịch, "
+                    "Chủ Nhân có thể hỏi về các tính năng hiện có của Càn Khôn Linh Thạch Các như Túi Càn Khôn, Giao Dịch, "
                     "Hạn Mức Ngân Sách, Sổ Nợ, Mục Tiêu Tiết Kiệm hoặc Khám Hóa Đơn OCR."
                 )
                 return ans, []
 
-        # 2. Xây dựng prompt có căn cứ và gọi provider
-        prompt = self.build_grounded_prompt(query, retrieved, recent_history)
-        answer = await provider.generate_response(prompt)
+        # 2. Xây dựng prompt có căn cứ và gọi provider với Fallback tự chủ
+        try:
+            prompt = self.build_grounded_prompt(query, retrieved, recent_history)
+            answer = await provider.generate_response(prompt)
+            if answer and answer.strip():
+                trace_metadata = [r.to_dict() for r in retrieved]
+                return answer.strip(), trace_metadata
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[KnowledgeRAG] Lỗi gọi AI Provider ({e}), kích hoạt bộ tổng hợp tri thức tự chủ tại chỗ."
+            )
+
+        # 3. Phản hồi tự chủ chất lượng cao từ tài liệu nguồn nếu AI bên ngoài bị nghẽn mạng / quá tải
+        synthesized_answer = self.synthesize_knowledge_fallback(query, retrieved)
         trace_metadata = [r.to_dict() for r in retrieved]
-        return answer.strip(), trace_metadata
+        return synthesized_answer, trace_metadata
