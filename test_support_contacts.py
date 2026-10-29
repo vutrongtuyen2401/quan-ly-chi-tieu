@@ -776,6 +776,88 @@ class TestLowFundsEmailNotification(unittest.TestCase):
         main.SMTP_HOST = ""
         self.assertEqual(self.client.post("/api/support/test-email", headers=self.headers_b).status_code, 503)
 
+    def test_support_settings_wallet_eval_mode_persistence(self):
+        """Cài đặt lựa chọn ví đánh giá (all vs selected) được lưu trữ và truy vấn chính xác"""
+        res = self.client.put(
+            "/api/support-settings",
+            json={
+                "wallet_eval_mode": "selected",
+                "monitored_wallet_ids": [101, 102],
+                "low_balance_threshold": 300000
+            },
+            headers=self.headers_a
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["wallet_eval_mode"], "selected")
+        self.assertEqual(data["monitored_wallet_ids"], [101, 102])
+
+        # GET lại để kiểm tra
+        res_get = self.client.get("/api/support-settings", headers=self.headers_a)
+        self.assertEqual(res_get.status_code, 200)
+        data_get = res_get.json()
+        self.assertEqual(data_get["wallet_eval_mode"], "selected")
+        self.assertEqual(data_get["monitored_wallet_ids"], [101, 102])
+
+    def test_compute_low_funds_status_with_selected_wallets(self):
+        """Cảnh báo linh thạch sắp cạn đánh giá chính xác trên các ví được chọn và tổng toàn bộ ví"""
+        with main.get_db() as conn:
+            conn.execute("DELETE FROM wallets WHERE user_id = ?", (self.user_a_id,))
+            c1 = conn.execute(
+                "INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, 'Ví Tiền Mặt', 150000, 'cash')",
+                (self.user_a_id,)
+            )
+            w1_id = c1.lastrowid
+            c2 = conn.execute(
+                "INSERT INTO wallets (user_id, wallet_name, balance, wallet_type) VALUES (?, 'Ví Tiết Kiệm', 10000000, 'bank')",
+                (self.user_a_id,)
+            )
+            w2_id = c2.lastrowid
+
+        # 1. Chế độ 'all' (mặc định): Tổng là 10.150.000 > threshold 500.000 -> Level OK
+        res = self.client.get("/api/support/low-funds-status", headers=self.headers_a)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["level"], "SAFE")
+        self.assertEqual(body["total_balance"], 10150000)
+        self.assertEqual(body["all_wallets_balance"], 10150000)
+        self.assertEqual(body["wallet_eval_mode"], "all")
+
+        # 2. Đổi sang 'selected' chỉ chọn Ví Tiền Mặt (150.000 < 500.000) -> Level WARNING hoặc CRITICAL
+        self.client.put(
+            "/api/support-settings",
+            json={
+                "wallet_eval_mode": "selected",
+                "monitored_wallet_ids": [w1_id],
+                "low_balance_threshold": 500000
+            },
+            headers=self.headers_a
+        )
+        res_sel = self.client.get("/api/support/low-funds-status", headers=self.headers_a)
+        self.assertEqual(res_sel.status_code, 200)
+        body_sel = res_sel.json()
+        self.assertIn(body_sel["level"], ["WARNING", "CRITICAL"])
+        self.assertEqual(body_sel["total_balance"], 150000)
+        self.assertEqual(body_sel["all_wallets_balance"], 10150000)
+        self.assertEqual(body_sel["wallet_eval_mode"], "selected")
+        self.assertEqual(body_sel["monitored_wallet_names"], ["Ví Tiền Mặt"])
+
+        # 3. Chọn cả 2 ví cộng lại: 150.000 + 10.000.000 = 10.150.000 -> Level OK
+        self.client.put(
+            "/api/support-settings",
+            json={
+                "wallet_eval_mode": "selected",
+                "monitored_wallet_ids": [w1_id, w2_id]
+            },
+            headers=self.headers_a
+        )
+        res_both = self.client.get("/api/support/low-funds-status", headers=self.headers_a)
+        self.assertEqual(res_both.status_code, 200)
+        body_both = res_both.json()
+        self.assertEqual(body_both["level"], "SAFE")
+        self.assertEqual(body_both["total_balance"], 10150000)
+        self.assertEqual(body_both["all_wallets_balance"], 10150000)
+
 
 if __name__ == "__main__":
     unittest.main()

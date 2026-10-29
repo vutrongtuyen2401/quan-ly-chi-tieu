@@ -42,7 +42,7 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Que
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Union
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 
@@ -308,6 +308,8 @@ def init_db():
             ("email_enabled", "INTEGER DEFAULT 0"),
             ("last_notified_level", "TEXT DEFAULT ''"),
             ("last_notified_at", "TEXT DEFAULT ''"),
+            ("wallet_eval_mode", "TEXT DEFAULT 'all'"),
+            ("monitored_wallet_ids", "TEXT DEFAULT ''"),
         ):
             if col not in ss_cols:
                 conn.execute(f"ALTER TABLE support_settings ADD COLUMN {col} {ddl}")
@@ -615,6 +617,8 @@ class SupportSettingsBody(BaseModel):
     message_template: Optional[str] = None
     notify_email: Optional[str] = None
     email_enabled: Optional[int] = None
+    wallet_eval_mode: Optional[str] = None
+    monitored_wallet_ids: Optional[Union[List[int], str]] = None
 
 
 # ──────────────────────────────────────────────
@@ -2800,6 +2804,43 @@ def normalize_vn_phone(raw: str) -> str:
     return "0" + match.group(1)
 
 
+def parse_wallet_ids(raw) -> list:
+    """Phân tích chuỗi JSON, mảng, hoặc chuỗi phân tách bằng dấu phẩy thành danh sách ID ví hợp lệ."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        res = []
+        for x in raw:
+            try:
+                res.append(int(x))
+            except (ValueError, TypeError):
+                pass
+        return res
+    if isinstance(raw, str):
+        raw_str = raw.strip()
+        if not raw_str:
+            return []
+        try:
+            parsed = json.loads(raw_str)
+            if isinstance(parsed, list):
+                res = []
+                for x in parsed:
+                    try:
+                        res.append(int(x))
+                    except (ValueError, TypeError):
+                        pass
+                return res
+        except Exception:
+            pass
+        res = []
+        for x in raw_str.split(","):
+            val = x.strip()
+            if val.isdigit():
+                res.append(int(val))
+        return res
+    return []
+
+
 def get_or_create_support_settings(conn, user_id: int) -> dict:
     """Lấy hoặc khởi tạo cài đặt cảnh báo sắp hết tiền cho user_id."""
     row = conn.execute("SELECT * FROM support_settings WHERE user_id = ?", (user_id,)).fetchone()
@@ -2828,9 +2869,33 @@ def compute_low_funds_status(conn, user_id: int, today: Optional[datetime.date] 
     user_tpl = (settings.get("message_template") or "").strip()
     template_to_use = user_tpl if user_tpl else DEFAULT_SUPPORT_MESSAGE_TEMPLATE
 
-    # 1. total_balance: Tổng balance tất cả ví của user
-    bal_row = conn.execute("SELECT COALESCE(SUM(balance), 0) FROM wallets WHERE user_id = ?", (user_id,)).fetchone()
-    total_balance = float(bal_row[0]) if bal_row else 0.0
+    # 1. total_balance & all_wallets_balance theo chế độ chọn ví (all hoặc selected)
+    wallet_rows = conn.execute("SELECT id, wallet_name, balance FROM wallets WHERE user_id = ?", (user_id,)).fetchall()
+    all_wallets = [dict(w) for w in wallet_rows]
+    all_wallets_balance = sum(float(w["balance"]) for w in all_wallets)
+    has_wallets = len(all_wallets) > 0
+
+    wallet_eval_mode = (settings.get("wallet_eval_mode") or "all").lower().strip()
+    selected_wallet_ids = parse_wallet_ids(settings.get("monitored_wallet_ids"))
+
+    if wallet_eval_mode == "selected" and selected_wallet_ids and has_wallets:
+        selected_wallets = [w for w in all_wallets if w["id"] in selected_wallet_ids]
+        if selected_wallets:
+            eval_balance = sum(float(w["balance"]) for w in selected_wallets)
+            monitored_ids = [w["id"] for w in selected_wallets]
+            monitored_names = [w["wallet_name"] for w in selected_wallets]
+        else:
+            wallet_eval_mode = "all"
+            eval_balance = all_wallets_balance
+            monitored_ids = [w["id"] for w in all_wallets]
+            monitored_names = [w["wallet_name"] for w in all_wallets]
+    else:
+        wallet_eval_mode = "all"
+        eval_balance = all_wallets_balance
+        monitored_ids = [w["id"] for w in all_wallets]
+        monitored_names = [w["wallet_name"] for w in all_wallets]
+
+    total_balance = float(eval_balance)
 
     # 2. next_allowance_date: Ngày nhận tiền kế tiếp sau hôm nay theo allowance_day (1-28)
     _, max_days_cur = calendar.monthrange(today.year, today.month)
@@ -2951,8 +3016,7 @@ def compute_low_funds_status(conn, user_id: int, today: Optional[datetime.date] 
     else:
         suggested_amount = 0
 
-    wallet_count_row = conn.execute("SELECT COUNT(*) FROM wallets WHERE user_id = ?", (user_id,)).fetchone()
-    has_wallets = (wallet_count_row[0] > 0) if wallet_count_row else False
+    # has_wallets đã được tính toán từ danh sách ví ở bước 1
 
     # 10. Phân mức (CRITICAL / WARNING / SAFE / NO_DATA):
     if not has_wallets:
@@ -2975,6 +3039,11 @@ def compute_low_funds_status(conn, user_id: int, today: Optional[datetime.date] 
 
     # 11. reasons:
     reasons = []
+    if wallet_eval_mode == "selected" and monitored_names:
+        names_str = ", ".join(f"'{n}'" for n in monitored_names)
+        reasons.append(
+            f"Đang đánh giá theo {len(monitored_names)} ví đã chọn ({names_str}) với tổng số dư {format_vnd(total_balance)} (Tổng toàn bộ ví: {format_vnd(all_wallets_balance)})."
+        )
     if level == "NO_DATA":
         reasons.append("Chưa có ví nào nên chưa thể đánh giá. Hãy tạo ví trong Túi Càn Khôn.")
     elif level == "SAFE":
@@ -3045,6 +3114,10 @@ def compute_low_funds_status(conn, user_id: int, today: Optional[datetime.date] 
         "enabled": enabled,
         "level": level,
         "total_balance": round(total_balance, 2),
+        "all_wallets_balance": round(all_wallets_balance, 2),
+        "wallet_eval_mode": wallet_eval_mode,
+        "monitored_wallet_ids": monitored_ids,
+        "monitored_wallet_names": monitored_names,
         "avg_daily_expense": round(avg_daily_expense, 2),
         "days_left": days_left,
         "next_allowance_date": next_allowance_date.strftime("%Y-%m-%d"),
@@ -3244,6 +3317,8 @@ def support_settings_payload(st: dict) -> dict:
         "last_notified_at": st.get("last_notified_at") or "",
         "last_notified_level": st.get("last_notified_level") or "",
         "smtp_configured": smtp_configured(),
+        "wallet_eval_mode": st.get("wallet_eval_mode") or "all",
+        "monitored_wallet_ids": parse_wallet_ids(st.get("monitored_wallet_ids")),
     }
 
 
@@ -3263,7 +3338,14 @@ def build_low_funds_email(status: dict, full_name: str, is_test: bool = False) -
         subject = f"{prefix}Càn Khôn Linh Thạch Các — {level_title}"
 
     next_date = datetime.datetime.strptime(status["next_allowance_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
-    summary = [f"Số dư hiện tại: {format_vnd(status['total_balance'])}"]
+    if status.get("wallet_eval_mode") == "selected" and status.get("monitored_wallet_names"):
+        w_names = ", ".join(status["monitored_wallet_names"])
+        summary = [
+            f"Số dư các ví đánh giá ({w_names}): {format_vnd(status['total_balance'])}",
+            f"Tổng số tiền tất cả các ví: {format_vnd(status.get('all_wallets_balance', status['total_balance']))}"
+        ]
+    else:
+        summary = [f"Số dư hiện tại: {format_vnd(status['total_balance'])}"]
     if status.get("runway_days") is not None:
         summary.append(f"Đủ chi tiêu khoảng: {status['runway_days']} ngày")
     summary.append(f"Còn {status['days_left']} ngày tới ngày nhận tiền ({next_date})")
@@ -3477,12 +3559,25 @@ def update_support_settings_endpoint(body: SupportSettingsBody, user: dict = Dep
         if email_enabled and not notify_email:
             raise HTTPException(status_code=400, detail="Vui lòng nhập email nhận thông báo trước khi bật gửi email.")
 
+        wallet_eval_mode = st.get("wallet_eval_mode") or "all"
+        if body.wallet_eval_mode is not None:
+            mode_val = body.wallet_eval_mode.strip().lower()
+            if mode_val in ("all", "selected"):
+                wallet_eval_mode = mode_val
+
+        monitored_wallet_ids_str = st.get("monitored_wallet_ids") or ""
+        if body.monitored_wallet_ids is not None:
+            parsed_ids = parse_wallet_ids(body.monitored_wallet_ids)
+            monitored_wallet_ids_str = json.dumps(parsed_ids)
+
         conn.execute("""
             UPDATE support_settings
             SET enabled = ?, low_balance_threshold = ?, allowance_day = ?, message_template = ?,
-                notify_email = ?, email_enabled = ?, updated_at = datetime('now')
+                notify_email = ?, email_enabled = ?, wallet_eval_mode = ?, monitored_wallet_ids = ?,
+                updated_at = datetime('now')
             WHERE user_id = ?
-        """, (enabled, threshold, allowance_day, template, notify_email, email_enabled, user["user_id"]))
+        """, (enabled, threshold, allowance_day, template, notify_email, email_enabled,
+              wallet_eval_mode, monitored_wallet_ids_str, user["user_id"]))
         # Đổi email nhận thì xóa trạng thái đã gửi để địa chỉ mới nhận cảnh báo ngay
         if notify_email != old_email:
             conn.execute("UPDATE support_settings SET last_notified_level = '', last_notified_at = '' WHERE user_id = ?",

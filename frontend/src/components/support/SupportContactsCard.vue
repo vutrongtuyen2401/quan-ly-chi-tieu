@@ -323,6 +323,150 @@
             </div>
           </div>
 
+          <!-- ═══════ LỰA CHỌN VÍ ĐÁNH GIÁ LINH THẠCH SẮP CẠN ═══════ -->
+          <div class="wallet-eval-selection-block">
+            <div class="eval-block-header">
+              <div class="eval-title-wrap">
+                <span class="material-symbols-outlined text-primary text-[20px]">account_balance_wallet</span>
+                <span class="setting-title">Phạm Vi Ví Đánh Giá Cảnh Báo</span>
+              </div>
+              <span class="setting-desc">
+                Chọn đánh giá trên tất cả các ví hoặc chọn nhiều ví cụ thể cộng dồn lại (ví dụ chỉ theo dõi ví tiền mặt hoặc tài khoản chi tiêu hằng ngày).
+              </span>
+            </div>
+
+            <!-- Radio Options: Tất cả vs Chọn cụ thể -->
+            <div class="eval-mode-radios">
+              <label
+                class="eval-mode-option"
+                :class="{ 'is-active': localSettings.wallet_eval_mode === 'all' }"
+              >
+                <input
+                  type="radio"
+                  v-model="localSettings.wallet_eval_mode"
+                  value="all"
+                  class="sr-only"
+                />
+                <div class="radio-content">
+                  <div class="radio-indicator">
+                    <span class="radio-dot"></span>
+                  </div>
+                  <div class="radio-text">
+                    <span class="mode-name">Toàn Bộ Các Ví (Mặc Định)</span>
+                    <span class="mode-desc">Cộng tổng số dư của tất cả các ví trong Túi Càn Khôn</span>
+                  </div>
+                </div>
+              </label>
+
+              <label
+                class="eval-mode-option"
+                :class="{ 'is-active': localSettings.wallet_eval_mode === 'selected' }"
+              >
+                <input
+                  type="radio"
+                  v-model="localSettings.wallet_eval_mode"
+                  value="selected"
+                  class="sr-only"
+                />
+                <div class="radio-content">
+                  <div class="radio-indicator">
+                    <span class="radio-dot"></span>
+                  </div>
+                  <div class="radio-text">
+                    <span class="mode-name">Chọn Ví Đánh Giá Riêng Biệt (Cộng Dồn)</span>
+                    <span class="mode-desc">Tự chọn một hoặc nhiều ví sắp cạn để cộng gộp số dư và đánh giá</span>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <!-- Khi ở chế độ 'selected' -->
+            <div v-if="localSettings.wallet_eval_mode === 'selected'" class="selected-wallets-wrapper">
+              <div class="wallets-selection-toolbar">
+                <span class="toolbar-label">
+                  Đã chọn: <strong class="text-primary">{{ localSettings.monitored_wallet_ids.length }} / {{ wallets.length }} ví</strong>
+                </span>
+                <div class="toolbar-actions">
+                  <button
+                    type="button"
+                    class="btn-wallet-action"
+                    @click="selectAllWallets"
+                    :disabled="!wallets || wallets.length === 0"
+                  >
+                    <span class="material-symbols-outlined text-[14px]">done_all</span>
+                    <span>Chọn Tất Cả</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-wallet-action"
+                    @click="deselectAllWallets"
+                    :disabled="!localSettings.monitored_wallet_ids.length"
+                  >
+                    <span class="material-symbols-outlined text-[14px]">clear_all</span>
+                    <span>Bỏ Chọn Hết</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Danh sách ví dạng checkbox card -->
+              <div v-if="wallets && wallets.length > 0" class="wallets-checkbox-grid">
+                <div
+                  v-for="w in wallets"
+                  :key="w.id"
+                  class="wallet-checkbox-card"
+                  :class="{ 'is-selected': isWalletSelected(w.id) }"
+                  @click="toggleWalletSelection(w.id)"
+                >
+                  <div class="wallet-chk-box">
+                    <input
+                      type="checkbox"
+                      :checked="isWalletSelected(w.id)"
+                      @click.stop="toggleWalletSelection(w.id)"
+                    />
+                  </div>
+                  <div class="wallet-card-info">
+                    <div class="wallet-card-name-row">
+                      <span class="wallet-card-name">{{ w.wallet_name }}</span>
+                      <span class="wallet-card-type">{{ w.wallet_type || 'Ví' }}</span>
+                    </div>
+                    <div class="wallet-card-balance font-mono">
+                      {{ formatVND ? formatVND(w.balance || 0) : ((w.balance || 0).toLocaleString() + ' ₫') }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="wallets-empty-note">
+                Chưa có ví nào trong hệ thống. Vui lòng tạo ví trong mục Túi Càn Khôn trước.
+              </div>
+
+              <div v-if="localSettings.monitored_wallet_ids.length === 0" class="selection-warning-note">
+                <span class="material-symbols-outlined text-[16px]">info</span>
+                <span>Chưa chọn ví nào: hệ thống sẽ tạm thời tính trên toàn bộ ví để bảo đảm không bỏ sót cảnh báo.</span>
+              </div>
+            </div>
+
+            <!-- Tổng số tiền hiển thị so sánh (Cả 2 chế độ đều hiển thị trực quan) -->
+            <div class="eval-balance-summary-strip">
+              <div class="summary-stat-item">
+                <span class="stat-label">Tổng số dư ví đánh giá:</span>
+                <span class="stat-value font-mono text-primary font-bold">
+                  {{ formatVND ? formatVND(effectiveEvalBalance) : (effectiveEvalBalance.toLocaleString() + ' ₫') }}
+                </span>
+                <span class="stat-tag">
+                  {{ localSettings.wallet_eval_mode === 'selected' ? `(${localSettings.monitored_wallet_ids.length} ví được chọn)` : '(Tất cả các ví)' }}
+                </span>
+              </div>
+              <div class="summary-stat-divider"></div>
+              <div class="summary-stat-item">
+                <span class="stat-label">Tổng số tiền toàn bộ ví:</span>
+                <span class="stat-value font-mono text-slate-300 font-semibold">
+                  {{ formatVND ? formatVND(allWalletsTotal) : (allWalletsTotal.toLocaleString() + ' ₫') }}
+                </span>
+                <span class="stat-tag text-slate-400">({{ wallets.length }} ví trong Túi)</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Mẫu tin nhắn soạn sẵn -->
           <div class="form-field">
             <div class="template-label-row">
@@ -428,6 +572,10 @@ import { ref, computed, watch } from 'vue'
 export default {
   name: 'SupportContactsCard',
   props: {
+    wallets: {
+      type: Array,
+      default: () => []
+    },
     contacts: {
       type: Array,
       default: () => []
@@ -438,6 +586,8 @@ export default {
         enabled: true,
         low_balance_threshold: 500000,
         allowance_day: 1,
+        wallet_eval_mode: 'all',
+        monitored_wallet_ids: [],
         message_template: '',
         notify_email: '',
         email_enabled: false,
@@ -483,16 +633,78 @@ export default {
 
     // Local clone of settings to avoid direct prop mutation
     function cloneSettings(src) {
+      let ids = []
+      if (Array.isArray(src?.monitored_wallet_ids)) {
+        ids = src.monitored_wallet_ids.map(Number).filter(n => !isNaN(n))
+      } else if (typeof src?.monitored_wallet_ids === 'string' && src.monitored_wallet_ids.trim()) {
+        try {
+          const parsed = JSON.parse(src.monitored_wallet_ids)
+          if (Array.isArray(parsed)) {
+            ids = parsed.map(Number).filter(n => !isNaN(n))
+          } else {
+            ids = src.monitored_wallet_ids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+          }
+        } catch (e) {
+          ids = src.monitored_wallet_ids.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+        }
+      }
       return {
         enabled: src?.enabled ?? true,
         low_balance_threshold: src?.low_balance_threshold ?? 500000,
         allowance_day: src?.allowance_day ?? 1,
+        wallet_eval_mode: src?.wallet_eval_mode === 'selected' ? 'selected' : 'all',
+        monitored_wallet_ids: ids,
         message_template: src?.message_template ?? '',
         notify_email: src?.notify_email ?? '',
         email_enabled: Boolean(src?.email_enabled),
         smtp_configured: Boolean(src?.smtp_configured),
         last_notified_at: src?.last_notified_at ?? ''
       }
+    }
+
+    // ═══ TÍNH TOÁN SỐ DƯ VÍ ĐÁNH GIÁ CẢNH BÁO SẮP CẠN ═══
+    const allWalletsTotal = computed(() => {
+      const list = props.wallets || []
+      return list.reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
+    })
+
+    const selectedWalletsTotal = computed(() => {
+      const list = props.wallets || []
+      const ids = new Set((localSettings.value.monitored_wallet_ids || []).map(Number))
+      return list.filter(w => ids.has(Number(w.id))).reduce((sum, w) => sum + (Number(w.balance) || 0), 0)
+    })
+
+    const effectiveEvalBalance = computed(() => {
+      if (localSettings.value.wallet_eval_mode === 'selected' && (localSettings.value.monitored_wallet_ids || []).length > 0) {
+        return selectedWalletsTotal.value
+      }
+      return allWalletsTotal.value
+    })
+
+    function isWalletSelected(id) {
+      const numId = Number(id)
+      return (localSettings.value.monitored_wallet_ids || []).map(Number).includes(numId)
+    }
+
+    function toggleWalletSelection(id) {
+      const numId = Number(id)
+      const arr = [...(localSettings.value.monitored_wallet_ids || [])].map(Number)
+      const idx = arr.indexOf(numId)
+      if (idx >= 0) {
+        arr.splice(idx, 1)
+      } else {
+        arr.push(numId)
+      }
+      localSettings.value.monitored_wallet_ids = arr
+    }
+
+    function selectAllWallets() {
+      const list = props.wallets || []
+      localSettings.value.monitored_wallet_ids = list.map(w => Number(w.id))
+    }
+
+    function deselectAllWallets() {
+      localSettings.value.monitored_wallet_ids = []
     }
     const localSettings = ref(cloneSettings(props.settings))
 
@@ -681,6 +893,8 @@ export default {
         enabled: Boolean(localSettings.value.enabled),
         low_balance_threshold: Math.max(0, Number(localSettings.value.low_balance_threshold) || 0),
         allowance_day: Math.min(28, Math.max(1, Number(localSettings.value.allowance_day) || 1)),
+        wallet_eval_mode: localSettings.value.wallet_eval_mode === 'selected' ? 'selected' : 'all',
+        monitored_wallet_ids: (localSettings.value.monitored_wallet_ids || []).map(Number),
         message_template: (localSettings.value.message_template || '').trim(),
         notify_email: (localSettings.value.notify_email || '').trim(),
         email_enabled: Boolean(localSettings.value.email_enabled && localSettings.value.notify_email)
@@ -711,7 +925,14 @@ export default {
       handleToggleActive,
       handleDeleteContact,
       resetMessageTemplate,
-      handleSaveSettings
+      handleSaveSettings,
+      allWalletsTotal,
+      selectedWalletsTotal,
+      effectiveEvalBalance,
+      isWalletSelected,
+      toggleWalletSelection,
+      selectAllWallets,
+      deselectAllWallets
     }
   }
 }
@@ -1507,4 +1728,316 @@ input:checked + .slider-round:before {
     justify-content: flex-end;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WALLET EVALUATION SELECTION STYLES (ĐÁNH GIÁ LINH THẠCH SẮP CẠN THEO VÍ)
+   ═══════════════════════════════════════════════════════════════════════════ */
+.wallet-eval-selection-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(125, 214, 204, 0.18);
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.eval-block-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eval-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eval-mode-radios {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.eval-mode-option {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  padding: 12px 14px;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.eval-mode-option:hover {
+  border-color: rgba(125, 214, 204, 0.35);
+  background: rgba(30, 41, 59, 0.7);
+}
+
+.eval-mode-option.is-active {
+  border-color: var(--color-primary, #7dd6cc);
+  background: rgba(125, 214, 204, 0.08);
+  box-shadow: 0 0 14px rgba(125, 214, 204, 0.15);
+}
+
+.radio-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.radio-indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(148, 163, 184, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease;
+}
+
+.eval-mode-option.is-active .radio-indicator {
+  border-color: var(--color-primary, #7dd6cc);
+}
+
+.radio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  transition: background 0.2s ease;
+}
+
+.eval-mode-option.is-active .radio-dot {
+  background: var(--color-primary, #7dd6cc);
+}
+
+.radio-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.eval-mode-option.is-active .mode-name {
+  color: var(--color-primary, #7dd6cc);
+}
+
+.mode-desc {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.selected-wallets-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px dashed rgba(125, 214, 204, 0.25);
+  border-radius: 10px;
+}
+
+.wallets-selection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbar-label {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-wallet-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-wallet-action:hover:not(:disabled) {
+  color: var(--color-primary, #7dd6cc);
+  border-color: var(--color-primary, #7dd6cc);
+  background: rgba(125, 214, 204, 0.1);
+}
+
+.btn-wallet-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wallets-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.wallet-checkbox-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.wallet-checkbox-card:hover {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(125, 214, 204, 0.3);
+}
+
+.wallet-checkbox-card.is-selected {
+  background: rgba(125, 214, 204, 0.12);
+  border-color: var(--color-primary, #7dd6cc);
+}
+
+.wallet-chk-box input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--color-primary, #7dd6cc);
+  width: 15px;
+  height: 15px;
+}
+
+.wallet-card-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.wallet-card-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.wallet-card-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wallet-checkbox-card.is-selected .wallet-card-name {
+  color: var(--color-primary, #7dd6cc);
+}
+
+.wallet-card-type {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.wallet-card-balance {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #cbd5e1;
+  margin-top: 1px;
+}
+
+.wallets-empty-note,
+.selection-warning-note {
+  font-size: 11.5px;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(251, 191, 36, 0.08);
+  border-radius: 6px;
+}
+
+.eval-balance-summary-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 8px;
+  border: 1px solid rgba(125, 214, 204, 0.12);
+  flex-wrap: wrap;
+}
+
+.summary-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.summary-stat-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.stat-label {
+  color: #94a3b8;
+}
+
+.stat-value {
+  font-size: 13px;
+}
+
+.stat-tag {
+  font-size: 11px;
+  color: #7dd6cc;
+}
+
+@media (max-width: 640px) {
+  .eval-mode-radios {
+    grid-template-columns: 1fr;
+  }
+  .eval-balance-summary-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .summary-stat-divider {
+    display: none;
+  }
+}
+
 </style>

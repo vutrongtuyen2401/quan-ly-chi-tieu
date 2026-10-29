@@ -41,6 +41,7 @@
           <SupportContactsCard
             :contacts="supportContacts"
             :settings="supportSettings"
+            :wallets="wallets"
             :loading="loadingSupport"
             :testing-email="testingEmail"
             :formatVND="formatVND"
@@ -167,6 +168,10 @@ export default {
     loadingPassword: {
       type: Boolean,
       default: false
+    },
+    wallets: {
+      type: Array,
+      default: () => []
     },
     supportContacts: {
       type: Array,

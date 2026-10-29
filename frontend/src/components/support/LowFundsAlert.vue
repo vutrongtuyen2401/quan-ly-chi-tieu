@@ -27,6 +27,13 @@
           </div>
           <p class="alert-summary-line">
             Còn <strong class="text-amount">{{ displayTotalBalance }}</strong>
+            <span
+              v-if="status?.wallet_eval_mode === 'selected' && status?.monitored_wallet_names && status.monitored_wallet_names.length"
+              class="eval-wallets-chip"
+              :title="'Ví đánh giá: ' + status.monitored_wallet_names.join(', ') + '. Tổng tất cả ví: ' + formatMoney(status.all_wallets_balance)"
+            >
+              (Ví đánh giá: {{ status.monitored_wallet_names.join(', ') }} · Tổng toàn bộ: {{ formatMoney(status.all_wallets_balance) }})
+            </span>
             <template v-if="status.runway_days != null">
               · đủ khoảng <strong>{{ status.runway_days }} ngày</strong>
             </template>
@@ -900,4 +907,18 @@ function toggleMessagePreview(contactId) {
     justify-content: center;
   }
 }
+
+.eval-wallets-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  margin: 0 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-primary, #7dd6cc);
+  background: rgba(125, 214, 204, 0.12);
+  border: 1px solid rgba(125, 214, 204, 0.3);
+  border-radius: 9999px;
+  vertical-align: middle;
+}
+
 </style>
