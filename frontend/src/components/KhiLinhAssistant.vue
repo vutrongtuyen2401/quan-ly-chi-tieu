@@ -339,6 +339,9 @@
                       <button class="prompt-chip" @click="handleVoiceAction('Ví tiền mặt còn bao nhiêu?')">
                         "Ví tiền mặt còn bao nhiêu?"
                       </button>
+                      <button class="prompt-chip chip-dismiss" @click="handleVoiceAction('Lui xuống đi')">
+                        🚪 "Lui xuống đi" (Tắt Khí Linh)
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -650,6 +653,89 @@ export default {
       }, 350)
     }
 
+    // ─── KHẨU LỆNH TẮT / THOÁT / LUI XUỐNG BẰNG GIỌNG NÓI ───
+    const DEACTIVATE_EXACT = new Set([
+      'tat', 'tat di', 'tat di nhe', 'tat di nha', 'tat khi linh', 'tat he thong', 'tat bot', 'tat tro ly', 'tat mic',
+      'dong', 'dong lai', 'dong di', 'dong khi linh', 'dong cua so', 'dong man hinh',
+      'thoat', 'thoat ra', 'thoat di', 'thoat khoi day',
+      'lui xuong', 'lui xuong di', 'khi linh lui xuong', 'nguoi lui xuong', 'nguoi lui xuong di', 'tam lui',
+      'ngu di', 'di ngu di', 'ngu thoi', 'ngu di nhe',
+      'nghi di', 'nghi ngoi di', 'khi linh nghi di', 'nghi thoi',
+      'tam biet', 'tam biet khi linh', 'tam biet nhe', 'hen gap lai', 'bye', 'bye bye', 'goodbye',
+      'an di', 'an khi linh', 'thu nho', 'thu nho lai',
+      'dung lai', 'dung', 'dung di', 'ngung', 'ngung lai',
+      'thoi', 'thoi di', 'thoi khong can nua', 'khong can nua', 'khong can', 'xong roi', 'the thoi'
+    ])
+
+    function isDeactivateVoiceCommand(text) {
+      if (!text) return false
+      const norm = normalizeSpeech(text)
+      if (DEACTIVATE_EXACT.has(norm)) return true
+
+      // Bỏ qua các từ đệm nhẹ tiếng Việt
+      const normCore = norm.replace(/\b(khi linh|he thong|oi|nhe|nha|di|a|ta|nua|cho ta|giup ta)\b/g, '').replace(/\s+/g, ' ').trim()
+      if (DEACTIVATE_EXACT.has(normCore)) return true
+
+      for (const kw of ['tat di', 'dong lai', 'lui xuong', 'ngu di', 'nghi ngoi', 'tam biet', 'thoat ra', 'khong can nua']) {
+        if (norm.includes(kw)) return true
+      }
+      return false
+    }
+
+    async function handleVoiceDeactivation() {
+      clearSilenceTimer()
+      clearTTSWatchdog()
+      cancelCurrentTTS()
+      stopRecognition()
+
+      const farewell = 'Dạ, Khí Linh xin phép lui xuống. Khi nào cần, Chủ Nhân hãy gọi "Hệ thống" nhé.'
+      currentDisplayContent.value = farewell
+      lastUserUtterance.value = ''
+      agentState.value = 'SPEAKING'
+
+      // Hủy mọi pending action đang chờ trên backend
+      try {
+        if (props.api && typeof props.api.post === 'function') {
+          props.api.post('/api/ai/cancel-pending').catch(() => {})
+        }
+      } catch (e) {}
+
+      if (ttsEnabled.value && synth) {
+        try {
+          const utter = new SpeechSynthesisUtterance(farewell)
+          utter.lang = 'vi-VN'
+          utter.rate = 1.05
+          utter.pitch = 1.05
+          isSpeakingTTS.value = true
+
+          const closeAfterTTS = () => {
+            isSpeakingTTS.value = false
+            setTimeout(() => {
+              deactivateLiveModeInternal()
+            }, 300)
+          }
+
+          utter.onend = closeAfterTTS
+          utter.onerror = closeAfterTTS
+          synth.cancel()
+          synth.speak(utter)
+
+          // Fallback watchdog sau 3.5s nếu trình duyệt không bắn onend
+          setTimeout(() => {
+            if (isLiveActive.value) {
+              deactivateLiveModeInternal()
+            }
+          }, 3500)
+        } catch (err) {
+          deactivateLiveModeInternal()
+        }
+      } else {
+        setTimeout(() => {
+          deactivateLiveModeInternal()
+        }, 1200)
+      }
+    }
+
     // ─── 10-SECOND SILENCE TIMEOUT ─────────────────
     function startSilenceTimer() {
       clearSilenceTimer()
@@ -824,6 +910,13 @@ export default {
           // User responded, clear silence countdown
           clearSilenceTimer()
 
+          // ─── KIỂM TRA KHẨU LỆNH TẮT / THOÁT / LUI XUỐNG ───
+          if (isDeactivateVoiceCommand(cmd)) {
+            console.log('[Voice Dismiss] Nhận khẩu lệnh tắt Khí Linh:', cmd)
+            handleVoiceDeactivation()
+            return
+          }
+
           handleVoiceAction(cmd)
         }
 
@@ -938,10 +1031,16 @@ export default {
     // ─── AGENTCORE DISPATCH & LIFECYCLE ───
     async function handleVoiceAction(rawText) {
       if (!rawText || !rawText.trim()) return
+      const cleanText = rawText.trim()
+
+      // Kiểm tra khẩu lệnh tắt / lui xuống nếu gọi từ nút gợi ý hoặc text
+      if (isDeactivateVoiceCommand(cleanText)) {
+        handleVoiceDeactivation()
+        return
+      }
+
       // Chặn gửi chồng lệnh khi yêu cầu trước chưa xong (nguyên nhân lặp giao dịch)
       if (isProcessing.value) return
-
-      const cleanText = rawText.trim()
       lastUserUtterance.value = cleanText
 
       if (isSpeakingTTS.value) {
@@ -2444,6 +2543,18 @@ export default {
 @keyframes pulse-bargein {
   0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0.3); transform: scale(1); }
   50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.7); transform: scale(1.02); }
+}
+
+
+.prompt-chip.chip-dismiss {
+  border-color: rgba(239, 68, 68, 0.45) !important;
+  color: #fca5a5 !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+.prompt-chip.chip-dismiss:hover {
+  border-color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.22) !important;
+  color: #ffffff !important;
 }
 
 </style>
