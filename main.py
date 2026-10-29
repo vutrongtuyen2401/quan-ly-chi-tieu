@@ -2341,6 +2341,33 @@ def get_suggested_questions(user: dict = Depends(get_current_user)):
         return [r["prompt_question"] for r in rows]
 
 
+@app.delete("/api/chat/suggested-questions")
+def delete_suggested_questions(
+    question: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
+    """Xóa lịch sử câu hỏi gợi ý pháp vấn (xóa toàn bộ hoặc xóa từng câu cụ thể)"""
+    user_id = user["user_id"]
+    with get_db() as conn:
+        if question and question.strip():
+            conn.execute(
+                "DELETE FROM chat_sessions WHERE user_id = ? AND prompt_question = ?",
+                (user_id, question.strip())
+            )
+            return {"message": f"Đã xóa gợi ý pháp vấn '{question.strip()}' thành công."}
+        else:
+            conn.execute("DELETE FROM chat_sessions WHERE user_id = ?", (user_id,))
+            return {"message": "Đã xóa toàn bộ lịch sử gợi ý pháp vấn thành công."}
+
+
+@app.delete("/api/chat/history")
+def clear_chat_history(user: dict = Depends(get_current_user)):
+    """Xóa toàn bộ lịch sử đàm đạo cùng Khí Linh"""
+    with get_db() as conn:
+        conn.execute("DELETE FROM chat_sessions WHERE user_id = ?", (user["user_id"],))
+        return {"message": "Đã dọn sạch toàn bộ lịch sử đàm đạo."}
+
+
 
 # ──────────────────────────────────────────────
 # WALLET TRANSFER

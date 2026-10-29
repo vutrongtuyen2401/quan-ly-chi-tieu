@@ -26,6 +26,8 @@
         :suggested-questions="suggestedQuestions"
         :loading="chatLoading"
         @send-message="$emit('send-message', $event)"
+        @clear-suggestions="$emit('clear-suggestions')"
+        @delete-suggestion="$emit('delete-suggestion', $event)"
       />
     </div>
   </div>
@@ -63,7 +65,7 @@ export default {
       default: 'Ký Chủ'
     }
   },
-  emits: ['send-message', 'clear-history']
+  emits: ['send-message', 'clear-history', 'clear-suggestions', 'delete-suggestion']
 }
 </script>
 

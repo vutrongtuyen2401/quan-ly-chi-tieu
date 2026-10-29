@@ -5,19 +5,42 @@
       <div class="ribbon-label">
         <span class="material-symbols-outlined text-[15px] text-jade" aria-hidden="true">bolt</span>
         <span>Gợi ý pháp vấn:</span>
+        <button
+          v-if="hasCustomSuggestions"
+          type="button"
+          class="btn-clear-suggestions"
+          title="Xóa toàn bộ lịch sử gợi ý pháp vấn"
+          @click="$emit('clear-suggestions')"
+        >
+          <span class="material-symbols-outlined text-[14px]">delete_sweep</span>
+          <span>Xóa Lịch Sử</span>
+        </button>
       </div>
 
       <div class="pills-scroll-track">
-        <button
+        <div
           v-for="(chip, i) in displayedQuestions"
           :key="i"
-          type="button"
-          class="prompt-chip"
-          :disabled="loading"
-          @click="$emit('send-message', chip)"
+          class="prompt-chip-pill"
         >
-          {{ chip }}
-        </button>
+          <button
+            type="button"
+            class="prompt-chip-text"
+            :disabled="loading"
+            @click="$emit('send-message', chip)"
+          >
+            {{ chip }}
+          </button>
+          <button
+            v-if="hasCustomSuggestions"
+            type="button"
+            class="chip-remove-btn"
+            :title="`Xóa '${chip}' khỏi lịch sử gợi ý`"
+            @click.stop="$emit('delete-suggestion', chip)"
+          >
+            <span class="material-symbols-outlined text-[12px]">close</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -78,7 +101,7 @@ export default {
       default: false
     }
   },
-  emits: ['send-message'],
+  emits: ['send-message', 'clear-suggestions', 'delete-suggestion'],
   setup(props, { emit }) {
     const inputText = ref('')
     const isListening = ref(false)
@@ -91,6 +114,10 @@ export default {
       'Tháng này ta đã chi bao nhiêu?',
       'Hạn mức ăn uống còn bao nhiêu?'
     ]
+
+    const hasCustomSuggestions = computed(() => {
+      return Boolean(props.suggestedQuestions && props.suggestedQuestions.length > 0)
+    })
 
     const displayedQuestions = computed(() => {
       if (props.suggestedQuestions && props.suggestedQuestions.length > 0) {
@@ -161,6 +188,7 @@ export default {
     return {
       inputText,
       displayedQuestions,
+      hasCustomSuggestions,
       isListening,
       speechSupported,
       handleSend,
@@ -378,4 +406,88 @@ export default {
     padding: 0 0.875rem;
   }
 }
+
+.btn-clear-suggestions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 2px 7px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  transition: all 0.2s ease;
+}
+
+.btn-clear-suggestions:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.prompt-chip-pill {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(45, 52, 73, 0.7);
+  border: 1px solid rgba(136, 147, 145, 0.25);
+  border-radius: 9999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.prompt-chip-pill:hover {
+  background: rgba(68, 159, 150, 0.25);
+  border-color: rgba(125, 214, 204, 0.4);
+  transform: translateY(-1px);
+}
+
+.prompt-chip-text {
+  font-family: inherit;
+  padding: 0.35rem 0.65rem 0.35rem 0.75rem;
+  background: transparent;
+  border: none;
+  color: #dae2fd;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.prompt-chip-pill:hover .prompt-chip-text {
+  color: #7dd6cc;
+}
+
+.prompt-chip-text:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chip-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  padding: 0;
+  background: rgba(148, 163, 184, 0.2);
+  border: none;
+  border-radius: 50%;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chip-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+}
+
 </style>

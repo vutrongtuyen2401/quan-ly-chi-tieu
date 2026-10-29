@@ -295,6 +295,8 @@
           :user-name="userName"
           @send-message="sendChat($event)"
           @clear-history="chatMessages = []"
+          @clear-suggestions="clearSuggestedQuestions"
+          @delete-suggestion="deleteSuggestedQuestion($event)"
         />
       </section>
 
@@ -1658,6 +1660,27 @@ export default {
       } catch {}
     }
 
+    async function clearSuggestedQuestions() {
+      if (!confirm('Chủ nhân có chắc chắn muốn xóa toàn bộ lịch sử gợi ý pháp vấn không?')) return
+      try {
+        await api.delete('/api/chat/suggested-questions')
+        suggestedQuestions.value = []
+        showToast('✨ Đã xóa toàn bộ lịch sử gợi ý pháp vấn', 'success')
+      } catch (err) {
+        showToast('⚠️ Không thể dọn dẹp lịch sử gợi ý lúc này', 'error')
+      }
+    }
+
+    async function deleteSuggestedQuestion(question) {
+      try {
+        await api.delete('/api/chat/suggested-questions', { params: { question } })
+        suggestedQuestions.value = (suggestedQuestions.value || []).filter(q => q !== question)
+        showToast('✨ Đã xóa gợi ý khỏi danh sách', 'success')
+      } catch (err) {
+        showToast('⚠️ Không thể xóa gợi ý lúc này', 'error')
+      }
+    }
+
     async function loadWallets() {
       try { wallets.value = (await api.get('/api/wallets')).data } catch {}
     }
@@ -2661,7 +2684,7 @@ export default {
       loadAdminStats, loadAdminUsers, toggleUserActive, changeUserRole,
       txnFilter, txnPagination, totalPages, loadTransactions,
       wallets, categories, transactions, budgets, summary, budgetAlerts,
-      chatMessages, chatInput, chatMessagesEl, chatLoading, suggestedQuestions,
+      chatMessages, chatInput, chatMessagesEl, chatLoading, suggestedQuestions, clearSuggestedQuestions, deleteSuggestedQuestion,
       txnForm, walletForm, catForm, budgetForm, transferForm,
       ocrFile, ocrPreview, ocrResult, ocrConfirmForm,
       iconOptions,
